@@ -1,0 +1,2932 @@
+#line 2 // Fix line numbers in resolve/logs/rollinglog.txt
+
+/* OpenDRT v1.0.1 -------------------------------------------------
+
+
+  Written by Jed Smith
+  https://github.com/jedypod/open-display-transform
+  License: GPLv3
+  -------------------------------------------------*/
+
+
+/* MODIFIED VERSION - ATTRIBUTION AND LICENSES ----------------------
+
+  NODE_DRT by Samuel Drouin.
+
+  This file is a MODIFIED version of OpenDRT v1.0.1 and is distributed
+  under the GNU General Public License, version 3. NODE_DRT is the name of
+  this product; OpenDRT is the name of the rendering engine it is built
+  on, and belongs to its author. The two are not affiliated.
+
+  ---- Rendering engine -------------------------------------------
+  OpenDRT v1.0.1 by Jed Smith, licensed GPLv3.
+  https://github.com/jedypod/open-display-transform
+  The tonescale, rendering space, purity compression, brilliance and
+  hue modules are his work. All credit for the image rendering itself
+  belongs to him. He is not responsible for these changes.
+
+  ---- Film look presets ------------------------------------------
+  The seven look presets are sets of OpenDRT parameter values, fitted
+  numerically against reference LUTs generated with spektrafilm.
+  spektrafilm by Andrea Volpato, LUTs and profiles licensed CC BY-SA 4.0.
+  https://github.com/andreavolpato/spektrafilm
+  Each reference LUT is a spectral simulation of one negative stock on
+  one print stock, built from that project's published profiles. No LUT
+  data is embedded here: what remains are fitted parameter values, and
+  they are a deliberate approximation - see NOTICE.txt for the measured
+  deviation from each reference.
+
+  ---- Modifications ----------------------------------------------
+  Modified by Samuel Drouin, 22 September 2026:
+    - original look presets replaced by seven fitted film looks
+    - "Print Toning" module added: a per-level RGB tint driven by the
+      tonescale, so shadows and highlights can pull in opposite directions
+    - six trim controls added, all zero-default deltas on the selected
+      look: Log Contrast, Pivot, Shadows, Highlight Purity, Brilliance
+      and Mid Purity. Log Contrast is a pivoted S-curve applied ahead of
+      the render, on the DaVinci Intermediate log signal, with an
+      absolute pivot: 0.336 is 18 percent grey, and grey holds while
+      contrast turns.
+    - "Look Intensity" and "Toning Intensity" sliders, "Bypass Look"
+      and "Bypass Toning" checkboxes
+    - input gain per look, so switching a look no longer lifts mid grey
+      and camera exposure stays judgeable
+    - tonescale overlay carried per channel and drawn over the image
+      rather than added to it, so R, G and B stay legible. The overlay
+      now follows the same path as the image - one achromatic value
+      through toe, toning and Shadows, tint reapplied last - which the
+      original did per channel; and a "Curve Size" control shrinks the
+      plot into the bottom-left corner
+    - Clamp, HDR Grey and HDR Purity hardwired to their defaults
+    - interface labels shortened, overlay lines thinned
+
+  ---- Your rights ------------------------------------------------
+  This file stays licensed under GPLv3. You may use, study, modify and
+  redistribute it, including commercially. If you redistribute it, in
+  any form and whether or not you charge for it, you must pass on these
+  same freedoms: keep it GPLv3, keep this notice, and make the source
+  available to whoever receives it.
+
+  ---- Trademarks -------------------------------------------------
+  Film and paper product names appearing in the documentation are
+  trademarks of their respective owners and are used descriptively
+  only, to say which photographic materials each preset was modelled
+  on. This is an independent product, not affiliated with, sponsored
+  by or endorsed by any film manufacturer. See TRADEMARKS.txt.
+
+  Full license texts ship alongside this file: LICENSE-GPLv3.txt and
+  SPEKTRAFILM_LICENSE.txt. See NOTICE.txt for the complete attribution.
+  -------------------------------------------------*/
+
+
+
+// Input settings
+DEFINE_UI_PARAMS(in_gamut, 🎥 Gamut, DCTLUI_COMBO_BOX, 15, {i_xyz, i_ap0, i_ap1, i_p3d65, i_rec2020, i_rec709, i_awg3, i_awg4, i_rwg, i_sgamut3, i_sgamut3cine, i_vgamut, i_bmdwg, i_egamut, i_egamut2, i_davinciwg}, {XYZ, ACES 2065-1, ACEScg, P3D65, Rec.2020, Rec.709, Arri Wide Gamut 3, Arri Wide Gamut 4, Red Wide Gamut RGB, Sony SGamut3, Sony SGamut3Cine, Panasonic V-Gamut, Blackmagic Wide Gamut, Filmlight E-Gamut, Filmlight E-Gamut2, DaVinci Wide Gamut})
+DEFINE_UI_PARAMS(in_oetf, 🎥 Log Curve, DCTLUI_COMBO_BOX, 1, {ioetf_linear, ioetf_davinci_intermediate, ioetf_filmlight_tlog, ioetf_acescct, ioetf_arri_logc3, ioetf_arri_logc4, ioetf_redlog3g10, ioetf_panasonic_vlog, ioetf_sony_slog3, ioetf_fuji_flog}, {Linear, Davinci Intermediate, Filmlight T-Log, ACEScct, Arri LogC3, Arri LogC4, RedLog3G10, Panasonic V-Log, Sony S-Log3, Fuji F-Log2})
+
+// Tonescale Parameters
+DEFINE_UI_PARAMS(tn_Lp, ☀ Peak nits, DCTLUI_SLIDER_FLOAT, 100.0, 100.0, 1000.0, 1.0)
+// Les trois reglages d'OpenDRT qui avaient ete cables en dur a leurs valeurs
+// par defaut. Rendus a l'utilisateur, avec ces memes valeurs par defaut : un
+// projet existant rend donc exactement pareil qu'avant.
+DEFINE_UI_PARAMS(tn_gb, ☀ HDR_Grey_Boost, DCTLUI_SLIDER_FLOAT, 0.13, 0.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(tn_gb, "How much middle grey is lifted as the display peak rises above 100 nits. It does nothing at 100 nits, which is why it only matters on an HDR display: there, holding grey where SDR puts it leaves the picture looking dim against the headroom above it. 0.13 is OpenDRT's own value.")
+DEFINE_UI_PARAMS(pt_hdr, ☀ HDR_Purity, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(pt_hdr, "How much of the extra headroom on an HDR display is spent holding colour rather than lightness. Like HDR Grey Boost it does nothing at 100 nits. Higher keeps saturated highlights coloured further up; lower lets them give way to white as they do in SDR.")
+DEFINE_UI_PARAMS(out_clamp, ✂ Clamp_To_Display, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_TOOLTIP(out_clamp, "Clips the result into the range the display can actually show. Leave it ON for anything you are looking at or delivering. Turn it OFF only to pass the render on to something downstream that wants the values that fell outside - a grade, a comp, an export in a wider space - because what leaves here will then contain negatives and values above one.")
+
+// Clamp
+
+DEFINE_UI_PARAMS(crv_enable, 📈 Curve View, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(crv_size, 📐 Curve Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.2, 1.0, 0.01)
+DEFINE_UI_PARAMS(fc_overlay, 🌈 False_Color, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(fc_overlay, "Replaces the picture with exposure zones, read from the SCENE before any rendering - so it tells you what the camera gave you, not what the look did with it. It does not paint every stop: everything outside a decision zone stays a plain grey ramp, so you keep reading the frame, and only the four things worth a decision get a colour. GREEN is 18 percent grey, PINK is where skin should fall, YELLOW is one stop under the clip, RED is clipped. BLUE and VIOLET at the bottom mark deep shadow and crushed black. The legend down the left shows every stop with its own colour, so it cannot disagree with the image. Turn it OFF before you render.")
+DEFINE_UI_PARAMS(skin_check, 🧑 Skin_Check, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(legend, 📋 Legend, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_TOOLTIP(legend, "Draws the legend of whichever scope is on - the exposure zones for False Color, the four steps of the scale for Skin Check. One switch for both: they are never both on, and having to remember which checkbox belonged to which scope was the sort of thing you only discover while hunting for it. Turn it off once you know the scale and want the whole frame back.")
+DEFINE_UI_TOOLTIP(skin_check, "Paints skin by how far it sits off the vectorscope's skin tone line, and reads exactly like the scope: YELLOW means on the line, GREEN that the tone has gone too green or too cool, MAGENTA too magenta or too warm, and the stronger the paint the further off it is. The face keeps its modelling under the paint, so you can see WHICH part of it is drifting instead of a flat sticker. Only colours that could plausibly be skin are painted - too little chroma, too much chroma or too little light and the pixel is left alone, so a red dress or a bowl of fruit does not come up as a face. The bar along the bottom is the same scale as the paint, with a white tick on the line. Turn it OFF before you render.")
+
+
+
+
+
+/*--------------------------------------------------------------------------------------
+  Due to the limited nature of DCTL, I've made the choice to only expose the presets
+  and not the full parameter space. For those of you who are too curious for your own good
+  and interested in experimenting...
+
+!!! TO ENABLE STICKSHIFT MODE FOR CUSTOM LOOK CREATION:
+    1. **UN-COMMENT** the lines below, including the define INIT_PARAMS line. This enables all of the user parameters.
+    2. Comment out the lines below that for the preset parameters (You can leave them enabled, but they won't do anything)
+
+  Tip 1: If you are using a modern text editor like VSCode,
+    you can comment or un-comment multiple selected lines with Ctrl+/
+  Tip 2: You can use the Nuke node to create a preset and click the "Show DCTL" button
+    to show code for the below with your custom parameter values. Or add your own presets
+    in the LOOK PRESETS section around line 464.
+---------------------------------------------------------------------------------------*/
+
+
+// #define INIT_PARAMS
+
+// DEFINE_UI_PARAMS(_tn_Lg, Grey Luminance, DCTLUI_SLIDER_FLOAT, 11.1, 4.0, 25.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_con, Contrast, DCTLUI_SLIDER_FLOAT, 1.4, 1.0, 2.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_sh, Shoulder Clip, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_toe, Toe, DCTLUI_SLIDER_FLOAT, 0.003, 0.0, 0.1, 0.0)
+// DEFINE_UI_PARAMS(_tn_off, Offset, DCTLUI_SLIDER_FLOAT, 0.005, 0.0, 0.02, 0.0)
+// DEFINE_UI_PARAMS(_tn_hcon_enable, Enable Contrast High, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_tn_hcon, Contrast High, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_hcon_pv, Contrast High Pivot, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 4.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_hcon_st, Contrast High Strength, DCTLUI_SLIDER_FLOAT, 4.0, 0.0, 4.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_lcon_enable, Enable Contrast Low, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_tn_lcon, Contrast Low, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 3.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_lcon_w, Contrast Low Width, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 2.0, 0.0)
+// DEFINE_UI_PARAMS(_tn_lcon_pc, Contrast Low Per-Channel, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_cwp, 🌡 White, DCTLUI_COMBO_BOX, 0, {_cwp0, _cwp1, _cwp2, _cwp3}, {D65, D60, D55, D50})
+// DEFINE_UI_PARAMS(_cwp_rng, 🌡 White Range, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_rs_sa, Render Space Strength, DCTLUI_SLIDER_FLOAT, 0.35, 0.0, 0.6, 0.0)
+// DEFINE_UI_PARAMS(_rs_rw, Render Space Red Weight, DCTLUI_SLIDER_FLOAT, 0.25, 0.0, 0.8, 0.0)
+// DEFINE_UI_PARAMS(_rs_bw, Render Space Blue Weight, DCTLUI_SLIDER_FLOAT, 0.55, 0.0, 0.8, 0.0)
+// DEFINE_UI_PARAMS(_pt_r, Purity Compress R, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 4.0, 0.0)
+// DEFINE_UI_PARAMS(_pt_g, Purity Compress G, DCTLUI_SLIDER_FLOAT, 2.0, 0.0, 4.0, 0.0)
+// DEFINE_UI_PARAMS(_pt_b, Purity Compress B, DCTLUI_SLIDER_FLOAT, 2.0, 0.0, 4.0, 0.0)
+// DEFINE_UI_PARAMS(_pt_rng_low, Purity Range Low, DCTLUI_SLIDER_FLOAT, 0.2, 0.1, 0.6, 0.0)
+// DEFINE_UI_PARAMS(_pt_rng_high, Purity Range High, DCTLUI_SLIDER_FLOAT, 0.8, 0.25, 2.0, 0.0)
+// DEFINE_UI_PARAMS(_ptl_enable, Enable Purity Compress Low , DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_ptm_enable, Enable Mid Purity, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_ptm_low, Mid Purity Low, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_ptm_low_st, Mid Purity Low Strength, DCTLUI_SLIDER_FLOAT, 0.5, 0.1, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_ptm_high, Mid Purity High, DCTLUI_SLIDER_FLOAT, -0.8, -0.9, 0.0, 0.0)
+// DEFINE_UI_PARAMS(_ptm_high_st, Mid Purity High Strength, DCTLUI_SLIDER_FLOAT, 0.3, 0.2, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_brl_enable, Enable Brilliance, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_brl_r, Brilliance R, DCTLUI_SLIDER_FLOAT, -0.5, -1.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_brl_g, Brilliance G, DCTLUI_SLIDER_FLOAT, -0.4, -1.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_brl_b, Brilliance B, DCTLUI_SLIDER_FLOAT, -0.2, -1.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_brl_c, Brilliance C, DCTLUI_SLIDER_FLOAT, 0.0, -0.5, 0.5, 0.0)
+// DEFINE_UI_PARAMS(_brl_m, Brilliance M, DCTLUI_SLIDER_FLOAT, 0.0, -0.5, 0.5, 0.0)
+// DEFINE_UI_PARAMS(_brl_y, Brilliance Y, DCTLUI_SLIDER_FLOAT, 0.0, -0.5, 0.5, 0.0)
+// DEFINE_UI_PARAMS(_brl_rng, Brilliance Range, DCTLUI_SLIDER_FLOAT, 0.66, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_rgb_enable, Enable Hueshift RGB, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_hs_r, Hueshift R, DCTLUI_SLIDER_FLOAT, 0.35, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_g, Hueshift G, DCTLUI_SLIDER_FLOAT, 0.25, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_b, Hueshift B, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_rgb_rng, Hueshift RGB Range, DCTLUI_SLIDER_FLOAT, 0.6, 0.25, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_cmy_enable, Enable Hueshift CMY, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_hs_c, Hueshift C, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_m, Hueshift M, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hs_y, Hueshift Y, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.0)
+// DEFINE_UI_PARAMS(_hc_enable, Enable Hue Contrast, DCTLUI_CHECK_BOX, 1)
+// DEFINE_UI_PARAMS(_hc_r, Hue Contrast R, DCTLUI_SLIDER_FLOAT, 0.6, 0.0, 1.0, 0.0)
+
+
+// DEFINE_UI_PARAMS(_display_gamut, Display Gamut, DCTLUI_COMBO_BOX, 0, {Rec709, P3D65, Rec2020}, {Rec.709, P3-D65, Rec.2020 (P3 Limited)})
+// DEFINE_UI_PARAMS(_eotf, Display EOTF, DCTLUI_COMBO_BOX, 2, {eotf0, eotf1, eotf2, eotf3, eotf4, eotf5}, {Linear, 2.2 Power sRGB Display, 2.4 Power Rec.1886, 2.6 Power DCI, ST 2084 PQ, HLG})
+
+
+/*---------------------------------------------------------------------------------------
+!!! TO ENABLE STICKSHIFT MODE FOR CUSTOM LOOK CREATION: **COMMENT OUT** the preset parameters below.
+---------------------------------------------------------------------------------------*/
+
+// Look
+DEFINE_UI_PARAMS(look_preset, 🎞 Look, DCTLUI_COMBO_BOX, 0, {look0, look1, look2, look3, look4, look5, look6, look7}, {Default, Vision3 250D / 2383, Vision3 500T / 2383, Vision3 250D / 2393, Portra 400 / Endura, Ektar 100 / Ultra Endura, Pro 400H / Crystal Archive, Gold 200 / Supra Endura})
+DEFINE_UI_PARAMS(look_bypass, 🚫 Bypass Look, DCTLUI_CHECK_BOX, 0)
+// Print Toning
+DEFINE_UI_PARAMS(print_tone_sel, 🎨 Toning, DCTLUI_COMBO_BOX, 0, {ptn0, ptn1, ptn2, ptn3, ptn4, ptn5, ptn6, ptn7, ptn8}, {Use Look Preset, Off, Vision3 250D / 2383, Vision3 500T / 2383, Vision3 250D / 2393, Portra 400 / Endura, Ektar 100 / Ultra Endura, Pro 400H / Crystal Archive, Gold 200 / Supra Endura})
+DEFINE_UI_PARAMS(tone_bypass, 🚫 Bypass Toning, DCTLUI_CHECK_BOX, 0)
+// Creative White
+DEFINE_UI_PARAMS(wb_preset, 🌡 Illuminant, DCTLUI_COMBO_BOX, 0, {wb0, wb1, wb2, wb3, wb4, wb5, wb6, wb7, wb8, wb9, wb10, wb11, wb12, wb13, wb14, wb15, wb16, wb17}, {Native - no correction, 1800K Candle, 2400K Sodium, 2700K Domestic tungsten, 3200K Studio tungsten, 3600K Pushed halogen, 4000K Warm white fluorescent, 4300K Mixed dawn, 4800K Flash / Xenon, 5000K D50 print, 5600K Daylight HMI, 6000K Midday sun, 6500K D65 monitor, 7000K Hazy sky, 7500K Open shade, 8500K Blue shade, 10000K North sky, 12000K Glacier blue})
+DEFINE_UI_TOOLTIP(🌡 Illuminant, "Which light the scene was actually lit by. Native is a true bypass - no correction at all, not a correction that happens to cancel. Anything else declares the illuminant, and the picture is adapted from it to the working space's own white with a Bradford transform. Pick the entry, or leave it on Native and dial Kelvin by hand below.")
+DEFINE_UI_PARAMS(wb_kelvin, 🔆 Kelvin, DCTLUI_SLIDER_FLOAT, 6504.0, 1800.0, 20000.0, 1.0)
+DEFINE_UI_TOOLTIP(🔆 Kelvin, "The illuminant in Kelvin, read by hand rather than picked from the list. It only takes over when Illuminant is on Native. 6504 is the working space's own white, so leaving it there is an exact bypass in every space rather than a small parasitic drift.")
+DEFINE_UI_PARAMS(wb_temp, 🔥 Temp, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(🔥 Temp, "Fine trim on the illuminant, in MIRED rather than in Kelvin - which is why it feels even in both directions where a Kelvin trim does not: 100 K at 3200 K is a visible move and 100 K at 10000 K is nothing, while a mired is a mired everywhere. Full travel is 60 mired, so from 6504 K it reaches about 4700 K one way and about 10600 K the other. It was 300 mired in NODE_WB, which sounds stronger and was in fact WEAKER: from 6504 K the positive half hit the 25000 K wall at 0.38 of the travel, so three fifths of that side of the slider was the same picture.")
+DEFINE_UI_PARAMS(wb_tint, 🌿 Tint, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(🌿 Tint, "Green / magenta, across the locus rather than along it - so it moves the white in the one direction Kelvin cannot reach. Full travel is 0.012 Duv. It was 0.025 in NODE_WB, which at low Kelvin pushed the white point outside the CIE triangle, where the adaptation degenerates and the safety floor has to clamp the gain; at 0.012 the whole travel stays in the well-behaved region at any usable Kelvin. The direction is taken on the PLANCKIAN locus, which is how Duv is defined and which also fixes a measured fault: taken on the blended locus, the tint axis was 42.8 degrees off at 4000 K and negative tint went blue-magenta instead of magenta.")
+DEFINE_UI_PARAMS(wb_bypass, ↩ Bypass_Illuminant, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(↩ Bypass_Illuminant, "Switches the whole illuminant block off - preset, Kelvin, Temp and Tint together - without touching any of their values. It leaves Creative White below it alone, so you can A/B the white balance against the creative whitepoint separately.")
+DEFINE_UI_PARAMS(cw_bypass, ↩ Bypass_White, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(cw_bypass, "Switch the creative white point off and return to D65, the calibrated neutral of the display.")
+DEFINE_UI_PARAMS(_cwp, 🌡 White, DCTLUI_COMBO_BOX, 4, {_cwp0, _cwp1, _cwp2, _cwp3, _cwp4}, {D65, D60, D55, D50, Use Look Preset})
+DEFINE_UI_PARAMS(_cwp_rng, 🌡 White Range, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.001)
+// Trim
+// Color — chroma, path to white, white onset
+// Les trois sont NEUTRES par defaut. Dans ce moteur, la quantite de path to
+// white et son seuil viennent du look choisi ; des valeurs absolues ici
+// ecraseraient le look a chaque fois qu'on le change. Ce sont donc des trims :
+// a la valeur de repos, le look decide, et des qu'on bouge, on corrige SON
+// reglage au lieu de le remplacer.
+DEFINE_UI_PARAMS(col_weight, 🌑 Color_Weight, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(col_weight, "The darkening that comes with colour, ported from NODE_CHROMADRIVE. In a subtractive process laying down dye DARKENS: a saturated colour is not as bright as a neutral of the same hue, and a photometric render alone never says so. Driven by the chroma itself, measured in the log density plane. It fades out in the deep shadows, and that is physics rather than caution - a negative cannot build density below its own base fog. A neutral has zero chroma by construction, so no grey can move at any setting: that is algebra, not a preserve-neutrals switch.")
+DEFINE_UI_PARAMS(col_dens, 📈 Color_Density, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(col_dens, "Contrast in the density domain, with no colour term at all - ported from NODE_CHROMADRIVE, where it earns its own control for exactly that reason. Odd and bounded: below grey the shadows deepen, above it the highlights lift, and it is EXACTLY zero at 18 percent grey so the pivot cannot drift. The shape is its own safety - it saturates at 0.70 stop however extreme the exposure gets, so no separate ceiling is needed. Negative runs it backwards, which the original did not offer. It is not the same tool as Log Contrast: that one shapes the code values through an S-curve, this one shifts density in stops, so it keeps its slope where a log S-curve is already flattening. Measured on this engine, its shadow half is the stronger one: at -1.00 it lifts -6 stops by 1.83 stop but only pulls +6 stops down by 0.05, because the render's own shoulder has already flattened the top before this can reach it. That is honest behaviour for a density control rather than a fault, and it tells you where to reach instead - Brilliance and Highlight Density are the highlight tools.")
+DEFINE_UI_PARAMS(col_bypass, ↩ Bypass_Color, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(col_bypass, "Switch the Color group off and return to what the selected look asks for.")
+DEFINE_UI_PARAMS(col_chroma, 🎨 Chroma, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 2.0, 0.001)
+DEFINE_UI_TOOLTIP(col_chroma, "Overall colour intensity, applied at the very end of the render on the distance from the achromatic axis. At 1.00 the render is untouched. At 0 the picture is monochrome. It scales what the transform has already decided rather than feeding more saturation into it, so pushing it up cannot drive a colour back outside the display. The travel runs 0 to 2 so that 1.00 - no change - sits in the MIDDLE of the slider rather than at three quarters: the same drag distance now buys the same amount of change in either direction, and there is as much room to push as to pull.")
+DEFINE_UI_PARAMS(col_ptw, 💡 Path_To_White, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 2.0, 0.001)
+DEFINE_UI_TOOLTIP(col_ptw, "How completely colour gives way as a pixel approaches peak output. 1.00 keeps the amount the selected look asks for, which is what a real medium does: no film holds saturation at peak, because peak IS white. Lower it and bright saturated light stops giving way, which clips into flat slabs of primary - useful deliberately, rarely by accident. It now works in BOTH directions: 1.00 is the look untouched, below it holds colour back from going white, above it bleaches further than the look ever would. Before, the default sat at the very end of the travel and the control could only subtract. Measured on a red at +5 stops, saturation runs 0.90 at 0.00, 0.56 at 1.00 and 0.25 at 2.00. It is an exponent rather than a mix, so 1.00 is the exact identity and there is no clip anywhere on the travel - the clipped form is what cost Highlight Purity a 241x break on blue before it was rebuilt the same way.")
+DEFINE_UI_PARAMS(col_onset, 🕯 White_Onset, DCTLUI_SLIDER_FLOAT, 0.0, -0.5, 0.5, 0.001)
+DEFINE_UI_TOOLTIP(col_onset, "Shifts WHERE the path to white begins, without changing how much of it there is. 0.00 leaves the look's own onset. Negative starts it earlier, for a softer and more forgiving highlight; positive starts it later, holding colour closer to the top - which is what keeps neon tubes and LED practicals from going pastel a couple of stops over. The shift is a RATIO now, not a sum, and that fixed a dead half: with the looks' own onset sitting between 0.17 and 0.44, the old additive form hit its floor by -0.15, so on Default everything below that was the same picture - measured at 0.866 for both -0.50 and -0.25, digit for digit. In ratio there is no wall: the factor runs from x1.74 to x0.57 and the highest of the eight looks still lands well inside. Measured on a sky at +3 stops, saturation now runs 0.693 / 0.634 / 0.560 / 0.482 / 0.406 across the travel - five distinct curves.")
+DEFINE_UI_PARAMS(trim_bypass, ↩ Bypass_Trims, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(trim_bypass, "Switch all six trims off in one click, to compare the trimmed picture against the look as it comes.")
+
+DEFINE_UI_PARAMS(trim_con, 🌗 Log Contrast, DCTLUI_SLIDER_FLOAT, 0.0, -0.5, 1.0, 0.0001)
+DEFINE_UI_PARAMS(trim_piv, ⚖ Pivot, DCTLUI_SLIDER_FLOAT, 0.336, 0.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(trim_ovl, 🌗 Overlay, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(trim_ovl, "The Overlay composite mode of a node blended onto itself, ported from NODE_Composite2. Because source and backdrop are the same pixel it becomes a pure S-curve, and it runs in LOG, where its pivot sits about 2.3 stops above grey - so it bites into the top of the midtones rather than around grey, which is what gives it a different character from Log Contrast. Negative runs the operation backwards. It carries the chroma-gain limiter from the original: the operator works channel by channel, so it multiplies the gap between channels and therefore the chroma, and without the limiter a saturated colour lands far out of gamut for the render downstream to flatten. It is drawn on the Curve View, because unlike the highlight trims it does move a neutral.")
+DEFINE_UI_PARAMS(trim_sh, 🌑 Shadows, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(trim_hp, 🔆 Highlight Purity, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(trim_hd, 🌚 Highlight_Density, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(trim_hd, "The partner to Highlight Purity, and it works on the other half of the problem. Purity decides how much COLOUR a bright pixel keeps; this decides how much LIGHT it carries - and light is what the colour needs somewhere to live in. Hold a saturated sky at full purity and its strongest channel pins at 1.000: the colour is there, the gradation is gone, and the highlight reads as a flat slab. Adding density lowers that highlight, the pinned channel comes off the ceiling, and the shape inside it comes back. It is what a dye layer does - a saturated colour on film is DARKER than a neutral of the same luminance, which is exactly why film has room above a red. Scaled by how saturated the pixel is, so a neutral highlight is never touched, and confined to the top of the scale, so it cannot reach into the midtones. The slider only ADDS density, from nothing to a stop and a third. It does not go the other way on purpose: lifting a saturated highlight pushes it into the ceiling, and a gain that fades as it approaches that ceiling makes the picture go DARKER as the light rises - measured at 233 times the surrounding curvature, which is the very defect this control exists to repair. Use Brilliance if you want a saturated highlight to sit higher. Not drawn on the Curve View, and here the reason is exact rather than small: the gain is scaled by the scene saturation, which is identically zero on a neutral - measured at 1.8e-07 over 15 stops, pure float noise - while the same setting moves saturated content by 0.24. There is literally nothing to plot.")
+DEFINE_UI_PARAMS(trim_br, 💎 Brilliance, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(trim_hs, 🏵 Highlight Saturation, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(trim_hs, "Colour in the upper midtones and the lower highlights - and it is not another Highlight Purity. Measured on a saturated orange climbing through the scale: this one peaks around four and a half stops over and then EASES, so the very top still goes to white, and it costs almost no lightness doing it. Highlight Purity instead climbs all the way and holds the top back from white, which is its job, and costs seven times more lightness. Right makes a bright colour stay a colour instead of turning pale as it brightens. Left is the same axis the other way: the colour gives way earlier and more gently on the way up, for a creamy shoulder, the way an older print behaves. The top reaches white either way. Not drawn on the Curve View: measured over 15 stops it moves a neutral by 0.0004, well under half a 10-bit code, against 0.22 on saturated content.")
+DEFINE_UI_PARAMS(trim_mp, 🌿 Mid Purity, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(trim_mp, "Colour density of the midtones, where skin, foliage and skies live - and the only trim that works in the scene, alongside Color Weight and Color Density. It scales chroma in the DENSITY domain, anchored on the channel carrying the LEAST dye: that channel stays where it is and the others gain density, which is what a purer set of dyes actually does. So a colour DARKENS slightly as it enriches, about nine ten-bit codes at full travel on skin - that is the behaviour, not a side effect, and it is the same thing Color Weight does on purpose. The anchor is not a detail: an earlier version preserved the mean level instead, which sounds cleaner but means lowering the weak channel RAISES the other two, and the render divides by a norm those two dominate, so the weak channel took the same correction twice. Measured at equal rendered chroma it broke ramps at 1.30 percent against 0.83 for the Chroma slider - worse than a control already shipping, for the same result. Anchored on the strongest channel there is only one effect, and it is the same model Chroma uses, so the two handle alike. On a neutral all three densities are equal, so there is nothing to scale: a grey cannot move at any setting - measured at 2e-08 over the whole range, which is float noise. Because it sits in the scene, the tonescale and the path to white then RESPOND to what it puts down - you get an emulsion that carried more dye through the midrange, not a saturation pasted onto a render that has already decided. Right enriches, left goes pastel and the midrange turns chalky in a way a faded print does. The band is read on exposure relative to 18 percent grey with the same anchor Color Density uses, so it falls in the same place on all eight looks, and it is exactly zero beyond three and a half stops from its pivot - it cannot reach where Highlight Purity and Highlight Density work, so it never argues with them. What it cannot do is make a badly behaved look behave: on saturated foliage, sky and cyan the print looks break a ramp on their own, measured at 3.3 percent with every control at zero, and any control that adds chroma shows that up - this one at 4.8 percent worst case against 4.1 for Chroma. The limit there is the look, not the slider. Not drawn on the Curve View: a neutral has no chroma to scale, so there is nothing to plot.")
+DEFINE_UI_PARAMS(trim_mp_pv, 🌿 Mid Purity_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, -2.0, 2.0, 0.001)
+DEFINE_UI_TOOLTIP(trim_mp_pv, "Where Mid Purity acts, in stops above or below 18 percent grey. Aim it: foliage and shadowed skin sit around one to two stops under, lit faces around half a stop under to grey, open sky and bright cloth one to two stops over. At 0 the band is centred on grey and spans three and a half stops either side, which covers the midrange as a whole - move it only when you want one of those things and not the others. Does nothing on its own; it only places Mid Purity.")
+// Tonescale
+DEFINE_UI_PARAMS(tone_curve_bypass, ↩ Bypass_Tone, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(tone_curve_bypass, "Return the tonescale to the one the selected look carries, ignoring the Tonescale menu above.")
+DEFINE_UI_PARAMS(tonescale_preset, 📈 Tonescale, DCTLUI_COMBO_BOX, 0, {tsprst0, tsprst1, tsprst2, tsprst3, tsprst4, tsprst5, tsprst6, tsprst7, tsprst8, tsprst9}, {Use Look Preset, Contrast, Low Contrast, ACES 1.x, ACES 2.0, Cinema, Gentle, Soft, Medium, Punchy})
+DEFINE_UI_TOOLTIP(tonescale_preset, "Replaces the tone curve the selected look carries. Use Look Preset leaves the look's own curve alone, which is what you want unless you are deliberately putting a different response under a look's colour. The others are named for what they measurably do, from the steepest to the softest: Punchy has the hardest foot and places grey low, Cinema places grey low with a long shoulder, Medium and Gentle ease off in that order, Soft has the longest foot and the deepest black, Low Contrast is the flattest. ACES 1.x and ACES 2.0 are the published standards, there to match a delivery that asks for them. CONTRAST is the odd one out and the only one you can leave on: instead of replacing the look's curve it tilts it, giving the look's own slope multiplied by 1.15, with 18 percent grey solved back to exactly where the look had it so your camera exposure does not move. Every other entry in this menu does move grey - Cinema and Punchy by more than half a stop, the two ACES by about a tenth - because placing grey somewhere else is part of what those curves are.")
+// Credits
+DEFINE_UI_PARAMS(credits, ℹ Credits, DCTLUI_COMBO_BOX, 0, {cr0, cr1, cr2, cr3, cr4, cr5, cr6, cr7, cr8, cr9}, {NODE_DRT by Samuel Drouin, Modified OpenDRT v1.0.1 - licensed GPLv3, Rendering engine - OpenDRT by Jed Smith, github.com/jedypod/open-display-transform, Look presets fitted against spektrafilm LUTs, spektrafilm by Andrea Volpato - CC BY-SA 4.0, github.com/andreavolpato/spektrafilm, Film names are trademarks of their owners - see TRADEMARKS.txt, Redistribution must stay GPLv3 with source, See NOTICE.txt for full attribution})
+// Display Encoding
+DEFINE_UI_PARAMS(display_encoding_preset, 🖥 Output, DCTLUI_COMBO_BOX, 0, {rec1886, srgb, displayp3, rec2100pq, rec2100hlg, dolbypq}, {Rec.1886 - 2.4 Power / Rec.709, sRGB Display - 2.2 Power / Rec.709, Display P3 - 2.2 Power / P3-D65, Rec.2100 - PQ / Rec.2020 (P3 Limited), Rec.2100 - HLG / Rec.2020 (P3 Limited), Dolby - PQ / P3-D65})
+// Intensity
+DEFINE_UI_PARAMS(look_intensity, 🎚 Look Intensity, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(tone_intensity, 🎨 Toning Intensity, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 2.0, 0.001)
+
+/*---------------------------------------------------------------------------------------*/
+
+
+
+
+/*----------- Tooltips -----------------*/
+#if ((__RESOLVE_VER_MAJOR__ > 19)) || ((__RESOLVE_VER_MAJOR__ == 19) && (__RESOLVE_VER_MINOR__ >= 1))
+
+DEFINE_UI_TOOLTIP(☀ Peak nits, "Peak display luminance in nits. In SDR, the max value stays pinned at 1.0. In HDR, the max value is adjusted to match peak luminance in the HDR container.")
+DEFINE_UI_TOOLTIP(🌡 White, "Set the creative whitepoint of the display peak luminance. With D65 all channels are equal. With D50, the peak luminance value will match a D50 whitepoint. This can be creatively desireable. This adjustment is applied post-tonescale.")
+DEFINE_UI_TOOLTIP(🌡 White Range, "The intensity range affected by the Creative White adjustment. At 1.0, the entire intensity range is affected. As Range is decreased, more of midtones and shadows are left unaffected. It can be creatively desireable to keep midtones more neutral while shifting highlights warmer.")
+DEFINE_UI_TOOLTIP(📈 Curve View, "Draws a visualization of the tonescale curve. A semi-log plot over ~ -0.005 to 128, with display encoding added.")
+DEFINE_UI_TOOLTIP(🎥 Gamut, "The colour space the picture arrives in. On a DaVinci YRGB timeline set to DaVinci Wide Gamut this is DaVinci WG, which is the default. Get this wrong and every hue is wrong, so it is the first thing to check if the image looks off before you touch anything else.")
+DEFINE_UI_TOOLTIP(🎥 Log Curve, "The transfer curve the picture arrives in, paired with Gamut above. DaVinci Intermediate for a DaVinci WG timeline, Linear if the node is fed scene-linear. Wrong here shows up as crushed or washed contrast rather than wrong colour.")
+DEFINE_UI_TOOLTIP(🎞 Look, "Each preset fits OpenDRT to a spectral simulation of one negative printed on one print stock. Stock names are trademarks of their owners, used descriptively - this is an emulation, not the stock. See TRADEMARKS.txt.")
+DEFINE_UI_TOOLTIP(🖥 Output, "Choose the target display standard.")
+DEFINE_UI_TOOLTIP(ℹ Credits, "MODIFIED version of OpenDRT v1.0.1 by Jed Smith, licensed GPLv3. All credit for the image rendering is his. The seven looks are OpenDRT parameter values fitted against reference LUTs generated with spektrafilm by Andrea Volpato, CC BY-SA 4.0. No LUT data is embedded. Selling this is allowed; closing it is not - any redistribution must stay GPLv3 with source. Full attribution in NOTICE.txt.")
+DEFINE_UI_TOOLTIP(🌗 Log Contrast, "S-curve applied to the log signal before the render, which is why its pivot reads in log. Runs ahead of the look, so it stacks on any preset, and it is not the print stock contrast of the look itself.")
+DEFINE_UI_TOOLTIP(⚖ Pivot, "The pivot, absolute and readable. 0.336 is 18 percent grey, so grey holds while you turn Contrast. One stop down is 0.267, one up 0.407, diffuse white 0.514. Idle while Contrast is 0.")
+DEFINE_UI_TOOLTIP(📐 Curve Size, "Shrinks the Curve View plot towards the centre of the frame, to fit it inside the picture when the format carries black bars. Line thickness is in pixels, so it stays as fine. No effect on the render.")
+DEFINE_UI_TOOLTIP(🌑 Shadows, "Reopens the bottom of the curve. A gain above the black floor, not an offset: black stays black, no milky veil, no hue drift. Grey and white do not move.")
+DEFINE_UI_TOOLTIP(🔆 Highlight Purity, "Path to white: how fast saturated highlights lose their hue. Up keeps neons, skies and fire coloured further. Hue bleached here cannot be recovered downstream. Not drawn on the Curve View, and that is measured rather than assumed: the plot traces a NEUTRAL ramp, and over 15 stops this control moves a neutral by at most 0.0005 - half a 10-bit code, thinner than the line itself. On saturated content it moves the picture by 0.31. It is a colour control, so the place to watch it is the picture, not the curve.")
+DEFINE_UI_TOOLTIP(💎 Brilliance, "Lightness of saturated colour, neutrals untouched. Up stops saturated reds going black, down adds density. Mostly reds, oranges and magentas. Not drawn on the Curve View: measured over 15 stops it moves a neutral by 0.0007, half a 10-bit code, against 0.03 on saturated content.")
+DEFINE_UI_TOOLTIP(🎨 Toning Intensity, "Dials the tint alone, on top of Look Intensity. Past 1 it pushes beyond the reference. If Look Intensity is 0, so is this.")
+DEFINE_UI_TOOLTIP(Bypass Toning, "Kills the tint only. Contrast and saturation stay put; the neutral axis goes perfectly grey.")
+DEFINE_UI_TOOLTIP(Bypass Look, "Drops the look. Same as Intensity at 0: exactly the Default render, toning included.")
+DEFINE_UI_TOOLTIP(🎚 Look Intensity, "Dials the look in. 1 is the full preset, 0 is exactly Default. In between it interpolates every parameter, which is cleaner than a dissolve.")
+DEFINE_UI_TOOLTIP(🎨 Toning, "Which per-level RGB tint to apply. The first entry, Use Look Preset, takes the one that belongs to the selected look.")
+
+DEFINE_UI_TOOLTIP(🌡 White, "Set the creative whitepoint of the display peak luminance. With D65 all channels are equal. With D50, the peak luminance value will match a D50 whitepoint. This can be creatively desireable. This adjustment is applied post-tonescale.")
+DEFINE_UI_TOOLTIP(🌡 White Range, "The intensity range affected by the Creative White adjustment. At 1.0, the entire intensity range is affected. As Range is decreased, more of midtones and shadows are left unaffected. It can be creatively desireable to keep midtones more neutral while shifting highlights warmer.")
+
+#endif
+
+
+
+// Gamut Conversion Matrices
+#define matrix_ap0_to_xyz make_float3x3(make_float3(0.93863094875f, -0.00574192055f, 0.017566898852f), make_float3(0.338093594922f, 0.727213902811f, -0.065307497733f), make_float3(0.000723121511f, 0.000818441849f, 1.0875161874f))
+#define matrix_ap1_to_xyz make_float3x3(make_float3(0.652418717672f, 0.127179925538f, 0.170857283842f), make_float3(0.268064059194f, 0.672464478993f, 0.059471461813f), make_float3(-0.00546992851f, 0.005182799977f, 1.08934487929f))
+#define matrix_rec709_to_xyz make_float3x3(make_float3(0.412390917540f, 0.357584357262f, 0.180480793118f), make_float3(0.212639078498f, 0.715168714523f, 0.072192311287f), make_float3(0.019330825657f, 0.119194783270f, 0.950532138348f))
+#define matrix_p3d65_to_xyz make_float3x3(make_float3(0.486571133137f, 0.265667706728f, 0.198217317462f), make_float3(0.228974640369f, 0.691738605499f, 0.079286918044f), make_float3(0.0f, 0.045113388449, 1.043944478035f))
+#define matrix_xyz_to_p3d65 make_float3x3(make_float3(2.49349691194f, -0.931383617919f, -0.402710784451f), make_float3(-0.829488969562f, 1.76266406032f, 0.023624685842f), make_float3(0.035845830244f, -0.076172389268f, 0.956884524008f))
+#define matrix_rec2020_to_xyz make_float3x3(make_float3(0.636958122253f, 0.144616916776f, 0.168880969286f), make_float3(0.262700229883f, 0.677998125553f, 0.059301715344f), make_float3(0.0f, 0.028072696179, 1.060985088348f))
+#define matrix_arriwg3_to_xyz make_float3x3(make_float3(0.638007619284f, 0.214703856337f, 0.097744451431f), make_float3(0.291953779f, 0.823841041511f, -0.11579482051f), make_float3(0.002798279032f, -0.067034235689f, 1.15329370742f))
+#define matrix_arriwg4_to_xyz make_float3x3(make_float3(0.704858320407f, 0.12976029517f, 0.115837311474f), make_float3(0.254524176404f, 0.781477732712f, -0.036001909116f), make_float3(0.0f, 0.0f, 1.08905775076f))
+#define matrix_redwg_to_xyz make_float3x3(make_float3(0.735275208950f, 0.068609409034f, 0.146571278572f), make_float3(0.286694079638f, 0.842979073524f, -0.129673242569f), make_float3(-0.079680845141f, -0.347343206406, 1.516081929207f))
+#define matrix_sonysgamut3_to_xyz make_float3x3(make_float3(0.706482713192f, 0.128801049791f, 0.115172164069f), make_float3(0.270979670813f, 0.786606411221f, -0.057586082034f), make_float3(-0.009677845386f, 0.004600037493f, 1.09413555865f))
+#define matrix_sonysgamut3cine_to_xyz make_float3x3(make_float3(0.599083920758f, 0.248925516115f, 0.102446490178f), make_float3(0.215075820116f, 0.885068501744f, -0.100144321859f), make_float3(-0.032065849545f, -0.027658390679f, 1.14878199098f))
+#define matrix_vgamut_to_xyz make_float3x3(make_float3(0.679644469878f, 0.15221141244f, 0.118600044733), make_float3(0.26068555009f, 0.77489446333f, -0.03558001342), make_float3(-0.009310198218f, -0.004612467044f, 1.10298041602))
+#define matrix_bmdwg_to_xyz make_float3x3(make_float3(0.606538414955f, 0.220412746072f, 0.123504832387f), make_float3(0.267992943525f, 0.832748472691f, -0.100741356611f), make_float3(-0.029442556202f, -0.086612440646, 1.205112814903f))
+#define matrix_egamut_to_xyz make_float3x3(make_float3(0.705396831036f, 0.164041340351f, 0.081017754972f), make_float3(0.280130714178f, 0.820206701756f, -0.100337378681f), make_float3(-0.103781513870f, -0.072907261550, 1.265746593475f))
+#define matrix_egamut2_to_xyz make_float3x3(make_float3(0.736477700184f, 0.130739651087f, 0.083238575781f), make_float3(0.275069984406f, 0.828017790216f, -0.103087774621f), make_float3(-0.124225154248f, -0.087159767391f, 1.3004426724f))
+#define matrix_davinciwg_to_xyz make_float3x3(make_float3(0.700622320175f, 0.148774802685f, 0.101058728993f), make_float3(0.274118483067f, 0.873631775379f, -0.147750422359f), make_float3(-0.098962903023f, -0.137895315886, 1.325916051865f))
+
+// Display gamuts with Normalized adaptation matrices for other creative whitepoints (CAT02)
+#define matrix_p3_to_p3_d50 make_float3x3(make_float3(0.9287127388f, 0.06578032793f, 0.005506708345f), make_float3(-0.002887159176f, 0.8640709228f, 4.3593718e-05f), make_float3(-0.001009551548f, -0.01073503317f, 0.6672692039f))
+#define matrix_p3_to_p3_d55 make_float3x3(make_float3(0.9559790976f, 0.0403850003f, 0.003639287409f), make_float3(-0.001771929896f, 0.9163058305f, 3.3300759e-05f), make_float3(-0.000674760809f, -0.0072466358f, 0.7831189153f))
+#define matrix_p3_to_p3_d60 make_float3x3(make_float3(0.979832881f, 0.01836378979f, 0.001803284786f), make_float3(-0.000805359793f, 0.9618000331f, 1.8876121e-05f), make_float3(-0.000338382322f, -0.003671835795f, 0.894139105f))
+#define matrix_p3_to_rec709_d50 make_float3x3(make_float3(1.103807322f, -0.1103425121f, 0.006531676079f), make_float3(-0.04079386701f, 0.8704694227f, -0.000180522628f), make_float3(-0.01854055914f, -0.07857582481f, 0.7105498861f))
+#define matrix_p3_to_rec709_d55 make_float3x3(make_float3(1.149327514f, -0.1536910745f, 0.004366526746f), make_float3(-0.0412590771f, 0.9351717477f, -0.000116126221f), make_float3(-0.01900949528f, -0.07928282823f, 0.8437884317f))
+#define matrix_p3_to_rec709_d60 make_float3x3(make_float3(1.189986856f, -0.192168414f, 0.002185496045f), make_float3(-0.04168263635f, 0.9927757018f, -5.5660878e-05f), make_float3(-0.01937995127f, -0.07933006919f, 0.9734397041f))
+#define matrix_p3_to_rec709_d65 make_float3x3(make_float3(1.224940181f, -0.2249402404f, 0.0f), make_float3(-0.04205697775f, 1.042057037f, -1.4901e-08f), make_float3(-0.01963755488f, -0.07863604277f, 1.098273635f))
+#define matrix_p3_to_rec2020 make_float3x3(make_float3(0.7538330344f, 0.1985973691f, 0.04756959659f), make_float3(0.04574384897f, 0.9417772198f, 0.01247893122f), make_float3(-0.001210340355f, 0.0176017173f, 0.9836086231f))
+
+
+/* Math helper functions ----------------------------*/
+
+__CONSTANT__ float SQRT3 = 1.73205080756887729353f;
+__CONSTANT__ float PI =  3.14159265358979323846;
+
+typedef struct {
+  float3 x, y, z;
+} float3x3;
+
+// Helper function to create a float3x3
+__DEVICE__ float3x3 make_float3x3(float3 a, float3 b, float3 c) {
+  float3x3 d;
+  d.x = a, d.y = b, d.z = c;
+  return d;
+}
+
+// Return identity 3x3 matrix
+__DEVICE__ float3x3 identity() {
+  return make_float3x3(make_float3(1.0f, 0.0f, 0.0f), make_float3(0.0f, 1.0f, 0.0f), make_float3(0.0f, 0.0f, 1.0f));
+}
+
+// Multiply 3x3 matrix m and float3 vector v
+__DEVICE__ float3 vdot(float3x3 m, float3 v) {
+  return make_float3(m.x.x*v.x + m.x.y*v.y + m.x.z*v.z, m.y.x*v.x + m.y.y*v.y + m.y.z*v.z, m.z.x*v.x + m.z.y*v.y + m.z.z*v.z);
+}
+
+// Safe division of float a by float b
+__DEVICE__ float sdivf(float a, float b) {
+  if (b == 0.0f) return 0.0f;
+  else return a/b;
+}
+
+// Safe division of float3 a by float b
+__DEVICE__ float3 sdivf3f(float3 a, float b) {
+  return make_float3(sdivf(a.x, b), sdivf(a.y, b), sdivf(a.z, b));
+}
+
+// Safe element-wise division of float3 a by float3 b
+__DEVICE__ float3 sdivf3f3(float3 a, float3 b) {
+  return make_float3(sdivf(a.x, b.x), sdivf(a.y, b.y), sdivf(a.z, b.z));
+}
+
+// Safe power function raising float a to power float b
+__DEVICE__ float spowf(float a, float b) {
+  if (a <= 0.0f) return a;
+  else return _powf(a, b);
+}
+
+// Safe power function raising float3 a to power float b
+__DEVICE__ float3 spowf3(float3 a, float b) {
+  return make_float3(spowf(a.x, b), spowf(a.y, b), spowf(a.z, b));
+}
+
+// Return the hypot or vector length of float3 a
+__DEVICE__ float hypotf3(float3 a) { return _sqrtf(a.x*a.x + a.y*a.y + a.z*a.z); }
+
+// Return the min of float3 a
+__DEVICE__ float fmaxf3(float3 a) { return _fmaxf(a.x, _fmaxf(a.y, a.z)); }
+
+// Return the max of float3 a
+__DEVICE__ float fminf3(float3 a) { return _fminf(a.x, _fminf(a.y, a.z)); }
+
+// Clamp float3 a to max value mx
+__DEVICE__ float3 clampmaxf3(float3 a, float mx) { return make_float3(_fminf(a.x, mx), _fminf(a.y, mx), _fminf(a.z, mx)); }
+
+// Clamp float3 a to min value mn
+__DEVICE__ float3 clampminf3(float3 a, float mn) { return make_float3(_fmaxf(a.x, mn), _fmaxf(a.y, mn), _fmaxf(a.z, mn)); }
+
+// Clamp float3 a to min value mn and max value mx
+__DEVICE__ float clampf(float a, float mn, float mx) { return _fminf(_fmaxf(a, mn), mx); }
+__DEVICE__ float3 clampf3(float3 a, float mn, float mx) { return make_float3(clampf(a.x, mn, mx), clampf(a.y, mn, mx), clampf(a.z, mn, mx)); }
+
+
+/* OETF Linearization Transfer Functions ---------------------------------------- */
+
+__DEVICE__ float oetf_davinci_intermediate(float x) {
+    return x <= 0.02740668f ? x/10.44426855f : _exp2f(x/0.07329248f - 7.0f) - 0.0075f;
+}
+__DEVICE__ float oetf_filmlight_tlog(float x) {
+  return x < 0.075f ? (x-0.075f)/16.184376489665897f : _expf((x - 0.5520126568606655f)/0.09232902596577353f) - 0.0057048244042473785f;
+}
+__DEVICE__ float oetf_acescct(float x) {
+  return x <= 0.155251141552511f ? (x - 0.0729055341958355f)/10.5402377416545f : _exp2f(x*17.52f - 9.72f);
+}
+__DEVICE__ float oetf_arri_logc3(float x) {
+  return x < 5.367655f*0.010591f + 0.092809f ? (x - 0.092809f)/5.367655f : (_exp10f((x - 0.385537f)/0.247190f) - 0.052272f)/5.555556f;
+}
+__DEVICE__ float oetf_arri_logc4(float x) {
+  return x < -0.7774983977293537f ? x*0.3033266726886969f - 0.7774983977293537f : (_exp2f(14.0f*(x - 0.09286412512218964f)/0.9071358748778103f + 6.0f) - 64.0f)/2231.8263090676883f;
+}
+__DEVICE__ float oetf_red_log3g10(float x) {
+  return x < 0.0f ? (x/15.1927f) - 0.01f : (_exp10f(x/0.224282f) - 1.0f)/155.975327f - 0.01f;
+}
+__DEVICE__ float oetf_panasonic_vlog(float x) {
+  return x < 0.181f ? (x - 0.125f)/5.6f : _exp10f((x - 0.598206f)/0.241514f) - 0.00873f;
+}
+__DEVICE__ float oetf_sony_slog3(float x) {
+  return x < 171.2102946929f/1023.0f ? (x*1023.0f - 95.0f)*0.01125f/(171.2102946929f - 95.0f) : (_exp10f(((x*1023.0f - 420.0f)/261.5f))*(0.18f + 0.01f) - 0.01f);
+}
+__DEVICE__ float oetf_fujifilm_flog2(float x) {
+  return x < 0.100686685370811f ? (x - 0.092864f)/8.799461f : (_exp10f(((x - 0.384316f)/0.245281f))/5.555556f - 0.064829f/5.555556f);
+}
+
+__DEVICE__ float3 linearize(float3 rgb, int tf) {
+  if (tf==0) { // Linear
+    return rgb;
+  } else if (tf==1) { // Davinci Intermediate
+    rgb.x = oetf_davinci_intermediate(rgb.x);
+    rgb.y = oetf_davinci_intermediate(rgb.y);
+    rgb.z = oetf_davinci_intermediate(rgb.z);
+  } else if (tf==2) { // Filmlight T-Log
+    rgb.x = oetf_filmlight_tlog(rgb.x);
+    rgb.y = oetf_filmlight_tlog(rgb.y);
+    rgb.z = oetf_filmlight_tlog(rgb.z);
+  } else if (tf==3) { // ACEScct
+    rgb.x = oetf_acescct(rgb.x);
+    rgb.y = oetf_acescct(rgb.y);
+    rgb.z = oetf_acescct(rgb.z);
+  } else if (tf==4) { // Arri LogC3
+    rgb.x = oetf_arri_logc3(rgb.x);
+    rgb.y = oetf_arri_logc3(rgb.y);
+    rgb.z = oetf_arri_logc3(rgb.z);
+  } else if (tf==5) { // Arri LogC4
+    rgb.x = oetf_arri_logc4(rgb.x);
+    rgb.y = oetf_arri_logc4(rgb.y);
+    rgb.z = oetf_arri_logc4(rgb.z);
+  } else if (tf==6) { // RedLog3G10
+    rgb.x = oetf_red_log3g10(rgb.x);
+    rgb.y = oetf_red_log3g10(rgb.y);
+    rgb.z = oetf_red_log3g10(rgb.z);
+  } else if (tf==7) { // Panasonic V-Log
+    rgb.x = oetf_panasonic_vlog(rgb.x);
+    rgb.y = oetf_panasonic_vlog(rgb.y);
+    rgb.z = oetf_panasonic_vlog(rgb.z);
+  } else if (tf==8) { // Sony S-Log3
+    rgb.x = oetf_sony_slog3(rgb.x);
+    rgb.y = oetf_sony_slog3(rgb.y);
+    rgb.z = oetf_sony_slog3(rgb.z);
+  } else if (tf==9) { // Fuji F-Log2
+    rgb.x = oetf_fujifilm_flog2(rgb.x);
+    rgb.y = oetf_fujifilm_flog2(rgb.y);
+    rgb.z = oetf_fujifilm_flog2(rgb.z);
+  }  return rgb;
+}
+
+
+
+/* EOTF Transfer Functions ---------------------------------------- */
+
+__DEVICE__ float3 eotf_hlg(float3 rgb, int inverse) {
+  /* Apply the HLG Forward or Inverse EOTF for 1000 nits.
+      ITU-R Rec BT.2100-2 https://www.itu.int/rec/R-REC-BT.2100
+      ITU-R Rep BT.2390-8: https://www.itu.int/pub/R-REP-BT.2390
+  */
+
+  if (inverse == 1) {
+    float Yd = 0.2627f*rgb.x + 0.6780f*rgb.y + 0.0593f*rgb.z;
+    rgb = rgb*spowf(Yd, (1.0f - 1.2f)/1.2f);
+    rgb.x = rgb.x <= 1.0f/12.0f ? _sqrtf(3.0f*rgb.x) : 0.17883277f*_logf(12.0f*rgb.x - 0.28466892f) + 0.55991073f;
+    rgb.y = rgb.y <= 1.0f/12.0f ? _sqrtf(3.0f*rgb.y) : 0.17883277f*_logf(12.0f*rgb.y - 0.28466892f) + 0.55991073f;
+    rgb.z = rgb.z <= 1.0f/12.0f ? _sqrtf(3.0f*rgb.z) : 0.17883277f*_logf(12.0f*rgb.z - 0.28466892f) + 0.55991073f;
+  } else {
+    rgb.x = rgb.x <= 0.5f ? rgb.x*rgb.x/3.0f : (_expf((rgb.x - 0.55991073f)/0.17883277f) + 0.28466892f)/12.0f;
+    rgb.y = rgb.y <= 0.5f ? rgb.y*rgb.y/3.0f : (_expf((rgb.y - 0.55991073f)/0.17883277f) + 0.28466892f)/12.0f;
+    rgb.z = rgb.z <= 0.5f ? rgb.z*rgb.z/3.0f : (_expf((rgb.z - 0.55991073f)/0.17883277f) + 0.28466892f)/12.0f;
+    float Ys = 0.2627f*rgb.x + 0.6780f*rgb.y + 0.0593f*rgb.z;
+    rgb = rgb*spowf(Ys, 1.2f - 1.0f);
+  }
+  return rgb;
+}
+
+
+__DEVICE__ float3 eotf_pq(float3 rgb, int inverse) {
+  /* Apply the ST-2084 PQ Forward or Inverse EOTF
+      ITU-R Rec BT.2100-2 https://www.itu.int/rec/R-REC-BT.2100
+      ITU-R Rep BT.2390-9 https://www.itu.int/pub/R-REP-BT.2390
+      Note: in the spec there is a normalization for peak display luminance.
+      For this function we assume the input is already normalized such that 1.0 = 10,000 nits
+  */
+
+  const float m1 = 2610.0f/16384.0f;
+  const float m2 = 2523.0f/32.0f;
+  const float c1 = 107.0f/128.0f;
+  const float c2 = 2413.0f/128.0f;
+  const float c3 = 2392.0f/128.0f;
+
+  if (inverse == 1) {
+    rgb = spowf3(rgb, m1);
+    rgb = spowf3((c1 + c2*rgb)/(1.0f + c3*rgb), m2);
+  } else {
+    rgb = spowf3(rgb, 1.0f/m2);
+    rgb = spowf3((rgb - c1)/(c2 - c3*rgb), 1.0f/m1);
+  }
+  return rgb;
+}
+
+
+/* Functions for OpenDRT ---------------------------------------- */
+
+__DEVICE__ float compress_hyperbolic_power(float x, float s, float p) {
+  // Simple hyperbolic compression function https://www.desmos.com/calculator/ofwtcmzc3w
+  return spowf(x/(x + s), p);
+}
+
+__DEVICE__ float compress_toe_quadratic(float x, float toe, int inv) {
+  // Quadratic toe compress function https://www.desmos.com/calculator/skk8ahmnws
+  if (toe == 0.0f) return x;
+  if (inv == 0) {
+    return spowf(x, 2.0f)/(x + toe);
+  } else {
+    return (x + _sqrtf(x*(4.0f*toe + x)))/2.0f;
+  }
+}
+
+__DEVICE__ float compress_toe_cubic(float x, float m, float w, int inv) {
+  // https://www.desmos.com/calculator/ubgteikoke
+  if (m==1.0f) return x;
+  float x2 = x*x;
+  if (inv == 0) {
+    return x*(x2 + m*w)/(x2 + w);
+  } else {
+    float p0 = x2 - 3.0f*m*w;
+    float p1 = 2.0f*x2 + 27.0f*w - 9.0f*m*w;
+    float p2 = _powf(_sqrtf(x2*p1*p1 - 4*p0*p0*p0)/2.0f + x*p1/2.0f, 1.0f/3.0f);
+    return p0/(3.0f*p2) + p2/3.0f + x/3.0f;
+  }
+}
+
+__DEVICE__ float complement_power(float x, float p) {
+  return 1.0f - spowf(1.0f - x, 1.0f/p);
+}
+
+__DEVICE__ float sigmoid_cubic(float x, float s) {
+  // Simple cubic sigmoid: https://www.desmos.com/calculator/hzgib42en6
+  if (x < 0.0f || x > 1.0f) return 1.0f;
+  return 1.0f + s*(1.0f - 3.0f*x*x + 2.0f*x*x*x);
+}
+
+__DEVICE__ float contrast_high(float x, float p, float pv, float pv_lx, int inv) {
+  // High exposure adjustment with linear extension
+  // https://www.desmos.com/calculator/etjgwyrgad
+  const float x0 = 0.18f*_powf(2.0f, pv);
+  if (x < x0 || p == 1.0f) return x;
+
+  const float o = x0 - x0/p;
+  const float s0 = _powf(x0, 1.0f - p)/p;
+  const float x1 = x0*_powf(2.0f, pv_lx);
+  const float k1 = p*s0*_powf(x1, p)/x1;
+  const float y1 = s0*_powf(x1, p) + o;
+  if (inv==1)
+    return x > y1 ? (x - y1)/k1 + x1 : _powf((x - o)/s0, 1.0f/p);
+  else
+    return x > x1 ? k1*(x - x1) + y1 : s0*_powf(x, p) + o;
+}
+
+__DEVICE__ float softplus_constraint(float x, float s, float x0, float y0) {
+  // Softplus with (x0, y0) intersection constraint
+  // https://www.desmos.com/calculator/doipi4u0ce
+  if (x > 10.0f*s + y0 || s < 1e-3f) return x;
+  float m = 1.0f;
+  if (_fabs(y0) > 1e-6f) m = _expf(y0/s);
+  m -= _expf(x0/s);
+  return s*_logf(_fmaxf(0.0f, m + _expf(x/s)));
+}
+
+__DEVICE__ float softplus(float x, float s) {
+  // Softplus unconstrained
+  // https://www.desmos.com/calculator/mr9rmujsmn
+  if (x > 10.0f*s || s < 1e-3f) return x;
+  return s*_logf(_fmaxf(0.0f, 1.0f + _expf(x/s)));
+}
+
+__DEVICE__ float gauss_window(float x, float w) {
+  // Simple gaussian window https://www.desmos.com/calculator/vhr9hstlyk
+  x /= w;
+  return _expf(-x*x);
+}
+
+
+__DEVICE__ float hue_offset(float h, float o) {
+  // Offset hue maintaining 0-2*pi range with modulo
+  return _fmod(h - o + PI, 2.0*PI) - PI;
+}
+
+
+
+
+/* Print Toning ------------------------------------------------------------
+  Virage par niveau : gain RGB pilote par la valeur achromatique de la
+  tonescale, exprimee en fraction du pic d'affichage - le virage garde donc
+  la meme place sur la courbe quel que soit Peak nits. Reproduit le glissement de teinte des emulations film, ou les
+  ombres et les hautes lumieres ne tirent pas du meme cote.
+
+  Le facteur (1-u) force un gain de 1 au blanc : le virage ne peut pas teinter
+  le point blanc. La saturation douce evite tout coude dans les degrades.
+  Coefficients ajustes contre les LUTs de reference en minimisant l'ecart
+  perceptuel (Oklab) sur l'axe neutre.
+--------------------------------------------------------------------------*/
+
+__DEVICE__ float di_encode(float x) {
+  return x <= 0.00262409f ? x*10.44426855f
+                          : (_log2f(x + 0.0075f) + 7.0f)*0.07329248f;
+}
+
+__DEVICE__ float roll_contrast(float x, float f, float pv) {
+  const float p2 = 1.0f - pv;
+  return x <= pv ? _powf(_fmaxf(x/pv, 1e-10f), f)*pv
+                 : 1.0f - _powf(_fmaxf((1.0f - x)/p2, 1e-10f), f)*p2;
+}
+
+/* Contrast / Pivot -------------------------------------------------------
+  S-curve ancree sur un pivot, appliquee au signal reencode en DaVinci
+  Intermediate :
+    f = 1 + contrast
+    x <= p : pow(x/p, f)*p        x > p : 1 - pow((1-x)/(1-p), f)*(1-p)
+
+  Le pivot est absolu et se lit directement : 0.336 est le gris 18% en DI,
+  0.18 du lineaire. Y poser le pivot rend le gris rigoureusement invariant -
+  0.18 entre, 0.18 sort - donc le contraste ne deplace pas l exposition.
+  Les reperes, en diaphragmes autour du gris : -2 0.201, -1 0.267,
+  0 0.336, +1 0.407, +2 0.479. Le noir vaut 0.000 et le blanc diffus
+  0.514. L'echelle n'est pas symetrique autour du gris parce que le
+  DaVinci Intermediate porte un offset de 0.0075 avant le logarithme.
+
+  Deux differences avec le NODE_01, qui ne voit jamais que du log deja borne
+  entre 0 et 1. Ici le signal ne l'est pas : la scene monte bien au-dessus de
+  ce que DaVinci Intermediate code dans 0-1, et elle peut passer sous zero.
+  L'ancre haute de la S est donc portee a DI 1.486932, la scene 10000, hors
+  d'atteinte de toute camera; et le bas est prolonge par symetrie autour de
+  zero. La fonction n'a ainsi aucun point de recollement, et la branche sous
+  le pivot est rigoureusement celle du NODE_01.
+--------------------------------------------------------------------------*/
+
+__DEVICE__ float con_scene(float x, float f, float pv) {
+  // Le domaine de la S-curve est normalise sur DI 1.486932, soit la scene
+  // 10000 en lineaire, +15.8 diaphragmes au-dessus du gris. L'ancre haute
+  // sort ainsi de tout ce qu'une camera delivre, et il n'y a plus de raccord
+  // a recoller en haut de la courbe. Avec l'ancre a DI 1.0 - la scene 100,
+  // neuf diaphragmes seulement - il fallait soit ecreter le speculaire, ce
+  // qui coutait 28 code 10 bits de modele en Rec.709, soit recoller en fondu,
+  // ce qui rendait la courbe non monotone avec un pivot tres bas.
+  // La branche sous le pivot, elle, est rigoureusement inchangee : la
+  // normalisation s'y annule, pow(d/pv, f)*pv est identique dans les deux cas.
+  //
+  // En bas, pas de raccord non plus : la courbe est prolongee par symetrie
+  // autour de zero. Le negatif - un artefact de gamut, jamais une vraie
+  // luminance - recoit la meme courbe que le positif, au signe pres. La
+  // fonction est donc croissante sur toute la droite reelle, sans aucun
+  // point de recollement.
+  const float dt = 1.486932f;
+  const float sg = x < 0.0f ? -1.0f : 1.0f;
+  const float d = _fminf(di_encode(_fabs(x))/dt, 1.0f);
+  const float p = clampf(pv/dt, 1e-4f, 0.9999f);
+  return sg*oetf_davinci_intermediate(roll_contrast(d, f, p)*dt);
+}
+
+
+/* ---- Overlay (self-blend) — porte de NODE_Composite2 (Samuel Drouin) -------
+   Le mode composite Overlay d'un noeud melange sur lui-meme : source et
+   backdrop sont le meme pixel, donc l'operateur devient une S-curve pure.
+   Il tourne en LOG, comme dans le DCTL d'origine, et pas en lineaire : sa
+   courbure et son pivot sont calibres sur des valeurs de CODE DWG, ou le
+   pivot 0.5 tombe a environ +2.3 diaphragmes du gris. C'est ce qui lui donne
+   son caractere - il mord dans le haut des demi-tons plutot qu'autour du gris,
+   ce qu'aucun contraste pivote au gris ne reproduit. Applique en lineaire il
+   perdrait les deux.                                                        */
+// Plafond du gain de chroma de l'Overlay. Choisi par mesure, voir plus bas.
+#define OVL_CGAIN 1.8f
+
+
+__DEVICE__ float f_overlay_self(float b) {
+  return b <= 0.5f ? 2.0f*b*b : 1.0f - 2.0f*(1.0f - b)*(1.0f - b);
+}
+
+/* Limiteur de GAIN DE CHROMA, repris de NODE_Composite2. En self-blend
+   l'operateur a un gain par canal superieur a 1, applique canal par canal :
+   il multiplie donc l'ECART entre canaux, c'est-a-dire la chroma. Sur une
+   couleur deja saturee le resultat part loin hors gamut et c'est le rendu en
+   aval qui l'ecrase - d'ou les aplats. On mesure de combien l'operateur a
+   multiplie la chroma sur CE pixel et on borne cette multiplication de facon
+   asymptotique, en gardant integralement la luminance produite : tout le
+   contraste tonal reste. Un gain inferieur a 1 passe intact - on ne borne que
+   l'amplification.                                                          */
+__DEVICE__ float3 ovl_limit_chroma(float3 c, float3 r, float gmax) {
+  if (gmax >= 2.999f) return r;
+  const float Lc = 0.2126f*c.x + 0.7152f*c.y + 0.0722f*c.z;
+  const float Lr = 0.2126f*r.x + 0.7152f*r.y + 0.0722f*r.z;
+  const float3 vc = make_float3(c.x - Lc, c.y - Lc, c.z - Lc);
+  const float3 vr = make_float3(r.x - Lr, r.y - Lr, r.z - Lr);
+  const float mc = _sqrtf(vc.x*vc.x + vc.y*vc.y + vc.z*vc.z);
+  const float mr = _sqrtf(vr.x*vr.x + vr.y*vr.y + vr.z*vr.z);
+  if (mc < 1.0e-5f || mr < 1.0e-9f) return r;   // pixel quasi neutre : mesure instable
+  const float g = mr/mc;
+  if (g <= 1.0f) return r;
+  const float range = gmax - 1.0f;
+  const float e = g - 1.0f;
+  const float gl = 1.0f + range*e/(range + e);  // approche gmax sans l'atteindre
+  const float k = gl/g;
+  return make_float3(Lr + vr.x*k, Lr + vr.y*k, Lr + vr.z*k);
+}
+
+__DEVICE__ float3 overlay_scene(float3 rgb, float amt, float gmax) {
+  // Signe et magnitude, comme con_scene : le negatif est un artefact de gamut,
+  // jamais une luminance, et il recoit la meme courbe au signe pres - donc la
+  // fonction reste croissante sur toute la droite reelle, sans recollement.
+  const float sx = rgb.x < 0.0f ? -1.0f : 1.0f;
+  const float sy = rgb.y < 0.0f ? -1.0f : 1.0f;
+  const float sz = rgb.z < 0.0f ? -1.0f : 1.0f;
+  float3 lg = make_float3(di_encode(_fabs(rgb.x)), di_encode(_fabs(rgb.y)), di_encode(_fabs(rgb.z)));
+  float3 r  = make_float3(f_overlay_self(lg.x), f_overlay_self(lg.y), f_overlay_self(lg.z));
+  r = ovl_limit_chroma(lg, r, gmax);
+  lg = make_float3(lg.x + (r.x - lg.x)*amt,
+                   lg.y + (r.y - lg.y)*amt,
+                   lg.z + (r.z - lg.z)*amt);
+  return make_float3(sx*oetf_davinci_intermediate(lg.x),
+                     sy*oetf_davinci_intermediate(lg.y),
+                     sz*oetf_davinci_intermediate(lg.z));
+}
+
+
+/* ===========================================================================
+   BALANCE DES BLANCS — porte de NODE_WB (Samuel Drouin)
+   ---------------------------------------------------------------------------
+   Corrige l'ILLUMINANT, en Kelvin plus Duv, par une adaptation chromatique
+   Bradford. Posee en lumiere de SCENE et dans le gamut d'ENTREE, donc avant
+   tout le rendu : on balance la lumiere, puis la pellicule reagit a ce qu'elle
+   recoit.
+   Aucune matrice inverse n'est ecrite a la main : la correction est composee en
+   inv(M) * Bradford * M ou M est la matrice gamut->XYZ deja choisie plus haut,
+   et l'inverse 3x3 est calcule au vol. Une trentaine d'operations par pixel,
+   contre seize matrices a maintenir et a verifier.
+   =========================================================================== */
+__DEVICE__ float3x3 mat3_mul(float3x3 a, float3x3 b) {
+  return make_float3x3(
+    make_float3(a.x.x*b.x.x + a.x.y*b.y.x + a.x.z*b.z.x,
+                a.x.x*b.x.y + a.x.y*b.y.y + a.x.z*b.z.y,
+                a.x.x*b.x.z + a.x.y*b.y.z + a.x.z*b.z.z),
+    make_float3(a.y.x*b.x.x + a.y.y*b.y.x + a.y.z*b.z.x,
+                a.y.x*b.x.y + a.y.y*b.y.y + a.y.z*b.z.y,
+                a.y.x*b.x.z + a.y.y*b.y.z + a.y.z*b.z.z),
+    make_float3(a.z.x*b.x.x + a.z.y*b.y.x + a.z.z*b.z.x,
+                a.z.x*b.x.y + a.z.y*b.y.y + a.z.z*b.z.y,
+                a.z.x*b.x.z + a.z.y*b.y.z + a.z.z*b.z.z));
+}
+
+__DEVICE__ float3x3 mat3_inv(float3x3 m) {
+  const float a = m.x.x, b = m.x.y, c = m.x.z;
+  const float d = m.y.x, e = m.y.y, f = m.y.z;
+  const float g = m.z.x, h = m.z.y, i = m.z.z;
+  const float A =  (e*i - f*h), B = -(d*i - f*g), C =  (d*h - e*g);
+  float det = a*A + b*B + c*C;
+  det = (_fabs(det) < 1.0e-12f) ? (det < 0.0f ? -1.0e-12f : 1.0e-12f) : det;
+  const float id = 1.0f/det;
+  return make_float3x3(
+    make_float3( A*id, -(b*i - c*h)*id,  (b*f - c*e)*id),
+    make_float3( B*id,  (a*i - c*g)*id, -(a*f - c*d)*id),
+    make_float3( C*id, -(a*h - b*g)*id,  (a*e - b*d)*id));
+}
+
+__DEVICE__ float2 wb_planckian_xy(float T) {
+  T = clampf(T, 1667.0f, 25000.0f);
+  const float T2 = T*T, T3 = T2*T;
+  float xc = (T <= 4000.0f)
+    ? -0.2661239e9f/T3 - 0.2343589e6f/T2 + 0.8776956e3f/T + 0.179910f
+    : -3.0258469e9f/T3 + 2.1070379e6f/T2 + 0.2226347e3f/T + 0.240390f;
+  const float x2 = xc*xc, x3 = x2*xc;
+  float yc;
+  if (T <= 2222.0f)      yc = -1.1063814f*x3 - 1.34811020f*x2 + 2.18555832f*xc - 0.20219683f;
+  else if (T <= 4000.0f) yc = -0.9549476f*x3 - 1.37418593f*x2 + 2.09137015f*xc - 0.16748867f;
+  else                   yc =  3.0817580f*x3 - 5.87338670f*x2 + 3.75112997f*xc - 0.37001483f;
+  return make_float2(xc, yc);
+}
+
+__DEVICE__ float2 wb_daylight_xy(float T) {
+  T = clampf(T, 4000.0f, 25000.0f);
+  const float T2 = T*T, T3 = T2*T;
+  const float xD = (T <= 7000.0f)
+    ? 0.244063f + 0.09911e3f/T + 2.9678e6f/T2 - 4.6070e9f/T3
+    : 0.237040f + 0.24748e3f/T + 1.9018e6f/T2 - 2.0064e9f/T3;
+  return make_float2(xD, -3.0f*xD*xD + 2.870f*xD - 0.275f);
+}
+
+__DEVICE__ float2 wb_locus_xy(float T) {
+  if (T < 3900.0f) return wb_planckian_xy(T);
+  if (T > 4100.0f) return wb_daylight_xy(T);
+  float t = (T - 3900.0f)/200.0f;
+  t = t*t*(3.0f - 2.0f*t);
+  const float2 pk = wb_planckian_xy(T);
+  const float2 dl = wb_daylight_xy(T);
+  return make_float2(pk.x*(1.0f - t) + dl.x*t, pk.y*(1.0f - t) + dl.y*t);
+}
+
+__DEVICE__ float2 wb_xy_to_uv(float2 xy) {
+  float d = -2.0f*xy.x + 12.0f*xy.y + 3.0f;
+  d = (_fabs(d) < 1.0e-10f) ? 1.0e-10f : d;
+  return make_float2(4.0f*xy.x/d, 6.0f*xy.y/d);
+}
+
+__DEVICE__ float2 wb_uv_to_xy(float2 uv) {
+  float d = 2.0f*uv.x - 8.0f*uv.y + 4.0f;
+  d = (_fabs(d) < 1.0e-10f) ? 1.0e-10f : d;
+  return make_float2(3.0f*uv.x/d, 2.0f*uv.y/d);
+}
+
+/* Normale au locus, prise UNIQUEMENT sur le locus planckien meme au-dela de
+   4000 K. Ce n'est pas un raccourci : c'est la definition du Duv (ANSI C78.377
+   et CIE le mesurent toujours par rapport au planckien) et c'est aussi ce qui
+   corrige un defaut mesure dans NODE_WB - la tangente prise sur le locus FUSIONNE
+   sautait de 4.83 degres par pas de 10 K vers 3950 K, parce que le raccord
+   smoothstep entre planckien et daylight a une derivee qui oscille. A 4000 K
+   l'axe du tint se retrouvait tourne de 42.8 degres et un tint negatif partait
+   bleu-magenta au lieu de magenta. Hors de la zone 3900-4100 K les deux locus
+   coincident, donc le reste de la course est inchange.                      */
+__DEVICE__ float2 wb_locus_normal_uv(float T) {
+  const float2 uvA = wb_xy_to_uv(wb_planckian_xy(_fmaxf(T - 50.0f, 1667.0f)));
+  const float2 uvB = wb_xy_to_uv(wb_planckian_xy(_fminf(T + 50.0f, 25000.0f)));
+  float tx = uvB.x - uvA.x, ty = uvB.y - uvA.y;
+  const float tl = _sqrtf(_fmaxf(tx*tx + ty*ty, 1.0e-12f));
+  tx /= tl; ty /= tl;
+  float nx = -ty, ny = tx;
+  if (ny < 0.0f) { nx = -nx; ny = -ny; }
+  return make_float2(nx, ny);
+}
+
+__DEVICE__ float2 wb_white_xy(float T, float duv) {
+  const float2 xy0 = wb_locus_xy(T);
+  if (_fabs(duv) < 1.0e-7f) return xy0;
+  const float2 uv0 = wb_xy_to_uv(xy0);
+  const float2 n = wb_locus_normal_uv(T);
+  return wb_uv_to_xy(make_float2(uv0.x + duv*n.x, uv0.y + duv*n.y));
+}
+
+__DEVICE__ float3 wb_xy_to_XYZ(float2 xy) {
+  const float y = _fmaxf(xy.y, 1.0e-6f);
+  return make_float3(xy.x/y, 1.0f, (1.0f - xy.x - xy.y)/y);
+}
+
+__DEVICE__ float3 wb_lms(float3 xyz) {
+  return make_float3( 0.8951f*xyz.x + 0.2664f*xyz.y - 0.1614f*xyz.z,
+                     -0.7502f*xyz.x + 1.7135f*xyz.y + 0.0367f*xyz.z,
+                      0.0389f*xyz.x - 0.0685f*xyz.y + 1.0296f*xyz.z);
+}
+
+/* Matrice d'adaptation complete, en XYZ. Le plancher sur les composantes LMS
+   du blanc source est PROPORTIONNEL a la composante destination, et non absolu :
+   a bas Kelvin avec un Duv franc, wb_white_xy peut sortir du triangle CIE, le Z
+   devient negatif et le S du LMS avec lui. Un plancher absolu a 1e-10
+   fabriquait alors un gain de l'ordre de 1e10 sur ce canal - des pixels a 1e9,
+   invisibles a l'oeil sur un fond clair mais qui polluent tout en aval. Avec un
+   plancher a 2 pour cent de la destination le gain par canal est borne a 50x :
+   l'image aux bornes extremes reste extreme, mais FINIE et CONTINUE. Hors de la
+   zone degeneree le plancher est sous la valeur reelle, donc sans effet.     */
+__DEVICE__ float3x3 wb_cat(float3 w_src, float3 w_dst) {
+  const float3 ls = wb_lms(w_src), ld = wb_lms(w_dst);
+  const float gx = ld.x/_fmaxf(ls.x, 0.02f*_fabs(ld.x));
+  const float gy = ld.y/_fmaxf(ls.y, 0.02f*_fabs(ld.y));
+  const float gz = ld.z/_fmaxf(ls.z, 0.02f*_fabs(ld.z));
+  const float3x3 M = make_float3x3(
+    make_float3( 0.8951f,  0.2664f, -0.1614f),
+    make_float3(-0.7502f,  1.7135f,  0.0367f),
+    make_float3( 0.0389f, -0.0685f,  1.0296f));
+  const float3x3 Mi = make_float3x3(
+    make_float3( 0.9869929f, -0.1470543f,  0.1599627f),
+    make_float3( 0.4323053f,  0.5183603f,  0.0492912f),
+    make_float3(-0.0085287f,  0.0400428f,  0.9684867f));
+  const float3x3 G = make_float3x3(make_float3(gx, 0.0f, 0.0f),
+                                   make_float3(0.0f, gy, 0.0f),
+                                   make_float3(0.0f, 0.0f, gz));
+  return mat3_mul(Mi, mat3_mul(G, M));
+}
+
+__DEVICE__ float wb_preset_kelvin(int i) {
+  if (i == 1)  return 1800.0f;
+  if (i == 2)  return 2400.0f;
+  if (i == 3)  return 2700.0f;
+  if (i == 4)  return 3200.0f;
+  if (i == 5)  return 3600.0f;
+  if (i == 6)  return 4000.0f;
+  if (i == 7)  return 4300.0f;
+  if (i == 8)  return 4800.0f;
+  if (i == 9)  return 5000.0f;
+  if (i == 10) return 5600.0f;
+  if (i == 11) return 6000.0f;
+  if (i == 12) return 6500.0f;
+  if (i == 13) return 7000.0f;
+  if (i == 14) return 7500.0f;
+  if (i == 15) return 8500.0f;
+  if (i == 16) return 10000.0f;
+  return 12000.0f;
+}
+
+/* ---- Densite : Color Weight et Color Density -------------------------------
+   Portes de NODE_CHROMADRIVE (Samuel Drouin), qui les tient d'un modele
+   soustractif : un negatif couleur ne "sature" pas, il construit de la DENSITE
+   DE COLORANT dans trois couches. C'est multiplicatif en transmission, donc
+   ADDITIF en log - et c'est pour cela que les deux operateurs vivent en log et
+   pas en lineaire.
+       x_k = log2(lineaire_k + fog)          k = R, G, B
+       m   = (x_R + x_G + x_B)/3             densite totale
+       d   = x - m                           ecarts entre couches
+   Le plan des d de somme nulle est de dimension 2, avec une base orthonormee
+   fixe : e1 = (2,-1,-1)/racine(6) l'axe rouge/cyan, e2 = (0,1,-1)/racine(2)
+   l'axe vert/magenta. La chroma est la norme dans ce plan.
+   CONSEQUENCE STRUCTURELLE, pas garde-fou ajoute : sur un neutre les trois x
+   sont egaux, donc d vaut identiquement zero et la chroma aussi. Aucun gris ne
+   peut bouger sous ces deux reglages, a aucune position - c'est de l'algebre,
+   pas une case "preserver les neutres" qu'on pourrait mal regler.            */
+__DEVICE__ float smootherstep(float e0, float e1, float x) {
+    float t = _clampf((x - e0) / _fmaxf(e1 - e0, 1e-6f), 0.0f, 1.0f);
+    return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+}
+
+#define DEN_FOG    0.0075f     // piedestal d'emulsion
+#define DEN_LOG018 -2.41503750f // log2(0.18 + DEN_FOG), et non log2(0.18) :
+// l'exposition du pixel se lit sur m = log2(lineaire + voile), donc le zero de
+// l'echelle doit porter le voile lui aussi. CHROMADRIVE utilise log2(0.18) et
+// annonce le gris comme pivot exact ; avec le voile, son pivot tombe en realite
+// 0.059 diaphragme au-dessus du gris. Ici, mesure : le gris 18 pour cent ne
+// bouge pas d'un chiffre, a n'importe quelle position des deux reglages.
+#define DEN_WIDTH  4.0f        // largeur, en diaphs, de la bascule de densite
+#define DEN_MAX    0.70f       // butee de Color Density, en diaphragmes
+/* COLOR WEIGHT — deux constantes de la premiere version ont disparu ici, et il
+   faut dire pourquoi parce que c'etaient deux vrais defauts, vus a l'oeil en
+   basse lumiere avant d'etre mesures.
+
+   DEFAUT 1 : LA CHROMA MESUREE VARIAIT AVEC L'EXPOSITION. Elle etait lue sur
+   log2(lineaire + voile). Or le voile ecrase les rapports entre canaux quand le
+   niveau descend : mesure sur UN SEUL ET MEME cyan, la chroma vue par le module
+   passait de 0.046 a -9 diaphs a 1.257 a +1, un facteur 27, alors que la couleur
+   ne changeait pas d'un cheveu. Sans voile, elle vaut 1.294 partout - comme elle
+   doit, un rapport de log ne bougeant pas avec le niveau. Le module croyait donc
+   doser la couleur et dosait en realite une rampe d'exposition.
+
+   DEFAUT 2 : LA PORTE DE BASSE LUMIERE NE SE FERMAIT JAMAIS. Le plancher etait
+   pose a -6 diaphs sur cette meme echelle voilee - qui SATURE vers -4.64, parce
+   que log2(lineaire + voile) tend vers log2(voile). Le plancher etait donc hors
+   d'atteinte et la porte butait a 0.228 au lieu de descendre a zero : a -14
+   diaphs elle etait encore ouverte au quart. L'extinction que le commentaire
+   annoncait n'existait pas. Les deux constantes se contredisaient.
+
+   LE SYMPTOME : une perte de contraste local qui allait jusqu'a 41 pour cent et
+   qui VARIAIT fortement avec l'exposition - -15 pour cent a -8 diaphs, -32 a
+   -4.5, -13 au gris. Rien ne reculait, donc aucun banc de monotonie ne pouvait
+   le voir ; mais un contraste qui s'ecrase de 19 points d'un bout a l'autre des
+   ombres, c'est exactement une cassure sur un degrade sombre.
+
+   LA CORRECTION separe les deux roles que le voile cumulait mal :
+     - la CHROMA est lue sur des log NUS, donc invariante d'exposition ; comme
+       plus rien ne la borne (un canal proche de zero y donnerait une chroma
+       enorme), la borne devient explicite et non plus accidentelle : c/(c+KC),
+       qui sature a 1 ;
+     - le NIVEAU est lu en LINEAIRE, en unites de voile, donc il atteint
+       reellement zero et la porte se ferme pour de bon. Le lineaire est aussi
+       mieux eleve que le log dans le noir : pas de logarithme a exploser.
+   Calibre pour que l'effet AU GRIS soit celui d'avant a 0.20 diaph pres, afin
+   que le slider garde la force que tu lui connais ; ce qui change, c'est les
+   ombres, ou il s'efface enfin.                                              */
+#define DEN_WK     1.283f       // echelle de Color Weight, recalibree par mesure
+#define DEN_KC     1.20f       // demi-saturation de la chroma : borne explicite
+/* LA PORTE : hyperbolique sur le niveau LINEAIRE, en unites de voile.
+   J'ai essaye un smootherstep en diaphs, de -8 a 0, en me disant qu'etaler le
+   passage sur 8 diaphs au lieu de 4.6 diviserait la pente de pointe - donc le
+   creux de contraste - par une fois et demie. Mesure : c'etait PIRE, -45.6 pour
+   cent de creux au lieu de -39.2, et place a -5 diaphs au lieu de -2.5. Le
+   raisonnement sur la pente etait juste et la conclusion fausse, parce qu'un
+   creux ne se juge pas en absolu : a -5 diaphs la pente de base vaut 0.0104 et
+   au gris 0.1115, dix fois plus. Le meme assombrissement par diaph y mange donc
+   dix fois plus de contraste RELATIF. Etaler la porte vers le bas, c'est poser
+   le passage exactement la ou l'image a le moins de contraste a perdre.
+   La forme hyperbolique fait l'inverse : elle garde le passage dans les
+   demi-tons bas, ou la pente de base est grande, et elle est deja negligeable
+   dans les tres basses lumieres.
+   DEN_GK a ete choisi a FORCE EGALE AU GRIS, sinon la comparaison est truquee :
+   une porte placee plus haut affaiblit aussi le reglage, ce qui reduit le creux
+   sans rien resoudre. A force egale, le creux de pointe ne bouge pratiquement
+   pas (de -37.7 a -39.3 pour cent selon GK) parce qu'il est fixe par la COURSE
+   totale du noircissement, pas par la position de la porte ; ce qui change, et
+   beaucoup, c'est la fuite dans les ombres. A GK = 6 : -0.33 pour cent de perte
+   de contraste a -8 diaphs contre -14.81 pour la version fautive, quarante-cinq
+   fois moins, et -1.72 contre -22.31 a -6 diaphs.
+   Le creux de pointe reste de 38 pour cent a course pleine, contre 32 avant. Ce
+   n'est pas un defaut cache : un operateur de densite qui noircit de 0.74 diaph
+   au gris et de rien dans le noir EST un changement de contraste, et il coute
+   ce qu'il coute. Ce qui etait faux, c'est qu'il le faisait partout, y compris
+   dans les tres basses lumieres ou il n'avait rien a faire.
+   Elle ne s'annule jamais tout a fait, ce qui est le defaut de la forme ; a ce
+   niveau-la, c'est sous le bruit.                                           */
+#define DEN_GK     6.0f        // porte : moitie ouverte a 6 fois le voile
+
+__DEVICE__ float den_gate(float d, float r) {
+  const float q = d/_fmaxf(r, 1.0e-6f);
+  const float q2 = q*q;
+  return q2/(1.0f + q2);
+}
+
+/* Les deux reglages d'un coup : un seul passage en log, un seul retour. */
+__DEVICE__ float3 density_pair(float3 rgb, float w, float dc) {
+  const float xr = _log2f(_fmaxf(rgb.x + DEN_FOG, 1.0e-10f));
+  const float xg = _log2f(_fmaxf(rgb.y + DEN_FOG, 1.0e-10f));
+  const float xb = _log2f(_fmaxf(rgb.z + DEN_FOG, 1.0e-10f));
+  const float m  = (xr + xg + xb)/3.0f;
+  const float ev = m - DEN_LOG018;
+
+  float dm = 0.0f;
+
+  // COLOR WEIGHT : le noircissement qui accompagne la couleur. Dans un procede
+  // soustractif, poser du colorant ASSOMBRIT - une couleur saturee est plus
+  // sombre qu'un neutre de meme teinte, et c'est ce que le rendu photometrique
+  // seul ne dit pas. Pilote par la chroma ELLE-MEME et non, comme dans
+  // CHROMADRIVE, par le deplacement de chroma qu'un moteur de separation vient
+  // de commander : ce moteur n'existe pas ici, mais la loi, si.
+  // La conicite n'est pas une precaution : un negatif ne peut pas construire de
+  // densite sous son propre voile de base, donc le noircissement DOIT s'eteindre
+  // dans les tres basses lumieres. Voir le bloc de constantes plus haut : c'est
+  // exactement ce qui ne marchait pas.
+  if (w != 0.0f) {
+    // CHROMA, sur des log NUS : un rapport de log ne bouge pas avec le niveau,
+    // donc le meme sujet expose plus haut ou plus bas donne la meme chroma.
+    const float yr = _log2f(_fmaxf(rgb.x, 1.0e-10f));
+    const float yg = _log2f(_fmaxf(rgb.y, 1.0e-10f));
+    const float yb = _log2f(_fmaxf(rgb.z, 1.0e-10f));
+    const float u = (2.0f*yr - yg - yb)*0.40824829f;   // 1/racine(6)
+    const float v = (yg - yb)*0.70710678f;             // 1/racine(2)
+    const float c = _sqrtf(u*u + v*v);
+    // Borne explicite, qui remplace celle que le voile assurait par accident :
+    // sature a 1, donc une couleur extreme ne noircit pas davantage qu'une
+    // couleur franche, et un canal proche de zero ne peut pas emballer le calcul.
+    const float cs = c/(c + DEN_KC);
+    // NIVEAU, en diaphs au-dessus du gris, lu sur le lineaire NU : il descend
+    // donc vraiment, et la porte se ferme exactement au lieu de tendre vers zero.
+    const float s = _fmaxf(rgb.x + rgb.y + rgb.z, 0.0f)/(3.0f*DEN_FOG);
+    dm -= DEN_WK*w*cs*den_gate(s, DEN_GK);
+  }
+
+  // COLOR DENSITY : un contraste dans le domaine de la densite, sans aucun
+  // terme de chroma. Meme forme impaire et bornee que partout ailleurs ici,
+  // z/racine(1+z^2) : negatif sous le gris donc les ombres s'assombrissent,
+  // positif au-dessus donc les hautes montent, et EXACTEMENT zero au gris, donc
+  // le pivot ne derive pas. La forme est elle-meme la securite : elle sature a
+  // +/-DEN_MAX quel que soit l'ecart d'exposition, sans plafond separe.
+  if (dc != 0.0f) {
+    const float z = ev/DEN_WIDTH;
+    dm += DEN_MAX*dc*z/_sqrtf(1.0f + z*z);
+  }
+
+  if (dm == 0.0f) return rgb;
+  const float g = _exp2f(dm);
+  // Le decalage porte sur m, donc sur les trois canaux a l'identique : c'est un
+  // gain en lineaire, et la teinte comme la chroma relative ne bougent pas.
+  return make_float3((rgb.x + DEN_FOG)*g - DEN_FOG,
+                     (rgb.y + DEN_FOG)*g - DEN_FOG,
+                     (rgb.z + DEN_FOG)*g - DEN_FOG);
+}
+
+/* ===========================================================================
+   PURETE DES TONS MOYENS — un vrai module, pas un coefficient emprunte
+   ---------------------------------------------------------------------------
+   POURQUOI IL EST REECRIT. L'ancien Mid Purity ne faisait que pousser ptm_low,
+   le terme d'OpenDRT qui relache la compression de purete. Ce terme est pondere
+   par (1 - ts_pt) et vise ach_d proche de zero : il agit donc sur ce qui est
+   SOMBRE et DEJA PRESQUE NEUTRE - la ou il n'y a quasiment pas de couleur a
+   enrichir. Mesure, sa prise valait 0.010 contre 0.983 pour Highlight Density.
+   Ce n'etait pas un slider trop faible, c'etait un slider branche au mauvais
+   endroit. Le nom promettait les peaux, les feuillages et les ciels ; le calcul
+   parlait des ombres desaturees.
+
+   OU IL AGIT. En lumiere de SCENE, a cote de Color Weight et Color Density, et
+   pour la meme raison qu'eux : la densite de colorant existe encore comme telle
+   a cet endroit, et le tonescale comme le path to white REPONDENT ensuite a ce
+   qu'on a pose. On obtient une emulsion qui portait plus de colorant dans les
+   demi-tons, pas une saturation collee sur un rendu qui a deja decide.
+
+   CE QU'IL FAIT. Il met a l'echelle la chroma DANS LE DOMAINE DE LA DENSITE,
+   c'est-a-dire en log. Mettre la chroma en log a l'echelle, c'est exactement ce
+   que fait un jeu de colorants plus pur : les rapports de densite s'ecartent,
+   le niveau moyen ne bouge pas. Deux consequences structurelles, et non des
+   garde-fous ajoutes :
+     - le vecteur d est de somme nulle, donc la moyenne log est conservee AU
+       BIT : le module ne peut pas assombrir ni eclaircir, il ne peut donc pas
+       se battre avec le tonescale ni avec Shadows ;
+     - sur un neutre les trois log sont egaux, donc d vaut identiquement zero :
+       aucun gris ne bouge, a aucun reglage, par algebre.
+
+   LA BANDE. Le poids est lu sur l'exposition relative au gris 18 pour cent,
+   avec le MEME ancrage que Color Density (voile inclus, cf. DEN_LOG018) : la
+   bande tombe donc au meme endroit sur les huit looks, ce qui est tout l'objet
+   d'un reglage nomme "tons moyens". La forme (1-t^2)^2 s'annule avec sa pente
+   aux deux bords, donc le module s'eteint sans marche, et il vaut zero au-dela
+   de MP_HW diaphragmes : il ne peut pas atteindre les hautes lumieres et ne
+   rentre donc jamais en conflit avec Highlight Purity ni Highlight Density.
+
+   POURQUOI SANS VOILE ICI. La chroma, elle, est lue sur log2(lineaire) nu. Avec
+   le voile, un canal sombre est ecrase vers log2(voile) et la couleur des basses
+   lumieres disparait du calcul ; surtout, redescendre un canal deja proche du
+   voile fabriquait une valeur lineaire NEGATIVE a la reconstruction. Sans
+   voile, 2^x est strictement positif quoi qu'on fasse : le module ne peut pas
+   produire de negatif, sans aucun ecretage.
+
+   LA BORNE. Le gain de chroma est c -> c + MP_MAX*A*w*c/(c + MP_KC). L'ajout
+   SATURE a MP_MAX diaphragmes de chroma quelle que soit la couleur d'entree,
+   donc le deplacement d'un canal est borne par 0.8165*MP_MAX diaphragmes - la
+   valeur 0.8165 etant la composante maximale d'un vecteur unitaire de somme
+   nulle. Une couleur deja extreme ne recoit donc pas davantage qu'une couleur
+   moderee, et rien n'explose. Et comme l'ajout est PROPORTIONNEL a c quand c est
+   petit, un quasi-neutre bruite n'est pas amplifie.
+   =========================================================================== */
+#define MP_MAX  0.62f   // butee de l'ajout de chroma, en diaphragmes de densite
+#define MP_KC   0.55f   // demi-saturation : au-dela la couleur ne gagne plus
+#define MP_CUT  0.55f   // cote gauche : fraction de chroma retirable au maximum
+#define MP_HW   3.5f    // demi-largeur de la bande, en diaphragmes
+
+__DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
+  /* Exposition : ancrage identique a Color Density, voile compris, pour que la
+     bande ne derive pas d'un look a l'autre. */
+  const float ev = (_log2f(_fmaxf(rgb.x + DEN_FOG, 1.0e-10f)) +
+                    _log2f(_fmaxf(rgb.y + DEN_FOG, 1.0e-10f)) +
+                    _log2f(_fmaxf(rgb.z + DEN_FOG, 1.0e-10f)))/3.0f - DEN_LOG018;
+
+  const float t = (ev - pivot)/MP_HW;
+  if (t <= -1.0f || t >= 1.0f) return rgb;       // hors bande : rien, au bit pres
+  const float u = 1.0f - t*t;
+  const float w = u*u;                            // pente nulle aux deux bords
+  if (w <= 0.0f) return rgb;
+
+  /* Densite nue : 2^x est strictement positif, donc pas de negatif possible. */
+  const float xr = _log2f(_fmaxf(rgb.x, 1.0e-10f));
+  const float xg = _log2f(_fmaxf(rgb.y, 1.0e-10f));
+  const float xb = _log2f(_fmaxf(rgb.z, 1.0e-10f));
+  const float m  = (xr + xg + xb)/3.0f;
+  const float dr = xr - m, dg = xg - m, db = xb - m;   // somme nulle
+  const float c  = _sqrtf(dr*dr + dg*dg + db*db);
+  if (c <= 1.0e-7f) return rgb;                  // neutre : rien a mettre a l'echelle
+
+  /* A > 0 : ajout borne, sature a MP_MAX. A < 0 : retrait proportionnel, borne
+     a MP_CUT, donc la chroma ne peut jamais changer de signe. */
+  const float aw = a*w;
+  const float k = aw > 0.0f ? 1.0f + MP_MAX*aw/(c + MP_KC)
+                            : 1.0f + MP_CUT*aw;
+  if (k == 1.0f) return rgb;
+
+  /* ANCRAGE SUR LE CANAL LE PLUS FORT, et non sur la moyenne. La premiere
+     version conservait la moyenne log au bit, ce qui semblait la propriete la
+     plus propre : le module ne pouvait ni assombrir ni eclaircir. Mesure, c'est
+     le pire choix possible ICI. Conserver la moyenne veut dire que baisser le
+     canal faible fait MONTER les deux autres ; le DRT divise ensuite par la
+     norme des trois, que ces deux-la dominent, donc le rapport du canal faible
+     encaisse deux fois la meme correction. A chroma rendue egale, le recul
+     passait a 1.30 pour cent contre 0.83 pour le slider Chroma - c'est-a-dire
+     que mon module cassait plus qu'un reglage deja livre, au meme resultat.
+     Ancre sur le maximum, la norme ne bouge presque pas et il ne reste qu'un
+     seul effet. C'est en plus le modele soustractif exact - le canal qui porte
+     le moins de colorant reste ou il est, les autres en gagnent - le meme que
+     chroma_sub juste en dessous, donc les deux reglages se manient pareil. Prix
+     paye, assume : une couleur qui se sature s'assombrit un peu. C'est ce que
+     fait une densite de colorant, et c'est ce que Color Weight fait expres. */
+  const float xm = _fmaxf(xr, _fmaxf(xg, xb));
+  (void)m; (void)dr; (void)dg; (void)db;
+  return make_float3(_exp2f(xm + (xr - xm)*k),
+                     _exp2f(xm + (xg - xm)*k),
+                     _exp2f(xm + (xb - xm)*k));
+}
+
+/* ---- Chroma soustractive, etendue au-dela de 1 sans ecretage ---------------
+   Le modele de Nikita Petrovich (MIT) ancre sur le canal le plus FORT et
+   rapproche les autres : c' = base + k(c - base). Tel quel il n'est sur que
+   jusqu'a k = 1. Au-dela, (c - base) etant negatif, k le multiplie et le canal
+   faible passe SOUS ZERO - mesure : a k = 2 la rampe reculait de 584 pour cent
+   sur une peau, et une valeur negative en lumiere de scene ne se decode plus.
+   La moitie 0..1 garde donc la forme d'origine, exactement. Au-dela, le
+   SUPPLEMENT de soustraction est borne de facon asymptotique : il approche la
+   base sans jamais l'atteindre, donc aucun canal ne peut devenir negatif et il
+   n'y a aucun point de recollement - a k = 1 la fonction et sa pente sont
+   celles du modele d'origine.                                               */
+__DEVICE__ float3 chroma_sub(float3 c, float k) {
+  const float base = _fmaxf(c.x, _fmaxf(c.y, c.z));
+  if (base <= 0.0f) return c;
+  const float kk = _fmaxf(k, 0.0f);
+  const float k1 = _fminf(kk, 1.0f);
+  const float ke = _fmaxf(kk - 1.0f, 0.0f);
+  float3 o;
+  for (int i = 0; i < 3; ++i) {
+    const float ci = i == 0 ? c.x : (i == 1 ? c.y : c.z);
+    const float d  = _fmaxf(base - ci, 0.0f);       // ce que le modele soustrait
+    const float d1 = k1*d;                          // la part d'origine, exacte
+    const float room = _fmaxf(base - d1, 0.0f);     // ce qu'il reste sous la base
+    const float ex = ke*d;                          // le supplement demande
+    const float d2 = d1 + (ex > 0.0f ? room*ex/(room + ex) : 0.0f);
+    const float v = base - d2;
+    if (i == 0) o.x = v; else if (i == 1) o.y = v; else o.z = v;
+  }
+  return o;
+}
+
+__DEVICE__ float soft_sat(float x, float s) {
+  float t = clampf(x/s, -8.0f, 8.0f);
+  float e = _expf(2.0f*t);
+  return s*(e - 1.0f)/(e + 1.0f);
+}
+
+__DEVICE__ float3 print_tone(float tsn, int id, float amt) {
+  const float u = clampf(spowf(tsn, 1.0f/3.6f), 0.0f, 1.0f);
+  const float env = (1.0f - u);
+  float3 lg = make_float3(0.0f, 0.0f, 0.0f);
+  if (id==1) { // Vision3 250D / 2383
+    lg.x = env*(4.81794288f + u*(-71.5952792f + u*(271.11404f + u*(-300.001087f + u*(-169.812019f + u*(300.001644f + u*(257.445947f + u*(-300.007984f))))))));
+    lg.y = env*(4.13265061f + u*(-55.4162744f + u*(231.417924f + u*(-283.188122f + u*(-152.292866f + u*(300.002632f + u*(246.154597f + u*(-300.017495f))))))));
+    lg.z = env*(3.24557422f + u*(-51.7206987f + u*(230.122185f + u*(-300.001281f + u*(-125.215939f + u*(300.001451f + u*(229.545555f + u*(-300.006082f))))))));
+  }
+  else if (id==2) { // Vision3 250D / 2393
+    lg.x = env*(3.53640281f + u*(-61.3436501f + u*(251.205781f + u*(-300.000476f + u*(-148.313757f + u*(300.001164f + u*(245.480543f + u*(-300.006435f))))))));
+    lg.y = env*(1.80697342f + u*(-28.3333782f + u*(128.134024f + u*(-118.661521f + u*(-253.109922f + u*(300.00308f + u*(261.112738f + u*(-300.019773f))))))));
+    lg.z = env*(0.118328352f + u*(-18.8524489f + u*(98.3071484f + u*(-60.9886514f + u*(-300.000034f + u*(298.307815f + u*(272.417549f + u*(-300.00104f))))))));
+  }
+  else if (id==3) { // Vision3 500T / 2383
+    lg.x = env*(4.15054865f + u*(-67.0463055f + u*(263.188128f + u*(-300.001202f + u*(-162.069489f + u*(300.001777f + u*(253.659258f + u*(-300.008536f))))))));
+    lg.y = env*(4.10581688f + u*(-55.4860531f + u*(233.620376f + u*(-291.019276f + u*(-144.18112f + u*(300.002667f + u*(243.670211f + u*(-300.017697f))))))));
+    lg.z = env*(3.84248818f + u*(-55.1725072f + u*(235.541366f + u*(-300.001446f + u*(-129.789729f + u*(300.00156f + u*(231.590409f + u*(-300.006381f))))))));
+  }
+  else if (id==4) { // Portra 400 / Endura
+    lg.x = env*(4.74437229f + u*(-61.2948162f + u*(242.899839f + u*(-300.006164f + u*(-132.13986f + u*(300.007056f + u*(235.284572f + u*(-300.029157f))))))));
+    lg.y = env*(5.36039573f + u*(-63.0707006f + u*(244.451608f + u*(-300.013883f + u*(-130.726678f + u*(300.016088f + u*(233.137881f + u*(-300.067152f))))))));
+    lg.z = env*(7.39021266f + u*(-73.3166211f + u*(257.357884f + u*(-300.002756f + u*(-134.479994f + u*(300.003061f + u*(231.206063f + u*(-300.012345f))))))));
+  }
+  else if (id==5) { // Ektar 100 / Ultra Endura
+    lg.x = env*(9.21269594f + u*(-87.2568695f + u*(276.10231f + u*(-300.006741f + u*(-124.711087f + u*(300.006728f + u*(206.737163f + u*(-300.025376f))))))));
+    lg.y = env*(5.5912644f + u*(-69.1733067f + u*(251.983639f + u*(-300.014838f + u*(-110.014142f + u*(300.015126f + u*(202.235327f + u*(-300.058031f))))))));
+    lg.z = env*(11.401878f + u*(-97.9081792f + u*(293.387244f + u*(-300.00133f + u*(-141.709937f + u*(300.001156f + u*(218.234f + u*(-300.003888f))))))));
+  }
+  else if (id==6) { // Pro 400H / Crystal Archive
+    lg.x = env*(-17.036161f + u*(75.0012782f + u*(-66.2380399f + u*(-75.000634f + u*(55.547801f + u*(75.0007173f + u*(24.4933467f + u*(-75.0032348f))))))));
+    lg.y = env*(2.00638068f + u*(-19.9364656f + u*(68.5388444f + u*(-75.0043493f + u*(-40.4129738f + u*(75.004962f + u*(62.3137434f + u*(-75.0205765f))))))));
+    lg.z = env*(2.95869853f + u*(-25.6098124f + u*(75.0008824f + u*(-63.5196209f + u*(-61.3893484f + u*(75.0004029f + u*(70.2066583f + u*(-75.0020002f))))))));
+  }
+  else if (id==7) { // Gold 200 / Supra Endura
+    lg.x = env*(5.84156135f + u*(-70.6893669f + u*(259.495625f + u*(-300.008047f + u*(-144.414894f + u*(300.008991f + u*(239.269539f + u*(-300.036682f))))))));
+    lg.y = env*(6.86321298f + u*(-73.2499876f + u*(262.96468f + u*(-300.019616f + u*(-149.557305f + u*(300.022072f + u*(242.745558f + u*(-300.090553f))))))));
+    lg.z = env*(10.5499108f + u*(-98.5093998f + u*(300.004888f + u*(-268.020022f + u*(-228.638003f + u*(300.002143f + u*(274.718456f + u*(-300.010382f))))))));
+  }
+
+  // Le virage suit l'intensite du look
+  lg.x *= amt; lg.y *= amt; lg.z *= amt;
+
+  return make_float3(_exp2f(soft_sat(lg.x, 2.5f)),
+                     _exp2f(soft_sat(lg.y, 2.5f)),
+                     _exp2f(soft_sat(lg.z, 2.5f)));
+}
+
+
+// La ligne des tons chair dans le plan a/b d'Oklab, MESUREE SUR CE MOTEUR :
+// dix tons de peau reels - les deux patchs de ColorChecker plus huit repartis
+// du plus clair au plus fonce - rendus a -1, 0 et +1 stop, soit trente
+// echantillons. 52.09 degres.
+//
+// Elle n'est pas la meme que dans Node One DRT, qui mesure 49.25 degres sur les
+// MEMES tons : deux rendus placent la peau a deux endroits, et reprendre la
+// valeur de l'autre moteur aurait fait lire "trop vert" a une peau correcte.
+// Une ligne se mesure sur le rendu qu'elle doit juger.
+#define SKIN_A 0.614430f
+#define SKIN_B 0.788971f
+
+// ---- Oklab (Bjorn Ottosson, domaine public / MIT) ---------------------------
+// Sur du Rec.709 display-lineaire. Sert au Skin Check : c'est le seul espace
+// ou "a quelle distance de la ligne des tons chair" veut dire quelque chose de
+// perceptif.
+__DEVICE__ float3 ovl_oklab(float3 c) {
+  float l = 0.4122214708f*c.x + 0.5363325363f*c.y + 0.0514459929f*c.z;
+  float m = 0.2119034982f*c.x + 0.6806995451f*c.y + 0.1073969566f*c.z;
+  float t = 0.0883024619f*c.x + 0.2817188376f*c.y + 0.6299787005f*c.z;
+  l = _cbrtf(_fmaxf(l, 0.0f)); m = _cbrtf(_fmaxf(m, 0.0f)); t = _cbrtf(_fmaxf(t, 0.0f));
+  return make_float3(0.2104542553f*l + 0.7936177850f*m - 0.0040720468f*t,
+                     1.9779984951f*l - 2.4285922050f*m + 0.4505937099f*t,
+                     0.0259040371f*l + 0.7827717662f*m - 0.8086757660f*t);
+}
+__DEVICE__ float ovl_band(float v, float lo, float hi) {
+  float t = _clampf((v - lo)/_fmaxf(hi - lo, 1e-4f), 0.0f, 1.0f);
+  return t*t*(3.0f - 2.0f*t);
+}
+
+// =============================================================================
+//  SKIN CHECK — l'instrument de NODE_SKIN, porte tel quel
+// -----------------------------------------------------------------------------
+//  Meme sonde, meme axe, meme echelle, memes couleurs, meme legende. Un
+//  instrument qui ne dit pas la meme chose selon le noeud ou on le branche ne
+//  sert a rien : une peau jugee ici doit lire exactement comme dans NODE_SKIN.
+//
+//  Ce qui est repris a l'identique :
+//    - la sonde : LMS applique sur AP1, racine cubique, a/L et b/L
+//    - le retrait du blanc de la sonde (A0, B0). Sans lui la sonde, qui passe
+//      par AP1 au lieu de XYZ, place un gris PARFAIT a a/L = -0.012061 et
+//      b/L = +0.014794 - franchement du cote vert. Chaque mur gris lirait vert.
+//    - l'axe a 42.5 degres : la ligne des tons chair du vectorscope de Resolve
+//      (l'I-line, 123 degres depuis +Cb en Rec.709 Y'CbCr), passee dans cette
+//      meme sonde. Jaune pur sur le check = SUR la ligne du scope.
+//      Cet axe ne suit pas la lumiere du plan, deliberement : un instrument
+//      qu'on tient contre un scope doit dire la meme chose que lui.
+//    - l'ecart signe sans arc-tangente : v/(n+u) EST tan(ecart/2), deja signe
+//      et monotone, compare a tan(seuil/2).
+//    - l'echelle a paliers : jaune sous 4.5 degres, couleur pleine a 25,
+//      smootherstep puis puissance 0.45 - on lit un palier, on n'estime pas
+//      un degrade.
+//    - les couleurs et le niveau de peinture 0.52, a la virgule.
+//
+//  CE QUI DIFFERE, et il faut le savoir : dans NODE_SKIN la derniere porte est
+//  la CLE DE PEAU de son qualifier, qui n'existe pas ici - ce plugin n'a pas de
+//  qualifier. Elle est remplacee par une porte de chroma mesuree sur CE moteur :
+//  la peau y rend entre 0.048 et 0.078, une tomate a 0.129, un ciel a 0.144. La
+//  lecture est donc identique ; c'est le choix de CE QUI est peint qui repose
+//  sur la chroma au lieu d'une cle.
+// =============================================================================
+__DEVICE__ float3 over_di(float3 dst, float3 src, float a) {
+    float k = _clampf(a, 0.0f, 1.0f);
+    float3 o;
+    o.x = dst.x + k * (src.x - dst.x);
+    o.y = dst.y + k * (src.y - dst.y);
+    o.z = dst.z + k * (src.z - dst.z);
+    return o;
+}
+
+__DEVICE__ float sd_rbox(float px, float py, float cx, float cy,
+                         float hw, float hh, float r) {
+    float qx = _fabs(px - cx) - (hw - r);
+    float qy = _fabs(py - cy) - (hh - r);
+    float ax = _fmaxf(qx, 0.0f), ay = _fmaxf(qy, 0.0f);
+    return _sqrtf(ax * ax + ay * ay) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
+}
+
+__DEVICE__ float cov_sdf(float d, float aa) {
+    return 1.0f - smootherstep(-aa, aa, d);
+}
+
+__DEVICE__ float cov_rect(float px, float py, float x0, float y0,
+                          float x1, float y1, float aa) {
+    float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
+    float hw = (x1 - x0) * 0.5f, hh = (y1 - y0) * 0.5f;
+    float d  = _fmaxf(_fabs(px - cx) - hw, _fabs(py - cy) - hh);
+    return 1.0f - smootherstep(-aa, aa, d);
+}
+
+// La fonte de NODE_SKIN et ses codes de caracteres, pour que la legende soit
+// la meme a la lettre pres.
+#define C_SP   0
+#define C_A    1
+#define C_B    2
+#define C_C    3
+#define C_D    4
+#define C_E    5
+#define C_F    6
+#define C_G    7
+#define C_H    8
+#define C_I    9
+#define C_J   10
+#define C_K   11
+#define C_L   12
+#define C_M   13
+#define C_N   14
+#define C_O   15
+#define C_P   16
+#define C_Q   17
+#define C_R   18
+#define C_S   19
+#define C_T   20
+#define C_U   21
+#define C_V   22
+#define C_W   23
+#define C_X   24
+#define C_Y   25
+#define C_Z   26
+#define C_D0  27
+#define C_D1  28
+#define C_D2  29
+#define C_D3  30
+#define C_D4  31
+#define C_D5  32
+#define C_D6  33
+#define C_D7  34
+#define C_D8  35
+#define C_D9  36
+#define C_DOT 37
+#define C_PCT 38
+#define C_DSH 39
+#define C_CLN 40
+
+__DEVICE__ int glyph_row(int c, int r) {
+    int r0 = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0, r5 = 0, r6 = 0;
+    if      (c == C_A)   { r0=0x0E; r1=0x11; r2=0x11; r3=0x1F; r4=0x11; r5=0x11; r6=0x11; }
+    else if (c == C_B)   { r0=0x1E; r1=0x11; r2=0x11; r3=0x1E; r4=0x11; r5=0x11; r6=0x1E; }
+    else if (c == C_C)   { r0=0x0E; r1=0x11; r2=0x10; r3=0x10; r4=0x10; r5=0x11; r6=0x0E; }
+    else if (c == C_D)   { r0=0x1C; r1=0x12; r2=0x11; r3=0x11; r4=0x11; r5=0x12; r6=0x1C; }
+    else if (c == C_E)   { r0=0x1F; r1=0x10; r2=0x10; r3=0x1E; r4=0x10; r5=0x10; r6=0x1F; }
+    else if (c == C_F)   { r0=0x1F; r1=0x10; r2=0x10; r3=0x1E; r4=0x10; r5=0x10; r6=0x10; }
+    else if (c == C_G)   { r0=0x0E; r1=0x11; r2=0x10; r3=0x17; r4=0x11; r5=0x11; r6=0x0F; }
+    else if (c == C_H)   { r0=0x11; r1=0x11; r2=0x11; r3=0x1F; r4=0x11; r5=0x11; r6=0x11; }
+    else if (c == C_I)   { r0=0x0E; r1=0x04; r2=0x04; r3=0x04; r4=0x04; r5=0x04; r6=0x0E; }
+    else if (c == C_J)   { r0=0x07; r1=0x02; r2=0x02; r3=0x02; r4=0x02; r5=0x12; r6=0x0C; }
+    else if (c == C_K)   { r0=0x11; r1=0x12; r2=0x14; r3=0x18; r4=0x14; r5=0x12; r6=0x11; }
+    else if (c == C_L)   { r0=0x10; r1=0x10; r2=0x10; r3=0x10; r4=0x10; r5=0x10; r6=0x1F; }
+    else if (c == C_M)   { r0=0x11; r1=0x1B; r2=0x15; r3=0x15; r4=0x11; r5=0x11; r6=0x11; }
+    else if (c == C_N)   { r0=0x11; r1=0x19; r2=0x15; r3=0x13; r4=0x11; r5=0x11; r6=0x11; }
+    else if (c == C_O)   { r0=0x0E; r1=0x11; r2=0x11; r3=0x11; r4=0x11; r5=0x11; r6=0x0E; }
+    else if (c == C_P)   { r0=0x1E; r1=0x11; r2=0x11; r3=0x1E; r4=0x10; r5=0x10; r6=0x10; }
+    else if (c == C_Q)   { r0=0x0E; r1=0x11; r2=0x11; r3=0x11; r4=0x15; r5=0x12; r6=0x0D; }
+    else if (c == C_R)   { r0=0x1E; r1=0x11; r2=0x11; r3=0x1E; r4=0x14; r5=0x12; r6=0x11; }
+    else if (c == C_S)   { r0=0x0F; r1=0x10; r2=0x10; r3=0x0E; r4=0x01; r5=0x11; r6=0x0E; }
+    else if (c == C_T)   { r0=0x1F; r1=0x04; r2=0x04; r3=0x04; r4=0x04; r5=0x04; r6=0x04; }
+    else if (c == C_U)   { r0=0x11; r1=0x11; r2=0x11; r3=0x11; r4=0x11; r5=0x11; r6=0x0E; }
+    else if (c == C_V)   { r0=0x11; r1=0x11; r2=0x11; r3=0x11; r4=0x11; r5=0x0A; r6=0x04; }
+    else if (c == C_W)   { r0=0x11; r1=0x11; r2=0x11; r3=0x15; r4=0x15; r5=0x1B; r6=0x11; }
+    else if (c == C_X)   { r0=0x11; r1=0x11; r2=0x0A; r3=0x04; r4=0x0A; r5=0x11; r6=0x11; }
+    else if (c == C_Y)   { r0=0x11; r1=0x11; r2=0x0A; r3=0x04; r4=0x04; r5=0x04; r6=0x04; }
+    else if (c == C_Z)   { r0=0x1F; r1=0x01; r2=0x02; r3=0x04; r4=0x08; r5=0x10; r6=0x1F; }
+    else if (c == C_D0)  { r0=0x0E; r1=0x11; r2=0x13; r3=0x15; r4=0x19; r5=0x11; r6=0x0E; }
+    else if (c == C_D1)  { r0=0x04; r1=0x0C; r2=0x04; r3=0x04; r4=0x04; r5=0x04; r6=0x0E; }
+    else if (c == C_D2)  { r0=0x0E; r1=0x11; r2=0x01; r3=0x02; r4=0x04; r5=0x08; r6=0x1F; }
+    else if (c == C_D3)  { r0=0x1F; r1=0x02; r2=0x04; r3=0x02; r4=0x01; r5=0x11; r6=0x0E; }
+    else if (c == C_D4)  { r0=0x02; r1=0x06; r2=0x0A; r3=0x12; r4=0x1F; r5=0x02; r6=0x02; }
+    else if (c == C_D5)  { r0=0x1F; r1=0x10; r2=0x1E; r3=0x01; r4=0x01; r5=0x11; r6=0x0E; }
+    else if (c == C_D6)  { r0=0x06; r1=0x08; r2=0x10; r3=0x1E; r4=0x11; r5=0x11; r6=0x0E; }
+    else if (c == C_D7)  { r0=0x1F; r1=0x01; r2=0x02; r3=0x04; r4=0x08; r5=0x08; r6=0x08; }
+    else if (c == C_D8)  { r0=0x0E; r1=0x11; r2=0x11; r3=0x0E; r4=0x11; r5=0x11; r6=0x0E; }
+    else if (c == C_D9)  { r0=0x0E; r1=0x11; r2=0x11; r3=0x0F; r4=0x01; r5=0x02; r6=0x0C; }
+    else if (c == C_DOT) { r0=0x00; r1=0x00; r2=0x00; r3=0x00; r4=0x00; r5=0x0C; r6=0x0C; }
+    else if (c == C_PCT) { r0=0x19; r1=0x1A; r2=0x02; r3=0x04; r4=0x08; r5=0x0B; r6=0x13; }
+    else if (c == C_DSH) { r0=0x00; r1=0x00; r2=0x00; r3=0x0E; r4=0x00; r5=0x00; r6=0x00; }
+    else if (c == C_CLN) { r0=0x00; r1=0x0C; r2=0x0C; r3=0x00; r4=0x0C; r5=0x0C; r6=0x00; }
+    return (r==0)?r0:((r==1)?r1:((r==2)?r2:((r==3)?r3:((r==4)?r4:((r==5)?r5:r6)))));
+}
+
+__DEVICE__ float txt_bit(float px, float py, float x0, float y0, float fp, int n,
+                         int c0,int c1,int c2,int c3,int c4,int c5,
+                         int c6,int c7,int c8,int c9,int c10)
+{
+    float lx = (px - x0) / fp;
+    float ly = (py - y0) / fp;
+    if (lx < 0.0f || ly < 0.0f || ly >= 7.0f) return 0.0f;
+    int idx = (int)(lx * 0.1666666667f);
+    if (idx >= n) return 0.0f;
+    float gx = lx - (float)idx * 6.0f;
+    if (gx >= 5.0f) return 0.0f;
+    int c = (idx==0)?c0:((idx==1)?c1:((idx==2)?c2:((idx==3)?c3:((idx==4)?c4:
+            ((idx==5)?c5:((idx==6)?c6:((idx==7)?c7:((idx==8)?c8:
+            ((idx==9)?c9:c10)))))))));
+    int rw = glyph_row(c, (int)ly);
+    return (float)((rw >> (4 - (int)gx)) & 1);
+}
+
+__DEVICE__ float txt_cov(float px, float py, float x0, float y0, float fp, int n,
+                         int c0,int c1,int c2,int c3,int c4,int c5,
+                         int c6,int c7,int c8,int c9,int c10)
+{
+    float a = txt_bit(px-0.25f, py-0.25f, x0,y0,fp,n, c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10)
+            + txt_bit(px+0.25f, py-0.25f, x0,y0,fp,n, c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10)
+            + txt_bit(px-0.25f, py+0.25f, x0,y0,fp,n, c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10)
+            + txt_bit(px+0.25f, py+0.25f, x0,y0,fp,n, c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10);
+    return a * 0.25f;
+}
+
+// Rec.709 display-lineaire -> AP1, pour donner a la sonde le meme genre de
+// valeur que dans NODE_SKIN sans repasser par un encodage log.
+__DEVICE__ float3 skchk_probe(float3 c) {
+    float ap1_r = 0.603141865f*c.x + 0.326348821f*c.y + 0.048032249f*c.z;
+    float ap1_g = 0.070048331f*c.x + 0.919956673f*c.y + 0.012762703f*c.z;
+    float ap1_b = 0.022148858f*c.x + 0.116083384f*c.y + 0.940986978f*c.z;
+    float lms_l = 0.6353221533f*ap1_r + 0.3573570174f*ap1_g + 0.0032861118f*ap1_b;
+    float lms_m = 0.2731137454f*ap1_r + 0.6363240167f*ap1_g + 0.0922688645f*ap1_b;
+    float lms_s = 0.1013864481f*ap1_r + 0.1881271185f*ap1_g + 0.6580679318f*ap1_b;
+    float l_ = _powf(_fmaxf(lms_l,1e-10f),0.333333f);
+    float ml_= _powf(_fmaxf(lms_m,1e-10f),0.333333f);
+    float s_ = _powf(_fmaxf(lms_s,1e-10f),0.333333f);
+    float3 o;
+    o.x =  1.9779984951f*l_ - 2.4285922050f*ml_ + 0.4505937099f*s_;   // a
+    o.y =  0.0259040371f*l_ + 0.7827717662f*ml_ - 0.8086757660f*s_;   // b
+    o.z = (l_ + ml_ + s_) * 0.335412f;                                 // L
+    return o;
+}
+
+__DEVICE__ float3 draw_check_legend(float3 base, float px, float py, float Wf, float Hf)
+{
+    float bw = 284.0f;
+    float bh = 440.0f;
+
+    float s   = Hf / 1080.0f;
+    float smx = (Hf * 0.94f) / bh;
+    if (s > smx) s = smx;
+    if (s < 0.12f) s = 0.12f;
+
+    float PW = bw * s;
+    float PH = bh * s;
+    float x0 = 48.0f * s;                   // same left margin as [D.3]
+    float y0 = (Hf - PH) * 0.5f;
+    float x1 = x0 + PW;
+    float y1 = y0 + PH;
+
+    float mrg = 34.0f * s;
+    if (px < x0 - mrg || px > x1 + mrg || py < y0 - mrg || py > y1 + mrg) return base;
+
+    float aa = 0.85f;
+    float d  = sd_rbox(px, py, (x0+x1)*0.5f, (y0+y1)*0.5f,
+                       PW*0.5f, PH*0.5f, 18.0f*s);
+
+    float3 col = base;
+
+    // -- Shared dressing: shadow, ink background, gold hairline — identical to [D.3]
+    col = over_di(col, make_float3(0.0f, 0.0f, 0.0f),
+                  (1.0f - smootherstep(0.0f, 28.0f*s, _fmaxf(d, 0.0f))) * 0.42f);
+    col = over_di(col, make_float3(0.075f, 0.085f, 0.125f), cov_sdf(d, aa) * 0.88f);
+    col = over_di(col, make_float3(0.560f, 0.480f, 0.320f),
+                  cov_sdf(_fabs(d) - _fmaxf(1.15f*s, 0.9f), aa) * 0.80f);
+
+    float ux = px - x0;
+    float uy = py - y0;
+
+    float3 c_ttl = make_float3(0.980f, 0.845f, 0.520f);   // or — titre / nom de couleur
+    float3 c_txt = make_float3(0.905f, 0.900f, 0.880f);   // blanc chaud — signification
+    float3 c_rul = make_float3(0.620f, 0.540f, 0.380f);   // filets
+
+    float ft = 4.0f * s;                    // titre
+    float fn = 3.0f * s;                    // texte courant
+    float tx = 70.0f * s;                   // colonne de texte, à droite des pastilles
+
+    // -- Title: "SKIN CHECK" (10 car. dont l'espace) — centré sur 284: (284-10*24)/2 = 22
+    col = over_di(col, c_ttl,
+          txt_cov(ux, uy, 22.0f * s, 26.0f * s, ft, 10,
+                  C_S, C_K, C_I, C_N, C_SP, C_C, C_H, C_E, C_C, C_K, C_SP));
+
+    col = over_di(col, c_rul,
+          cov_rect(ux, uy, 20.0f*s, 72.0f*s, PW - 20.0f*s,
+                   72.0f*s + _fmaxf(1.6f*s, 1.0f), aa) * 0.55f);
+
+    // -- Real overlay colours: cc * K_PAINT_LEVEL — see [C9] palette [BD1]
+    float3 col_yellow  = make_float3(0.520f, 0.494f, 0.000f);
+    float3 col_green   = make_float3(0.000f, 0.520f, 0.062f);
+    float3 col_magenta = make_float3(0.520f, 0.000f, 0.520f);
+
+    float swx0 = 20.0f * s, swx1 = swx0 + 26.0f * s;   // pastille : même bande x que la barre en [D.3]
+    float rowGap = 120.0f * s;
+    float ry0    = 150.0f * s;
+
+    // ---- YELLOW — ON TARGET (peau correcte, rien à faire) -------------
+    {
+        float ry = ry0;
+        float dg = sd_rbox(ux, uy, (swx0+swx1)*0.5f, ry, (swx1-swx0)*0.5f, 31.0f*s, 6.0f*s);
+        col = over_di(col, col_yellow, cov_sdf(dg, aa));
+        col = over_di(col, make_float3(0.520f, 0.470f, 0.400f),
+                      cov_sdf(_fabs(dg) - _fmaxf(0.9f*s, 0.8f), aa) * 0.55f);
+        col = over_di(col, c_ttl, txt_cov(ux, uy, tx, ry - 10.0f*s, fn, 6,
+                      C_Y, C_E, C_L, C_L, C_O, C_W, C_SP,C_SP,C_SP,C_SP,C_SP));
+        col = over_di(col, c_txt, txt_cov(ux, uy, tx, ry + 16.0f*s, fn, 9,
+                      C_O, C_N, C_SP, C_T, C_A, C_R, C_G, C_E, C_T, C_SP,C_SP));
+    }
+
+    // ---- GREEN — TOO GREEN (corriger avec 🔴 Red ou 🔵 Blue) -----------
+    {
+        float ry = ry0 + rowGap;
+        float dg = sd_rbox(ux, uy, (swx0+swx1)*0.5f, ry, (swx1-swx0)*0.5f, 31.0f*s, 6.0f*s);
+        col = over_di(col, col_green, cov_sdf(dg, aa));
+        col = over_di(col, make_float3(0.520f, 0.470f, 0.400f),
+                      cov_sdf(_fabs(dg) - _fmaxf(0.9f*s, 0.8f), aa) * 0.55f);
+        col = over_di(col, c_ttl, txt_cov(ux, uy, tx, ry - 10.0f*s, fn, 5,
+                      C_G, C_R, C_E, C_E, C_N, C_SP,C_SP,C_SP,C_SP,C_SP,C_SP));
+        col = over_di(col, c_txt, txt_cov(ux, uy, tx, ry + 16.0f*s, fn, 9,
+                      C_T, C_O, C_O, C_SP, C_G, C_R, C_E, C_E, C_N, C_SP,C_SP));
+    }
+
+    // ---- MAGENTA — TOO MAGENTA (corriger avec 🟢 Green) ----------------
+    {
+        float ry = ry0 + 2.0f * rowGap;
+        float dg = sd_rbox(ux, uy, (swx0+swx1)*0.5f, ry, (swx1-swx0)*0.5f, 31.0f*s, 6.0f*s);
+        col = over_di(col, col_magenta, cov_sdf(dg, aa));
+        col = over_di(col, make_float3(0.520f, 0.470f, 0.400f),
+                      cov_sdf(_fabs(dg) - _fmaxf(0.9f*s, 0.8f), aa) * 0.55f);
+        col = over_di(col, c_ttl, txt_cov(ux, uy, tx, ry - 10.0f*s, fn, 7,
+                      C_M, C_A, C_G, C_E, C_N, C_T, C_A, C_SP,C_SP,C_SP,C_SP));
+        col = over_di(col, c_txt, txt_cov(ux, uy, tx, ry + 16.0f*s, fn, 11,
+                      C_T, C_O, C_O, C_SP, C_M, C_A, C_G, C_E, C_N, C_T, C_A));
+    }
+
+    return col;
+}
+
+// =============================================================================
+//  OVERLAYS — false color et skin check
+// -----------------------------------------------------------------------------
+//  Repris tels quels de NODE_WB (false color) et NODE_SKIN (skin check), pour
+//  qu'un plan juge ici se lise EXACTEMENT comme dans ces outils : un instrument
+//  qui ne dit pas la meme chose selon le noeud ou on le branche ne sert a rien.
+// =============================================================================
+__DEVICE__ int ovl_glyph_bits(int id) {
+    if (id == 0) return 31599;
+    if (id == 1) return 29850;
+    if (id == 2) return 29671;
+    if (id == 3) return 31207;
+    if (id == 4) return 18925;
+    if (id == 5) return 31183;
+    if (id == 6) return 31695;
+    if (id == 7) return 9383;
+    if (id == 8) return 31727;
+    if (id == 9) return 31215;
+    if (id == 10) return 1488;
+    if (id == 11) return 448;
+    if (id == 12) return 8192;
+    if (id == 13) return 23277;
+    if (id == 15) return 21157;   // [v8.6] '%' : X.X / ..X / .X. / X.. / X.X
+    // [v9.2] Lettres nécessaires aux mots TEMP et TINT écrits en toutes
+    // lettres dans le patch (les anciens labels 'T' et 'F' à une lettre
+    // étaient illisibles pour qui ne connaît pas le code interne).
+    if (id == 16) return 9367;    // 'T' : XXX / .X. / .X. / .X. / .X.
+    if (id == 17) return 29391;   // 'E' : XXX / X.. / XX. / X.. / XXX
+    if (id == 18) return 23549;   // 'M' : X.X / XXX / XXX / X.X / X.X
+    if (id == 19) return 4843;    // 'P' : XX. / X.X / XX. / X.. / X..
+    if (id == 20) return 29847;   // 'I' : XXX / .X. / .X. / .X. / XXX
+    if (id == 21) return 23403;   // 'N' : XX. / X.X / X.X / X.X / X.X
+    return 0;
+}
+
+__DEVICE__ float ovl_glyph_cov(float px, float py, float gx0, float gy0, float sf, int id) {
+    int bits = ovl_glyph_bits(id);
+    if (bits == 0) return 0.0f;
+    float fx = (px - gx0) / sf;
+    float fy = (py - gy0) / sf;
+    if (fx < 0.0f || fx >= 3.0f || fy < 0.0f || fy >= 5.0f) return 0.0f;
+    int cx = (int)fx;
+    int cy = (int)fy;
+    return (float)((bits >> (cy * 3 + cx)) & 1);
+}
+
+// ---- Outils légende [PRO] : SDF rectangle arrondi + couverture AA ----
+// SDF exact (Inigo Quilez) : distance SIGNEE, en PIXELS, au bord du
+// rectangle arrondi de centre (cx,cy), demi-dimensions (hx,hy), rayon r.
+__DEVICE__ float ovl_rrect_sdf(float px, float py, float cx, float cy, float hx, float hy, float r) {
+    float qx = _fabs(px - cx) - (hx - r);
+    float qy = _fabs(py - cy) - (hy - r);
+    float ax = _fmaxf(qx, 0.0f);
+    float ay = _fmaxf(qy, 0.0f);
+    return _sqrtf(ax * ax + ay * ay) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
+}
+// Couverture anti-aliasée : feather d'UN pixel exactement, centré sur le
+// bord mathématique (d=0 → 50% de couverture) — l'AA géométriquement juste.
+__DEVICE__ float ovl_cov(float d) { return _clampf(0.5f - d, 0.0f, 1.0f); }
+// [v8.1 — COULEUR CONSTANTE] Mélange d'overlay VERROUILLE : à couverture
+// saturée (a >= 1, l'intérieur d'un aplat opaque), on ASSIGNE la cible au
+// lieu d'interpoler — le lerp float32 (x + (t-x)*1.0) laissait un résidu
+// d'un ulp dépendant du pixel derrière : l'overlay n'était constant qu'à
+// 3e-8 près. Désormais : bit-exact, la même couleur sur toutes les images.
+__DEVICE__ float ovl_mix(float x, float t, float a) {
+    return (a >= 1.0f) ? t : (x + (t - x) * a);
+}
+// Smoothstep C1 — crossfade des bandes d'exposition (en stops) et gate zebra.
+__DEVICE__ float ovl_ss(float e0, float e1, float x) {
+    float t = _clampf((x - e0) / (e1 - e0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+
+// Rampe grise de fond : monotone, l'image reste lisible. Le gamma 2.2
+// compense l'encodage de sortie -> a l'ecran le degrade parait regulier.
+__DEVICE__ float3 fc_gray_ramp(float s) {
+    float t = _clampf((s + 6.0f) / 12.0f, 0.0f, 1.0f);
+    float g = 0.0060f + 0.8000f * _powf(t, 2.2f);
+    return make_float3(g, g, g);
+}
+
+// Appartenance douce a une bande [a, b] : bords adoucis de +/-0.05 stop
+// (meme largeur d'anti-scintillement que la version validee).
+__DEVICE__ float fc_band(float s, float a, float b) {
+    return ovl_ss(a - 0.05f, a + 0.05f, s)
+         * (1.0f - ovl_ss(b - 0.05f, b + 0.05f, s));
+}
+
+// Couleur affichee pour une exposition s, en stops relatifs au gris 18%.
+// Rec.709 LINEAIRE. Continue partout (aucun seuil dur -> aucun scintillement).
+__DEVICE__ float3 fc_color(float s) {
+    float3 c = fc_gray_ramp(s);
+    float m;
+    // VIOLET — noir bouche
+    m = 1.0f - ovl_ss(-4.80f, -4.70f, s);
+    c.x = c.x + (0.4200f - c.x) * m;
+    c.y = c.y + (0.0900f - c.y) * m;
+    c.z = c.z + (0.6500f - c.z) * m;
+    // BLEU — ombres profondes
+    m = fc_band(s, -4.75f, -3.25f);
+    c.x = c.x + (0.0700f - c.x) * m;
+    c.y = c.y + (0.2600f - c.y) * m;
+    c.z = c.z + (0.8500f - c.z) * m;
+    // VERT — gris 18%, LA cible
+    m = fc_band(s, -0.30f, 0.30f);
+    c.x = c.x + (0.0800f - c.x) * m;
+    c.y = c.y + (0.6200f - c.y) * m;
+    c.z = c.z + (0.1400f - c.z) * m;
+    // ROSE — peau
+    m = fc_band(s, 0.55f, 1.45f);
+    c.x = c.x + (0.9000f - c.x) * m;
+    c.y = c.y + (0.4200f - c.y) * m;
+    c.z = c.z + (0.4800f - c.z) * m;
+    // JAUNE — un stop sous le clip
+    m = fc_band(s, 3.25f, 4.75f);
+    c.x = c.x + (0.9500f - c.x) * m;
+    c.y = c.y + (0.8000f - c.y) * m;
+    c.z = c.z + (0.0500f - c.z) * m;
+    // ROUGE — clip
+    m = ovl_ss(4.70f, 4.80f, s);
+    c.x = c.x + (0.9000f - c.x) * m;
+    c.y = c.y + (0.0600f - c.y) * m;
+    c.z = c.z + (0.0300f - c.z) * m;
+    return c;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+  // Ce plugin ne lit que son propre pixel. Il a lu ses voisins pendant un
+  // temps, pour la halation ; celle-ci est retiree, donc la signature spatiale
+  // ne sert plus qu'a lire le pixel courant et le generateur repasse l'effet en
+  // per-pixel - plus aucun acces texture au voisinage, sur processeur comme sur
+  // GPU.
+  float3 rgb = make_float3(_tex2D(p_TexR, p_X, p_Y),
+                           _tex2D(p_TexG, p_X, p_Y),
+                           _tex2D(p_TexB, p_X, p_Y));
+
+  /*****************************************************
+    Parameter Setup
+    --------------------------------------------------*/
+
+  // Init look preset variables
+  int tn_hcon_enable, tn_lcon_enable, ptl_enable, ptm_enable, brl_enable, hs_rgb_enable, hs_cmy_enable, hc_enable, cwp;
+  int display_gamut = 0, eotf = 2; // Rec.1886, comme le preset 0
+  int tone_id = 0;
+  float look_exp = 1.0f;
+  float tn_Lg, tn_con, tn_sh, tn_toe, tn_off, tn_hcon, tn_hcon_pv, tn_hcon_st, tn_lcon, tn_lcon_w, tn_lcon_pc, cwp_rng, rs_sa, rs_rw, rs_bw, pt_r, pt_g, pt_b, pt_rng_low, pt_rng_high, ptm_low, ptm_low_st, ptm_high, ptm_high_st, brl_r, brl_g, brl_b, brl_c, brl_m, brl_y, brl_rng, hs_r, hs_g, hs_b, hs_rgb_rng, hs_c, hs_m, hs_y, hc_r;
+
+  #ifdef INIT_PARAMS  // Set all parameters to the user-controllable ones instead of presets if INIT_PARAMS defined by user.
+
+  tn_Lg=_tn_Lg, tn_con=_tn_con, tn_sh=_tn_sh, tn_toe=_tn_toe, tn_off=_tn_off, tn_hcon_enable=_tn_hcon_enable, tn_hcon=_tn_hcon, tn_hcon_pv=_tn_hcon_pv, tn_hcon_st=_tn_hcon_st, tn_lcon_enable=_tn_lcon_enable, tn_lcon=_tn_lcon, tn_lcon_w=_tn_lcon_w, tn_lcon_pc=_tn_lcon_pc, cwp=_cwp, cwp_rng=_cwp_rng, rs_sa=_rs_sa, rs_rw=_rs_rw, rs_bw=_rs_bw, pt_r=_pt_r, pt_g=_pt_g, pt_b=_pt_b, pt_rng_low=_pt_rng_low, pt_rng_high=_pt_rng_high, ptl_enable=_ptl_enable, ptm_enable=_ptm_enable, ptm_low=_ptm_low, ptm_low_st=_ptm_low_st, ptm_high=_ptm_high, ptm_high_st=_ptm_high_st, brl_enable=_brl_enable, brl_r=_brl_r, brl_g=_brl_g, brl_b=_brl_b, brl_c=_brl_c, brl_m=_brl_m, brl_y=_brl_y, brl_rng=_brl_rng, hs_rgb_enable=_hs_rgb_enable, hs_r=_hs_r, hs_g=_hs_g, hs_b=_hs_b, hs_rgb_rng=_hs_rgb_rng, hs_cmy_enable=_hs_cmy_enable, hs_c=_hs_c, hs_m=_hs_m, hs_y=_hs_y, hc_enable=_hc_enable, hc_r=_hc_r, display_gamut=_display_gamut, eotf=_eotf;
+
+  #else // Otherwise, drive everything based on the preset combo box parameters.
+
+  /*----------- LOOK PRESETS -----------------*/
+  // Le MENU est groupe par famille - les deux tirages 2383 se suivent - mais
+  // les blocs de valeurs gardent leur numerotation d'origine. Cette table est
+  // le seul endroit ou les deux se croisent. Deplacer les blocs eux-memes
+  // aurait donne le meme menu avec un vrai risque de melanger deux stocks.
+  //   menu 2 -> bloc 3 (500T/2383)      menu 3 -> bloc 2 (250D/2393)
+  int lk_sel = look_preset;
+  // Bypass Tone : le menu Tonescale est ignore, la courbe redevient celle que
+  // le look porte. C'est bien le menu qu'on neutralise, pas la courbe : sans
+  // courbe il n'y a pas d'image.
+  const int ts_sel = tone_curve_bypass ? 0 : tonescale_preset;
+  if (lk_sel == 2)      lk_sel = 3;
+  else if (lk_sel == 3) lk_sel = 2;
+
+  // Look presets to go after
+  if (lk_sel<1 || lk_sel>7) { // Default (et repli pour les presets a LUT)
+    tn_Lg = 11.1f, tn_con = 1.4f, tn_sh = 0.5f, tn_toe = 0.003f, tn_off = 0.005f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 1.0f, tn_lcon_w = 0.5f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.35f, rs_rw = 0.25f, rs_bw = 0.55f, pt_r = 0.5f, pt_g = 2.0f, pt_b = 2.0f, pt_rng_low = 0.2f, pt_rng_high = 0.8f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.2f, ptm_low_st = 0.5f, ptm_high = -0.8f, ptm_high_st = 0.3f, brl_enable = 1, brl_r = -0.5f, brl_g = -0.4f, brl_b = -0.2f, brl_c = 0.0f, brl_m = 0.0f, brl_y = 0.0f, brl_rng = 0.66f, hs_rgb_enable = 1, hs_r = 0.35f, hs_g = 0.25f, hs_b = 0.5f, hs_rgb_rng = 0.6f, hs_cmy_enable = 1, hs_c = 0.2f, hs_m = 0.2f, hs_y = 0.2f, hc_enable = 1, hc_r = 0.6f;
+  }
+  else if (lk_sel==1) { // Vision3 250D / 2383 - negatif lumiere du jour sur tirage de diffusion - la reference
+    tn_Lg = 17.0357f, tn_con = 1.0464f, tn_sh = 0.9527f, tn_toe = 0.0158f, tn_off = 0.01f, tn_hcon_enable = 1, tn_hcon = -0.9242f, tn_hcon_pv = 1.1715f, tn_hcon_st = 3.8223f, tn_lcon_enable = 1, tn_lcon = 2.8597f, tn_lcon_w = 0.6759f, tn_lcon_pc = 0.9119f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2408f, rs_rw = 0.017f, rs_bw = 0.4578f, pt_r = 1.9813f, pt_g = 3.8121f, pt_b = 3.8658f, pt_rng_low = 0.1761f, pt_rng_high = 0.4622f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1238f, ptm_low_st = 0.1459f, ptm_high = -0.7732f, ptm_high_st = 0.2376f, brl_enable = 1, brl_r = -0.692f, brl_g = -0.9586f, brl_b = -0.6352f, brl_c = -0.1516f, brl_m = -0.4763f, brl_y = -0.098f, brl_rng = 0.594f, hs_rgb_enable = 1, hs_r = 0.065f, hs_g = 0.9627f, hs_b = 0.4406f, hs_rgb_rng = 0.9645f, hs_cmy_enable = 1, hs_c = 0.4194f, hs_m = 0.2472f, hs_y = 0.8298f, hc_enable = 1, hc_r = 0.9767f, tone_id = 1, look_exp = 0.76390f;
+  }
+  else if (lk_sel==2) { // Vision3 250D / 2393 - meme negatif sur tirage haut contraste, noirs plus fermes
+    tn_Lg = 15.7344f, tn_con = 1.1257f, tn_sh = 0.9527f, tn_toe = 0.0067f, tn_off = 0.0036f, tn_hcon_enable = 1, tn_hcon = -0.9231f, tn_hcon_pv = 1.3379f, tn_hcon_st = 3.8186f, tn_lcon_enable = 1, tn_lcon = 2.8594f, tn_lcon_w = 0.6173f, tn_lcon_pc = 0.4524f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2577f, rs_rw = 0.0152f, rs_bw = 0.3945f, pt_r = 1.4747f, pt_g = 1.9492f, pt_b = 3.8569f, pt_rng_low = 0.1665f, pt_rng_high = 0.5147f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.0987f, ptm_low_st = 0.3261f, ptm_high = -0.7655f, ptm_high_st = 0.2285f, brl_enable = 1, brl_r = -0.7113f, brl_g = -0.9726f, brl_b = -0.6358f, brl_c = -0.1371f, brl_m = -0.4801f, brl_y = -0.0834f, brl_rng = 0.7297f, hs_rgb_enable = 1, hs_r = 0.0655f, hs_g = 0.9729f, hs_b = 0.4502f, hs_rgb_rng = 0.9697f, hs_cmy_enable = 1, hs_c = 0.3605f, hs_m = 0.462f, hs_y = 0.9563f, hc_enable = 1, hc_r = 0.9769f, tone_id = 2, look_exp = 0.82640f;
+  }
+  else if (lk_sel==3) { // Vision3 500T / 2383 - negatif tungstene rapide sur tirage de diffusion
+    tn_Lg = 17.199f, tn_con = 1.0465f, tn_sh = 0.9527f, tn_toe = 0.0158f, tn_off = 0.0095f, tn_hcon_enable = 1, tn_hcon = -0.9244f, tn_hcon_pv = 1.1682f, tn_hcon_st = 3.8223f, tn_lcon_enable = 1, tn_lcon = 2.8599f, tn_lcon_w = 0.6643f, tn_lcon_pc = 0.2254f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2136f, rs_rw = 0.1258f, rs_bw = 0.7756f, pt_r = 0.0106f, pt_g = 3.8737f, pt_b = 0.0081f, pt_rng_low = 0.4416f, pt_rng_high = 0.6869f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.0461f, ptm_low_st = 0.3796f, ptm_high = -0.7226f, ptm_high_st = 0.2337f, brl_enable = 1, brl_r = -0.718f, brl_g = -0.6961f, brl_b = -0.6705f, brl_c = 0.0921f, brl_m = -0.4805f, brl_y = 0.0693f, brl_rng = 0.9067f, hs_rgb_enable = 1, hs_r = 0.154f, hs_g = 0.9743f, hs_b = 0.4126f, hs_rgb_rng = 0.9708f, hs_cmy_enable = 1, hs_c = 0.0617f, hs_m = 0.6395f, hs_y = 0.677f, hc_enable = 1, hc_r = 0.954f, tone_id = 3, look_exp = 0.75911f;
+  }
+  else if (lk_sel==4) { // Portra 400 / Endura - negatif portrait sur papier portrait - le plus doux
+    tn_Lg = 17.0149f, tn_con = 1.0454f, tn_sh = 0.9528f, tn_toe = 0.0717f, tn_off = 0.0495f, tn_hcon_enable = 1, tn_hcon = -0.9318f, tn_hcon_pv = 1.183f, tn_hcon_st = 3.8341f, tn_lcon_enable = 1, tn_lcon = 2.8596f, tn_lcon_w = 1.62f, tn_lcon_pc = 0.9697f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2267f, rs_rw = 0.0158f, rs_bw = 0.7671f, pt_r = 0.5589f, pt_g = 3.8437f, pt_b = 2.1099f, pt_rng_low = 0.2448f, pt_rng_high = 0.4522f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.5191f, ptm_low_st = 0.2741f, ptm_high = -0.81f, ptm_high_st = 0.2328f, brl_enable = 1, brl_r = -0.7654f, brl_g = -0.8577f, brl_b = -0.4912f, brl_c = -0.3116f, brl_m = -0.4604f, brl_y = -0.1883f, brl_rng = 0.3827f, hs_rgb_enable = 1, hs_r = 0.0192f, hs_g = 0.9784f, hs_b = 0.6878f, hs_rgb_rng = 0.9756f, hs_cmy_enable = 1, hs_c = 0.1699f, hs_m = 0.25f, hs_y = 0.9691f, hc_enable = 1, hc_r = 0.9715f, tone_id = 4, look_exp = 0.81190f;
+  }
+  else if (lk_sel==5) { // Ektar 100 / Ultra Endura - negatif fin et sature sur papier vif - le plus colore
+    tn_Lg = 14.5041f, tn_con = 1.0431f, tn_sh = 0.9532f, tn_toe = 0.0953f, tn_off = 0.0325f, tn_hcon_enable = 1, tn_hcon = -0.9528f, tn_hcon_pv = 0.7121f, tn_hcon_st = 3.8691f, tn_lcon_enable = 1, tn_lcon = 2.8692f, tn_lcon_w = 1.565f, tn_lcon_pc = 0.9815f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1437f, rs_rw = 0.0277f, rs_bw = 0.7813f, pt_r = 0.4538f, pt_g = 1.7071f, pt_b = 3.9007f, pt_rng_low = 0.3568f, pt_rng_high = 0.3833f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.2765f, ptm_low_st = 0.1423f, ptm_high = -0.8838f, ptm_high_st = 0.3086f, brl_enable = 1, brl_r = -0.9649f, brl_g = -0.983f, brl_b = -0.3449f, brl_c = -0.3541f, brl_m = -0.4691f, brl_y = -0.455f, brl_rng = 0.7324f, hs_rgb_enable = 1, hs_r = 0.0136f, hs_g = 0.9804f, hs_b = 0.9107f, hs_rgb_rng = 0.9852f, hs_cmy_enable = 1, hs_c = 0.0363f, hs_m = 0.9645f, hs_y = 0.9818f, hc_enable = 1, hc_r = 0.9697f, tone_id = 5, look_exp = 0.87619f;
+  }
+  else if (lk_sel==6) { // Pro 400H / Crystal Archive - negatif a rendu pastel sur papier cristal, dose au quart
+    tn_Lg = 12.3867f, tn_con = 1.3117f, tn_sh = 0.6132f, tn_toe = 0.0261f, tn_off = 0.0155f, tn_hcon_enable = 1, tn_hcon = -0.2329f, tn_hcon_pv = 1.0466f, tn_hcon_st = 3.959f, tn_lcon_enable = 1, tn_lcon = 1.4654f, tn_lcon_w = 0.8515f, tn_lcon_pc = 0.9932f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.3252f, rs_rw = 0.1913f, rs_bw = 0.4266f, pt_r = 0.5755f, pt_g = 1.547f, pt_b = 2.4658f, pt_rng_low = 0.2082f, pt_rng_high = 0.7053f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.2699f, ptm_low_st = 0.4424f, ptm_high = -0.8174f, ptm_high_st = 0.2845f, brl_enable = 1, brl_r = -0.571f, brl_g = -0.5433f, brl_b = -0.3059f, brl_c = -0.0072f, brl_m = -0.1207f, brl_y = 0.0586f, brl_rng = 0.6104f, hs_rgb_enable = 1, hs_r = 0.2849f, hs_g = 0.4266f, hs_b = 0.4841f, hs_rgb_rng = 0.5911f, hs_cmy_enable = 1, hs_c = 0.2811f, hs_m = 0.3882f, hs_y = 0.3318f, hc_enable = 1, hc_r = 0.6933f, tone_id = 6, look_exp = 0.93004f;
+  }
+  else if (lk_sel==7) { // Gold 200 / Supra Endura - negatif grand public chaud sur papier neutre
+    tn_Lg = 16.0441f, tn_con = 1.0471f, tn_sh = 0.9528f, tn_toe = 0.0953f, tn_off = 0.0446f, tn_hcon_enable = 1, tn_hcon = -0.9319f, tn_hcon_pv = 1.2459f, tn_hcon_st = 3.8348f, tn_lcon_enable = 1, tn_lcon = 2.8617f, tn_lcon_w = 1.9072f, tn_lcon_pc = 0.974f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.0651f, rs_rw = 0.0315f, rs_bw = 0.7626f, pt_r = 0.1611f, pt_g = 1.2927f, pt_b = 3.853f, pt_rng_low = 0.2274f, pt_rng_high = 1.9455f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.3371f, ptm_low_st = 0.4166f, ptm_high = -0.7581f, ptm_high_st = 0.2435f, brl_enable = 1, brl_r = -0.6682f, brl_g = -0.8271f, brl_b = -0.3045f, brl_c = -0.0059f, brl_m = -0.2482f, brl_y = -0.1053f, brl_rng = 0.4343f, hs_rgb_enable = 1, hs_r = 0.0693f, hs_g = 0.9754f, hs_b = 0.3625f, hs_rgb_rng = 0.968f, hs_cmy_enable = 1, hs_c = 0.5007f, hs_m = 0.0326f, hs_y = 0.8946f, hc_enable = 1, hc_r = 0.9709f, tone_id = 7, look_exp = 0.84928f;
+  }
+
+  /*----------- TONESCALE PRESETS -----------------*/
+  if (ts_sel==0) { // Do nothing and use tonescale settings from the look preset
+  }
+  if (ts_sel==1) { // Contrast - sa propre touche, gris tenu
+    // Celui-ci ne touche NI tn_Lg NI tn_sh, et c'est volontaire :
+    //   - tn_Lg place le gris. Combine au look_exp du look, c'est lui qui tient
+    //     le gris 18 pour cent a 0.40079 quel que soit le look. Un preset qui
+    //     l'ecrase deplace l'exposition : mesure a 0.40079 -> 0.34708 sur
+    //     250D/2383, soit un quart de diaph perdu en changeant de courbe.
+    //   - tn_sh place l'ecretage. Les looks film sont a 0.9527, le Default a
+    //     0.5 : l'imposer ecraserait les hautes lumieres du tirage.
+    // Ce qu'il change, c'est la FORME : plus de pente au gris, un pied un peu
+    // plus ferme, et une epaule payee par un hcon negatif pour que le gain de
+    // contraste ne vienne pas ecreter plus tot.
+    // tn_sh, l'ecretage, reste celui du look : les tirages sont a 0.9527 et le
+    // Default a 0.5, imposer l'un ou l'autre ecraserait les hautes lumieres de
+    // l'autre. tn_Lg, lui, est RESOLU par look juste en dessous.
+    // Ce preset ne REMPLACE pas la courbe du look, il la PENCHE : la pente au
+    // gris est celle du look multipliee par 1.15. C'est ce qui tient sa direction
+    // constante d'un look a l'autre. Une valeur absolue de contraste ne le fait
+    // pas : les looks film sont a 1.05 et le Default a 1.4, donc un 1.55 fixe
+    // aurait ete une petite touche sur le Default et un ecrasement sur les
+    // tirages - mesure a 0.0478 -> 0.0222 a -4 stops sur 250D/2383, soit les
+    // ombres coupees de moitie. En relatif, la meme mesure donne 0.0478 -> 0.0369.
+    // tn_sh, l'ecretage, reste celui du look : les tirages sont a 0.9527 et le
+    // Default a 0.5, imposer l'un ou l'autre ecraserait les hautes lumieres de
+    // l'autre.
+    tn_con = tn_con*1.15f;
+    // Ancrage du gris. AUCUN reglage de forme n'est neutre au gris : incliner la
+    // courbe seule faisait deja tomber le gris de 0.40079 a 0.38754 sur
+    // 250D/2383, soit un dixieme de diaph perdu rien qu'en changeant de courbe,
+    // alors que toute la calibration des looks tient justement le gris a 0.40079
+    // pour que l'exposition camera ne bouge jamais. Ces huit valeurs sont la
+    // solution de tn_Lg qui le remet a 0.40079 pour chaque look, resolue par
+    // bissection a 1e-7 pres - la meme methode que les look_exp. Toucher au 1.15
+    // ci-dessus oblige a les re-resoudre.
+    // La table est indexee par le menu Look et non par lk_sel : le menu
+    // intervertit 2 et 3, et l'ordre ici est celui que l'utilisateur voit.
+    const float TSC_LG[8] = {11.1009f, 17.5914f, 17.7692f, 16.1039f,
+                             17.4258f, 14.7718f, 12.4970f, 16.3753f};
+    tn_Lg = TSC_LG[(look_preset < 0 || look_preset > 7) ? 0 : look_preset];
+    // Ancrage du gris. Aucun reglage de forme n'est neutre au gris : tn_con seul
+    // faisait deja tomber le gris de 0.40079 a 0.38754 sur 250D/2383, soit un
+    // dixieme de diaph perdu rien qu'en changeant de courbe. Ces huit valeurs
+    // sont la solution de tn_Lg qui remet le gris 18 pour cent a 0.40079 pour
+    // chaque look, resolue par bissection a 1e-7 pres - la meme methode que les
+    // look_exp. Changer la FORME ci-dessus oblige a les re-resoudre.
+    // La table est indexee par le menu Look, pas par lk_sel : le menu intervertit
+    // 2 et 3 et l'ordre ici est celui que l'utilisateur voit.
+  }
+  else if (ts_sel==2) { // Low Contrast - la plus plate
+    tn_Lg = 11.1f, tn_con = 1.4f, tn_sh = 0.5f, tn_toe = 0.003f, tn_off = 0.005f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 0, tn_lcon = 0.0f, tn_lcon_w = 0.5f, tn_lcon_pc = 1.0f;
+  }
+  else if (ts_sel==3) { // ACES 1.x - standard publie
+    tn_Lg = 10.0f, tn_con = 1.0f, tn_sh = 0.245f, tn_toe = 0.02f, tn_off = 0.0f, tn_hcon_enable = 1, tn_hcon = 0.55f, tn_hcon_pv = 0.0f, tn_hcon_st = 2.0f, tn_lcon_enable = 1, tn_lcon = 1.13f, tn_lcon_w = 1.0f, tn_lcon_pc = 1.0f;
+  }
+  else if (ts_sel==4) { // ACES 2.0 - standard publie
+    tn_Lg = 10.0f, tn_con = 1.15f, tn_sh = 0.5f, tn_toe = 0.04f, tn_off = 0.0f, tn_hcon_enable = 0, tn_hcon = 1.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 1.0f, tn_lcon_enable = 0, tn_lcon = 1.0f, tn_lcon_w = 0.6f, tn_lcon_pc = 1.0f;
+  }
+  else if (ts_sel==5) { // Cinema - gris place bas, epaule longue
+    tn_Lg = 6.0f, tn_con = 1.5f, tn_sh = 0.5f, tn_toe = 0.003f, tn_off = 0.01f, tn_hcon_enable = 1, tn_hcon = 0.25f, tn_hcon_pv = 0.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 1.0f, tn_lcon_w = 1.0f, tn_lcon_pc = 1.0f;
+  }
+  else if (ts_sel==6) { // Gentle - pente douce
+    tn_Lg = 11.1f, tn_con = 1.05f, tn_sh = 0.5f, tn_toe = 0.1f, tn_off = 0.015f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 0.0f, tn_hcon_st = 2.0f, tn_lcon_enable = 1, tn_lcon = 2.0f, tn_lcon_w = 0.2f, tn_lcon_pc = 1.0f;
+  }
+  else if (ts_sel==7) { // Soft - pied le plus long, noir le plus profond
+    tn_Lg = 10.42f, tn_con = 1.2f, tn_sh = 0.5f, tn_toe = 0.02f, tn_off = 0.0f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 1.0f, tn_lcon_enable = 0, tn_lcon = 0.0f, tn_lcon_w = 0.6f, tn_lcon_pc = 1.0f;
+  }
+  else if (ts_sel==8) { // Medium - entre Contrast et Gentle
+    tn_Lg = 11.1f, tn_con = 1.15f, tn_sh = 0.5f, tn_toe = 0.04f, tn_off = 0.006f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 0.0f, tn_hcon_st = 0.5f, tn_lcon_enable = 1, tn_lcon = 0.5f, tn_lcon_w = 2.0f, tn_lcon_pc = 0.5f;
+  }
+  else if (ts_sel==9) { // Punchy - pied le plus dur, gris place bas
+    tn_Lg = 6.0f, tn_con = 1.8f, tn_sh = 0.5f, tn_toe = 0.001f, tn_off = 0.015f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 1.0f, tn_lcon_w = 1.0f, tn_lcon_pc = 1.0f;
+  }
+  
+  /*----------- LOOK BYPASS + INTENSITY -----------------*/
+  // Le bypass revient a une intensite nulle : on retombe exactement sur
+  // Default, virage compris, sans toucher aux reglages amont ni aval.
+  const float look_amt = look_bypass ? 0.0f : look_intensity;
+  // Le virage se dose a part, par-dessus l intensite du look :
+  // a 1 il suit le look, a 0 il disparait sans toucher au reste,
+  // au dela de 1 il force la teinte au dela de la reference.
+  const float tone_amt = tone_bypass ? 0.0f : look_amt*tone_intensity;
+
+  /*----------- LOOK INTENSITY -----------------*/
+  // Interpolation vers le preset Default. A 0 on retrouve exactement Default
+  // (les modules restent actifs mais leurs valeurs deviennent neutres), a 1 on
+  // a le preset choisi. Le virage suit la meme intensite, applique plus bas.
+  if (look_amt < 1.0f) {
+    tn_Lg = 11.1f + (tn_Lg - 11.1f)*look_amt;
+    tn_con = 1.4f + (tn_con - 1.4f)*look_amt;
+    tn_sh = 0.5f + (tn_sh - 0.5f)*look_amt;
+    tn_toe = 0.003f + (tn_toe - 0.003f)*look_amt;
+    tn_off = 0.005f + (tn_off - 0.005f)*look_amt;
+    tn_hcon = 0.0f + (tn_hcon - 0.0f)*look_amt;
+    tn_hcon_pv = 1.0f + (tn_hcon_pv - 1.0f)*look_amt;
+    tn_hcon_st = 4.0f + (tn_hcon_st - 4.0f)*look_amt;
+    tn_lcon = 1.0f + (tn_lcon - 1.0f)*look_amt;
+    tn_lcon_w = 0.5f + (tn_lcon_w - 0.5f)*look_amt;
+    tn_lcon_pc = 1.0f + (tn_lcon_pc - 1.0f)*look_amt;
+    cwp_rng = 0.5f + (cwp_rng - 0.5f)*look_amt;
+    rs_sa = 0.35f + (rs_sa - 0.35f)*look_amt;
+    rs_rw = 0.25f + (rs_rw - 0.25f)*look_amt;
+    rs_bw = 0.55f + (rs_bw - 0.55f)*look_amt;
+    pt_r = 0.5f + (pt_r - 0.5f)*look_amt;
+    pt_g = 2.0f + (pt_g - 2.0f)*look_amt;
+    pt_b = 2.0f + (pt_b - 2.0f)*look_amt;
+    pt_rng_low = 0.2f + (pt_rng_low - 0.2f)*look_amt;
+    pt_rng_high = 0.8f + (pt_rng_high - 0.8f)*look_amt;
+    ptm_low = 0.2f + (ptm_low - 0.2f)*look_amt;
+    ptm_low_st = 0.5f + (ptm_low_st - 0.5f)*look_amt;
+    ptm_high = -0.8f + (ptm_high - -0.8f)*look_amt;
+    ptm_high_st = 0.3f + (ptm_high_st - 0.3f)*look_amt;
+    brl_r = -0.5f + (brl_r - -0.5f)*look_amt;
+    brl_g = -0.4f + (brl_g - -0.4f)*look_amt;
+    brl_b = -0.2f + (brl_b - -0.2f)*look_amt;
+    brl_c = 0.0f + (brl_c - 0.0f)*look_amt;
+    brl_m = 0.0f + (brl_m - 0.0f)*look_amt;
+    brl_y = 0.0f + (brl_y - 0.0f)*look_amt;
+    brl_rng = 0.66f + (brl_rng - 0.66f)*look_amt;
+    hs_r = 0.35f + (hs_r - 0.35f)*look_amt;
+    hs_g = 0.25f + (hs_g - 0.25f)*look_amt;
+    hs_b = 0.5f + (hs_b - 0.5f)*look_amt;
+    hs_rgb_rng = 0.6f + (hs_rgb_rng - 0.6f)*look_amt;
+    hs_c = 0.2f + (hs_c - 0.2f)*look_amt;
+    hs_m = 0.2f + (hs_m - 0.2f)*look_amt;
+    hs_y = 0.2f + (hs_y - 0.2f)*look_amt;
+    hc_r = 0.6f + (hc_r - 0.6f)*look_amt;
+    look_exp = 1.0f + (look_exp - 1.0f)*look_amt;
+  }
+
+  /*----------- PRINT TONING -----------------*/
+  // Le selecteur prend le pas sur le preset s'il n'est pas sur "Use Look Preset"
+  if (print_tone_sel==1) tone_id = 0;
+  else if (print_tone_sel>1) {
+    // Meme groupement par famille que le menu Look, meme raison : la table de
+    // virage garde ses index, c'est le menu qui se reordonne devant elle.
+    const int TONE_ORDER[7] = {1, 3, 2, 4, 5, 6, 7};
+    int ti = print_tone_sel - 2;
+    tone_id = TONE_ORDER[ti < 0 ? 0 : (ti > 6 ? 6 : ti)];
+  }
+  if (tone_bypass) tone_id = 0;
+
+  /*----------- CREATIVE WHITE PRESETS -----------------*/
+  // Use user creative whitepoint settings if custom whitepoint specified, otherwise use the one from the look preset
+  if (_cwp!=4) cwp_rng = _cwp_rng; 
+  if (_cwp==0) cwp = 0; // D65
+  else if (_cwp==1) cwp = 1; // D60
+  else if (_cwp==2) cwp = 2; // D55
+  else if (_cwp==3) cwp = 3; // D50
+
+  // Bypass White : le point blanc creatif revient a D65, le neutre calibre de
+  // l'affichage. Pose APRES le menu, pas avant : le menu ecrase cwp juste
+  // au-dessus, donc un bypass place plus haut etait annule sans rien dire - et
+  // sans rien dire est le pire des cas, la case avait l'air de marcher.
+  if (cw_bypass) { cwp = 0; cwp_rng = 0.5f; }
+
+
+  /*----------- DISPLAY ENCODING PRESETS -----------------*/
+  if (display_encoding_preset==0) { // Rec.1886
+    display_gamut = 0;
+    eotf = 2;
+  }
+  else if (display_encoding_preset==1) { // sRGB Display
+    display_gamut = 0;
+    eotf = 1;
+  }
+  else if (display_encoding_preset==2) { // Display P3
+    display_gamut = 1;
+    eotf = 1;
+  }
+  else if (display_encoding_preset==3) { // Rec.2100 PQ
+    display_gamut = 2;
+    eotf = 4;
+  }
+  else if (display_encoding_preset==4) { // Rec.2100 HLG
+    display_gamut = 2;
+    eotf = 5;
+  }
+  else if (display_encoding_preset==5) { // Dolby PQ
+    display_gamut = 1;
+    eotf = 4;
+  }
+  #endif
+
+  float3x3 in_to_xyz;
+  if (in_gamut==0) in_to_xyz = identity();
+  else if (in_gamut==1) in_to_xyz = matrix_ap0_to_xyz;
+  else if (in_gamut==2) in_to_xyz = matrix_ap1_to_xyz;
+  else if (in_gamut==3) in_to_xyz = matrix_p3d65_to_xyz;
+  else if (in_gamut==4) in_to_xyz = matrix_rec2020_to_xyz;
+  else if (in_gamut==5) in_to_xyz = matrix_rec709_to_xyz;
+  else if (in_gamut==6) in_to_xyz = matrix_arriwg3_to_xyz;
+  else if (in_gamut==7) in_to_xyz = matrix_arriwg4_to_xyz;
+  else if (in_gamut==8) in_to_xyz = matrix_redwg_to_xyz;
+  else if (in_gamut==9) in_to_xyz = matrix_sonysgamut3_to_xyz;
+  else if (in_gamut==10) in_to_xyz = matrix_sonysgamut3cine_to_xyz;
+  else if (in_gamut==11) in_to_xyz = matrix_vgamut_to_xyz;
+  else if (in_gamut==12) in_to_xyz = matrix_bmdwg_to_xyz;
+  else if (in_gamut==13) in_to_xyz = matrix_egamut_to_xyz;
+  else if (in_gamut==14) in_to_xyz = matrix_egamut2_to_xyz;
+  else if (in_gamut==15) in_to_xyz = matrix_davinciwg_to_xyz;
+
+  float3 crv_val = make_float3(0.0f, 0.0f, 0.0f);
+  float2 pos = make_float2(p_X, p_Y);
+  float2 res = make_float2(p_Width, p_Height);
+
+  // x-position based input value for tonescale overlay
+  if (crv_enable == 1) {
+    // Le trace tient dans une boite centree sur l'image, dont le cote est
+    // une fraction de la trame. Centree et non ancree dans un coin : le
+    // reglage sert a loger la courbe dans la fenetre visible quand le format
+    // porte des barres noires, et celles-ci sont symetriques.
+    const float crv_ox = res.x*(1.0f - crv_size)*0.5f;
+    float crv_x = oetf_filmlight_tlog(
+      clampf((pos.x - crv_ox)/(res.x*crv_size), 0.0f, 1.0f));
+    crv_val = make_float3(crv_x, crv_x, crv_x);
+    if (trim_con != 0.0f && !trim_bypass) {
+      const float cvc_f = _fmaxf(0.0f, 1.0f + trim_con);
+      const float cvc_p = clampf(trim_piv, 0.001f, 0.999f);
+      crv_val.x = con_scene(crv_val.x, cvc_f, cvc_p);
+      crv_val.y = con_scene(crv_val.y, cvc_f, cvc_p);
+      crv_val.z = con_scene(crv_val.z, cvc_f, cvc_p);
+    }
+    // Overlay est trace, lui : il deplace un neutre de 0.10 en sortie, soit une
+    // centaine de codes 10 bits. Les reglages de highlight, eux, ne sont PAS
+    // traces et la mesure dit pourquoi - voir leur infobulle.
+    if (trim_ovl != 0.0f && !trim_bypass)
+      crv_val = overlay_scene(crv_val, trim_ovl, OVL_CGAIN);
+    crv_val *= look_exp; // meme ancrage pour le trace
+  }
+
+  // Linearize if a non-linear input oetf / transfer function is selected
+  rgb = linearize(rgb, in_oetf);
+
+  /*----------- WHITE : BALANCE DES BLANCS -----------------
+    Posee ICI : en lumiere de scene, dans le gamut d'entree, et AVANT tout le
+    rendu. C'est l'ordre physique - on balance la lumiere, puis la pellicule
+    reagit a ce qu'elle recoit. Posee apres, elle corrigerait un illuminant que
+    le look a deja transforme.
+    Le bloc est entierement saute quand rien n'est demande : ce n'est pas une
+    correction qui s'annule, c'est aucune correction du tout, donc identite au
+    bit pres.
+  -------------------------------------------*/
+  {
+    // Le Kelvin ne compte que s'il est DANS sa propre plage. Ce n'est pas une
+    // precaution de style : un bloc de parametres laisse a zero - ce qui arrive
+    // au banc de test, et arriverait a tout hote qui n'ecrirait pas les defauts -
+    // donnait wb_kelvin = 0, que clampf ramenait a 1800 K, soit la correction
+    // MAXIMALE. Le gris partait de 0.40079 a 0.58071 sans qu'aucun reglage ne
+    // l'ait demande. Hors plage, le bloc est donc simplement inerte.
+    const int wb_k_on = wb_kelvin >= 1800.0f && wb_kelvin <= 20000.0f &&
+                        _fabs(wb_kelvin - 6504.0f) > 0.5f;
+    const int wb_on = !wb_bypass && (wb_preset > 0 || wb_k_on ||
+                                     _fabs(wb_temp) > 1.0e-6f ||
+                                     _fabs(wb_tint) > 1.0e-6f);
+    if (wb_on) {
+      // Le Kelvin de base : le preset s'il est choisi, sinon le slider.
+      const float T_base = wb_preset > 0 ? wb_preset_kelvin(wb_preset)
+                                         : (wb_k_on ? wb_kelvin : 6504.0f);
+      // Trim fin en MIRED, pas en Kelvin : un mired est un mired partout, alors
+      // que 100 K valent un mouvement visible a 3200 K et rien a 10000 K.
+      // 60 mired de course, et non 300 comme dans NODE_WB : a 300, depuis
+      // 6504 K, la moitie positive touchait le mur des 25000 K des 0.38 de
+      // course et les trois cinquiemes restants rendaient la meme image.
+      // TEMP EN RATIO DE MIRED, et non en soustraction. Une soustraction fixe a
+      // deux defauts a la fois : elle touche le mur du locus depuis une base
+      // froide - a 60 mired depuis 6504 K, le haut de la course arrivait deja a
+      // 10666 K et le reste de la place etait perdu - et elle n'a pas la meme
+      // portee selon la base, puisque 60 mired valent 3 diaphs de teinte a 2700 K
+      // et presque rien a 12000 K. En ratio il n'y a pas de mur atteignable et la
+      // course est la meme partout : 0.9 octave de mired de chaque cote, soit
+      // 3485 K a 12130 K depuis D65, et autant de part et d'autre de n'importe
+      // quelle autre base.
+      const float mired = clampf((1.0e6f/T_base)*_exp2f(-0.9f*wb_temp),
+                                 1.0e6f/25000.0f, 1.0e6f/1667.0f);
+      const float T_eff = 1.0e6f/mired;
+      // TINT : la course suit le KELVIN, parce que la place disponible en suit.
+      // A 0.032 de Duv pres du jour on reste largement dans le triangle CIE ; la
+      // meme valeur a 2000 K en sort, le Z de XYZ passe negatif et l'adaptation
+      // degenere - c'est la zone ou le plancher de securite doit plafonner le gain
+      // a 50x. Plutot que de raccourcir la course partout pour le cas le plus
+      // defavorable, elle est longue la ou c'est sur et courte seulement la ou ca
+      // ne l'est pas. 2.7 fois plus longue qu'avant aux temperatures du jour.
+      const float duv_max = 0.012f + 0.020f*smootherstep(2200.0f, 5200.0f, T_eff);
+      // Le signe suit la convention des etalonneurs : tint positif tire l'image
+      // vers le MAGENTA, negatif vers le vert. C'etait l'inverse.
+      const float duv = wb_tint*duv_max;
+
+      // Le blanc SOURCE et le blanc DESTINATION passent par la MEME formule.
+      // C'est ce qui fait que l'identite est exacte : une destination posee en
+      // dur, meme au bon CCT nominal, ne coincide jamais a mieux que 1e-4 en xy
+      // avec ce que la formule du locus produit, et il restait une correction
+      // residuelle permanente alors que rien ne devait bouger.
+      const float3 w_src = wb_xy_to_XYZ(wb_white_xy(T_eff, duv));
+      const float3 w_dst = wb_xy_to_XYZ(wb_locus_xy(6504.0f));
+
+      // inv(M) * CAT * M : la correction revient dans le gamut d'entree sans
+      // qu'aucune matrice inverse n'ait a etre ecrite ni maintenue.
+      const float3x3 cat = mat3_mul(mat3_inv(in_to_xyz),
+                                    mat3_mul(wb_cat(w_src, w_dst), in_to_xyz));
+      rgb = vdot(cat, rgb);
+    }
+  }
+
+
+  // Exposition de SCENE, en stops par rapport au gris 18 pour cent. Prise ici,
+  // avant toute la chaine de rendu : un false color doit dire ce que la camera
+  // a donne, pas ce que le look en a fait. Sinon changer de look deplacerait
+  // les zones et l'instrument mentirait sur l'exposition.
+  float fc_stops = 0.0f;
+  if (fc_overlay == 1) {
+    const float fc_Y = _fmaxf(0.2126f*rgb.x + 0.7152f*rgb.y + 0.0722f*rgb.z, 1e-8f);
+    fc_stops = _log2f(fc_Y/0.18f);
+  }
+
+  /*----------- CONTRAST / PIVOT -----------------
+    Pose avant le gain d'exposition et avant tout le rendu : le pivot porte
+    donc sur la scene, pas sur le rendu du look, et le gris 18% reste le gris
+    18% quel que soit le preset choisi. C'est l'emplacement du NODE_01.
+    A contrast nul le bloc est saute : bypass exact, au bit pres.
+  -------------------------------------------*/
+  if (trim_con != 0.0f && !trim_bypass) {
+    const float con_f = _fmaxf(0.0f, 1.0f + trim_con);
+    const float con_pv = clampf(trim_piv, 0.001f, 0.999f);
+    rgb.x = con_scene(rgb.x, con_f, con_pv);
+    rgb.y = con_scene(rgb.y, con_f, con_pv);
+    rgb.z = con_scene(rgb.z, con_f, con_pv);
+  }
+
+  /*----------- TRIM : Overlay -----------------
+    Pose juste apres Log Contrast, donc au meme endroit de la chaine : les deux
+    sont des operateurs de contraste amont, ils se cumulent, et le pivot de
+    l'un n'interfere pas avec la courbure de l'autre. A zero le bloc est saute :
+    bypass exact, au bit pres.
+  -------------------------------------------*/
+  if (trim_ovl != 0.0f && !trim_bypass)
+    rgb = overlay_scene(rgb, trim_ovl, OVL_CGAIN);
+
+  /*----------- COLOR : Weight et Density -----------------
+    Poses ICI, en lumiere de scene et avant le rendu, parce que ce sont des
+    operateurs de DENSITE : leur place est la ou la densite existe encore comme
+    telle, pas apres une courbe tonale qui l'a deja convertie en niveaux
+    d'affichage.
+    A zero le bloc est saute : bypass exact, au bit pres.
+  -------------------------------------------*/
+  if ((col_weight != 0.0f || col_dens != 0.0f) && !col_bypass)
+    rgb = density_pair(rgb, col_weight, col_dens);
+
+  /*----------- TRIM : Mid Purity -----------------
+    Pose ICI, en lumiere de scene, juste apres les deux autres operateurs de
+    densite : voir le commentaire complet au-dessus de mid_purity(). A zero le
+    bloc est saute : bypass exact, au bit pres.
+  -------------------------------------------*/
+  if (trim_mp != 0.0f && !trim_bypass)
+    rgb = mid_purity(rgb, trim_mp, trim_mp_pv);
+
+  /*----------- ANCRAGE DU GRIS -----------------
+    Un tirage argentique rend le gris 18% plus clair qu'une transformation
+    d'affichage neutre : sans ce gain, activer un look montait l'image de
+    0.35 a 0.49 diaphragme et l'exposition camera n'etait plus jugeable.
+    Le gain remet le gris du look exactement la ou Default le pose. C'est un
+    glissement le long de la courbe du look, pas une deformation : l'ecart
+    mesure a la reference, prise a la meme exposition, est inchange.
+  -------------------------------------------*/
+  rgb *= look_exp;
+
+
+  /***************************************************
+    Tonescale Constraint Calculations
+    https://www.desmos.com/calculator/1c4fhzy3bw
+
+    These could be pre-calculated but there is no way to do this in DCTL.
+    Anything that is const should be precalculated and not run per-pixel
+    --------------------------------------------------*/
+  const float ts_x1 = _powf(2.0f, 6.0f*tn_sh + 4.0f);
+  const float ts_y1 = tn_Lp/100.0f;
+  const float ts_x0 = 0.18f + tn_off;
+  const float ts_y0 = tn_Lg/100.0f*(1.0f + tn_gb*_log2f(ts_y1));
+  const float ts_s0 = compress_toe_quadratic(ts_y0, tn_toe, 1);
+  const float ts_s10 = ts_x0*(_powf(ts_s0, -1.0f/tn_con) - 1.0f);
+  const float ts_m1 = ts_y1/_powf(ts_x1/(ts_x1 + ts_s10), tn_con);
+  const float ts_m2 = compress_toe_quadratic(ts_m1, tn_toe, 1);
+  const float ts_s = ts_x0*(_powf(ts_s0/ts_m2, -1.0f/tn_con) - 1.0f);
+  const float ts_dsc = eotf==4 ? 0.01 : eotf==5 ? 0.1 : 100.0f/tn_Lp;
+
+  // Lerp from pt_cmp at 100 nits to pt_cmp_hdr at 1000 nits
+  const float pt_cmp_Lf = pt_hdr*_fminf(1.0f, (tn_Lp - 100.0f)/900.0f);
+  // Approximate scene-linear scale at Lp=100 nits
+  const float s_Lp100 = ts_x0*(_powf((tn_Lg/100.0f), -1.0f/tn_con) - 1.0f);
+  const float ts_s1 = ts_s*pt_cmp_Lf + s_Lp100*(1.0f - pt_cmp_Lf);
+
+
+  // Convert from input gamut into P3-D65
+  rgb = vdot(in_to_xyz, rgb);
+  rgb = vdot(matrix_xyz_to_p3d65, rgb);
+
+
+  // Rendering Space: "Desaturate" to control scale of the color volume in the rgb ratios.
+  // Controlled by rs_sa (saturation) and red and blue weights (rs_rw and rs_bw)
+  float3 rs_w = make_float3(rs_rw, 1.0f - rs_rw - rs_bw, rs_bw);
+  float sat_L = rgb.x*rs_w.x + rgb.y*rs_w.y + rgb.z*rs_w.z;
+  rgb = sat_L*rs_sa + rgb*(1.0f - rs_sa);
+
+
+  // Offset
+  rgb += tn_off;
+  // Plancher du noir : la scene a zero, poussee dans la meme chaine que
+  // l image. Sert d ancrage au trim Shadows, plus bas.
+  float sh_fl = tn_off;
+  if (crv_enable == 1) crv_val += tn_off;
+
+
+  /***************************************************
+    Contrast Low Module
+  --------------------------------------------------*/
+  if (tn_lcon_enable) {
+    float mcon_m = _powf(2.0f, -tn_lcon);
+    float mcon_w = tn_lcon_w/4.0f;
+    mcon_w *= mcon_w;
+
+    // Normalize for ts_x0 intersection constraint: https://www.desmos.com/calculator/blyvi8t2b2
+    const float mcon_cnst_sc = compress_toe_cubic(ts_x0, mcon_m, mcon_w, 1)/ts_x0;
+    rgb *= mcon_cnst_sc;
+
+    sh_fl *= mcon_cnst_sc;
+    sh_fl = sh_fl*(sh_fl*sh_fl + mcon_m*mcon_w)/(sh_fl*sh_fl + mcon_w);
+
+    // Scale for ratio-preserving midtone contrast
+    float mcon_nm = hypotf3(clampminf3(rgb, 0.0f))/SQRT3;
+    float mcon_sc = (mcon_nm*mcon_nm + mcon_m*mcon_w)/(mcon_nm*mcon_nm + mcon_w);
+
+    if (tn_lcon_pc > 0.0f) {
+      // Mix between ratio-preserving and per-channel by blending based on distance from achromatic
+
+      // Apply per-channel midtone contrast
+      float3 mcon_rgb = rgb;
+      mcon_rgb.x = compress_toe_cubic(rgb.x, mcon_m, mcon_w, 0);
+      mcon_rgb.y = compress_toe_cubic(rgb.y, mcon_m, mcon_w, 0);
+      mcon_rgb.z = compress_toe_cubic(rgb.z, mcon_m, mcon_w, 0);
+
+      // Always use some amount of ratio-preserving method towards gamut boundary
+      float mcon_mx = fmaxf3(rgb);
+      float mcon_mn = fminf3(rgb);
+      float mcon_ch = clampf(1.0f - sdivf(mcon_mn, mcon_mx), 0.0, 1.0);
+      mcon_ch = _powf(mcon_ch, 4.0f*tn_lcon_pc);
+      rgb = mcon_sc*rgb*mcon_ch + mcon_rgb*(1.0f - mcon_ch);
+    }
+    else { // Just use ratio-preserving
+      rgb = mcon_sc*rgb;
+    }
+    
+    if (crv_enable == 1) {
+      crv_val *= mcon_cnst_sc;
+      crv_val = crv_val*(crv_val*crv_val + mcon_m*mcon_w)/(crv_val*crv_val + mcon_w);
+    }
+  }
+
+
+  // Tonescale Norm
+  float tsn = hypotf3(clampminf3(rgb, 0.0f))/SQRT3;
+
+  // Saturation de la SCENE, prise ici : exposez le meme sujet plus haut ou plus
+  // bas et le rapport entre ses canaux ne bouge pas. C'est ce qui pilote
+  // Highlight Density plus bas, et ce doit etre CETTE saturation et pas celle
+  // des ratios rendus : la chroma rendue, elle, monte puis retombe le long
+  // d'une rampe - le path to white rapproche les ratios en haut - donc un gain
+  // pilote par elle montait puis retombait avec, et sur un orange sature la
+  // descente battait la montee du tonescale : l'image devenait plus SOMBRE
+  // quand la lumiere augmentait. Mesure a 235 fois la courbure voisine.
+  float hd_sat;
+  {
+    float hs_mx = _fmaxf(rgb.x, _fmaxf(rgb.y, rgb.z));
+    float hs_mn = _fminf(rgb.x, _fminf(rgb.y, rgb.z));
+    hd_sat = hs_mx > 1.0e-9f ? clampf((hs_mx - hs_mn)/hs_mx, 0.0f, 1.0f) : 0.0f;
+  }
+  // Meme regle pour le trace, au meme endroit de la chaine.
+  if (crv_enable == 1) crv_val = clampminf3(crv_val, 0.0f);
+  // Purity Compression Norm
+  float ts_pt = _sqrtf(_fmaxf(0.0f, rgb.x*rgb.x*pt_r + rgb.y*rgb.y*pt_g + rgb.z*rgb.z*pt_b));
+
+  // RGB Ratios
+  rgb = sdivf3f(clampminf3(rgb, -2.0f), tsn);
+
+
+
+  // Apply High Contrast
+  if (tn_hcon_enable) {
+    float hcon_p = _powf(2.0f, tn_hcon);
+    tsn = contrast_high(tsn, hcon_p, tn_hcon_pv, tn_hcon_st, 0);
+    ts_pt = contrast_high(ts_pt, hcon_p, tn_hcon_pv, tn_hcon_st, 0);
+    sh_fl = contrast_high(sh_fl, hcon_p, tn_hcon_pv, tn_hcon_st, 0);
+    
+    if (crv_enable == 1) crv_val = make_float3(
+      contrast_high(crv_val.x, hcon_p, tn_hcon_pv, tn_hcon_st, 0),
+      contrast_high(crv_val.y, hcon_p, tn_hcon_pv, tn_hcon_st, 0),
+      contrast_high(crv_val.z, hcon_p, tn_hcon_pv, tn_hcon_st, 0));
+  }
+
+  // Apply tonescale
+  tsn = compress_hyperbolic_power(tsn, ts_s, tn_con);
+  ts_pt = compress_hyperbolic_power(ts_pt, ts_s1, tn_con);
+  sh_fl = compress_hyperbolic_power(sh_fl, ts_s, tn_con);
+  
+  if (crv_enable == 1) crv_val = make_float3(
+    compress_hyperbolic_power(crv_val.x, ts_s, tn_con),
+    compress_hyperbolic_power(crv_val.y, ts_s, tn_con),
+    compress_hyperbolic_power(crv_val.z, ts_s, tn_con));
+
+
+  // Simple Cyan-Yellow / Green-Magenta opponent space for calculating smooth achromatic distance and hue angles
+  float opp_cy = rgb.x - rgb.z;
+  float opp_gm = rgb.y - (rgb.x + rgb.z)/2.0f;
+  float ach_d = _sqrtf(_fmaxf(0.0f, opp_cy*opp_cy + opp_gm*opp_gm))/SQRT3;
+
+  // Smooth ach_d, normalized so 1.0 doesn't change https://www.desmos.com/calculator/ozjg09hzef
+  ach_d = (1.25f)*compress_toe_quadratic(ach_d, 0.25f, 0);
+
+  // Hue angle, rotated so that red = 0.0
+  float hue = _fmod(_atan2f(opp_cy, opp_gm) + PI + 1.10714931f, 2.0f*PI);
+
+  // RGB Hue Angles
+  // Wider than CMY by default. R towards M, G towards Y, B towards C
+  float3 ha_rgb = make_float3(
+    gauss_window(hue_offset(hue, 0.1f), 0.9f),
+    gauss_window(hue_offset(hue, 4.3f), 0.9f),
+    gauss_window(hue_offset(hue, 2.3f), 0.9f));
+
+  // CMY Hue Angles
+  // Exact alignment to Cyan/Magenta/Yellow secondaries would be PI, PI/3 and -PI/3, but
+  // we customize these a bit for creative purposes: M towards B, Y towards G, C towards G
+  float3 ha_cmy = make_float3(
+    gauss_window(hue_offset(hue, 3.3f), 0.6f),
+    gauss_window(hue_offset(hue, 1.3f), 0.6f),
+    gauss_window(hue_offset(hue, -1.2), 0.6f));
+
+
+  // Purity Compression Range: https://www.desmos.com/calculator/8ynarg1uxk
+  // White Onset : decale le seuil du look au lieu de le remplacer. Borne bas a
+  // 0.05 - en dessous l'exposant 1/pt_rng_low explose et la compression devient
+  // une marche.
+  // WHITE ONSET, en RATIO et non en somme. La forme additive precedente etait
+  // clampf(pt_rng_low + onset, 0.05, 0.95), et sur des looks dont le
+  // pt_rng_low vaut 0.17 a 0.44 cela veut dire que le plancher etait atteint
+  // des -0.15 : la moitie basse du slider ne faisait plus rien. Mesure sur
+  // Default, saturation d'un ciel a +2 diaphs : 0.866 a -0.50 et 0.866 a
+  // -0.25, chiffre pour chiffre. Un demi-slider mort.
+  // En ratio il n'y a plus de mur : le facteur va de x1.74 a x0.57 sur toute
+  // la course, et le plus eleve des huit looks (0.4416) arrive a 0.768, encore
+  // loin de la borne.
+  const float onset_eff = col_bypass ? 0.0f : col_onset;
+  float pt_rng_low_eff = clampf(pt_rng_low*_exp2f(1.6f*onset_eff), 0.02f, 0.98f);
+  float ts_pt_cmp = 1.0f - _powf(ts_pt, 1.0f/pt_rng_low_eff);
+
+  float pt_rng_high_f = _fminf(1.0f, ach_d/1.2f);
+  pt_rng_high_f *= pt_rng_high_f;
+  pt_rng_high_f = pt_rng_high < 1.0f ? 1.0f - pt_rng_high_f : pt_rng_high_f;
+  ts_pt_cmp = _powf(ts_pt_cmp, pt_rng_high)*(1.0f - pt_rng_high_f) + ts_pt_cmp*pt_rng_high_f;
+
+  // Path To White : dose la quantite de blanchiment que le look demande.
+  // ts_pt_cmp vaut 1 quand la couleur est gardee telle quelle et 0 quand elle
+  // est entierement ramenee au blanc ; (1 - ts_pt_cmp) est donc exactement la
+  // quantite, et c'est elle qu'on dose. Place AVANT le trim Highlight Purity,
+  // qui reste un reglage fin par-dessus.
+  // PATH TO WHITE, dans les DEUX sens et sans ecretage. L'ancienne forme etait
+  // clampf(1 - (1 - cmp)*ptw, 0, 1), avec le defaut 1.0 pose au BOUT de la
+  // course : le reglage ne pouvait que RETENIR le blanchiment du look, jamais
+  // en ajouter. Et l'etendre au-dela de 1 avec cette formule aurait ramene le
+  // meme defaut que Highlight Purity avait deja paye - un ecretage dur, donc
+  // une cassure mesuree a 241 fois la courbure voisine sur le bleu.
+  // Meme remede qu'alors : un exposant, pas un melange. La famille
+  // cmp^(2^(g*(ptw-1))) vaut exactement l'identite a ptw = 1, elle est
+  // monotone, elle ne peut pas sortir de 0..1 puisque cmp y est deja, et elle
+  // n'a aucun point de recollement.
+  if (col_ptw != 1.0f && !col_bypass)
+    ts_pt_cmp = spowf(ts_pt_cmp, _exp2f(1.35f*(col_ptw - 1.0f)));
+
+  /*----------- TRIM : Highlight Purity -----------------
+    ts_pt_cmp vaut 1 quand la couleur est gardee telle quelle et 0 quand elle
+    est entierement ramenee au blanc. (1 - ts_pt_cmp) est donc exactement la
+    quantite de blanchiment; on la dose. A +1 il en reste le quart, les
+    pratiques et les ciels gardent leur teinte beaucoup plus haut. A -1 elle
+    est quadruplee, le rendu file vers le blanc bien plus tot.
+  ---------------------------------------------------*/
+  if (trim_hp != 0.0f && !trim_bypass) {
+    // La course est mise en forme avant d'etre appliquee, et c'est ca qui
+    // repond a "encore un peu faible".
+    //
+    // Mesure : le reglage atteint DEJA ses deux butees. A -1 il ne reste 0.0 a
+    // 0.6 pour cent de saturation sur un ciel, un neon, un jaune brule - la
+    // couleur a entierement cede, il n'y a plus rien a enlever. A +1 elle est
+    // tenue a 95 pour cent. Monter le facteur ne pouvait donc rien AJOUTER :
+    // teste jusqu'a 1024, les butees ne bougent plus d'un millieme.
+    //
+    // Le vrai defaut etait la REPARTITION : 88 pour cent de l'effet tombait
+    // dans la premiere moitie de la course, si bien que la seconde moitie ne
+    // faisait presque rien et que le reglage paraissait mou des qu'on le
+    // poussait. Au-dela d'un facteur 128, -0.5 et -1.0 donnaient exactement la
+    // meme image : la moitie du slider ne servait a rien.
+    //
+    // La puissance 2.5 etale l'effet egalement - 52 pour cent dans la premiere
+    // moitie au lieu de 88 - sans toucher aux butees, et la mesure de cassure
+    // DESCEND a 61.2 au passage.
+    float hp_t = trim_hp >= 0.0f ? _powf(trim_hp, 2.5f) : -_powf(-trim_hp, 2.5f);
+    const float hp_k = _exp2f(-5.6f*hp_t);
+    // ts_pt_cmp^k, et non 1 - (1 - ts_pt_cmp)*k borne a [0,1].
+    //
+    // L'ancienne forme multipliait la quantite de blanchiment puis l'ECRETAIT.
+    // Vers la gauche le facteur atteint 4, donc tout ce qui avait moins de 75
+    // pour cent de blanchiment tombait sur la borne : la courbe arrivait sur un
+    // COIN et s'arretait net. Mesure sur une rampe bleue a +3.6 stops, la
+    // cassure etait 241 fois plus raide que la courbure environnante - c'est ce
+    // qui se voit comme une frontiere franche dans un ciel ou un neon.
+    //
+    // La puissance fait le meme travail sans borne et sans coin : elle vaut 0
+    // en 0, 1 en 1, sa pente a l'origine est exactement k - donc le reglage
+    // garde la meme sensibilite qu'avant - et elle ne peut pas sortir de [0,1]
+    // puisque ts_pt_cmp y est deja. A k = 1 elle est l'identite exacte, donc
+    // quitter le zero du slider ne fait aucun saut.
+    ts_pt_cmp = spowf(ts_pt_cmp, hp_k);
+  }
+
+
+  /***************************************************
+    Brilliance
+  --------------------------------------------------*/
+  float brl_f = 1.0f;
+  if (brl_enable) {
+    brl_f = -brl_r*ha_rgb.x - brl_g*ha_rgb.y - brl_b*ha_rgb.z - brl_c*ha_cmy.x - brl_m*ha_cmy.y - brl_y*ha_cmy.z;
+    brl_f = (1.0f - ach_d)*brl_f + 1.0f - brl_f;
+    brl_f = softplus(brl_f, 0.25f); // Protect against over-darkening
+    
+    // Limit Brilliance adjustment by tonescale
+    float brl_ts = brl_f > 1.0f ? 1.0f - ts_pt : ts_pt; // Limit by inverse tonescale if positive Brilliance adjustment
+    float brl_lim = spowf(brl_ts, 1.0f - brl_rng);
+    brl_f = brl_f*brl_lim + 1.0f - brl_lim;
+    /*----------- TRIM : Brilliance -----------------
+      brl_f vaut 1 sur un neutre : seules les couleurs saturees s'en ecartent.
+      On dose cet ecart, donc la clarte des couleurs saturees sans toucher a
+      l'axe neutre. A +1 l'effet disparait et les rouges satures cessent de
+      s'assombrir; a -1 il double et la couleur gagne en densite.
+    -------------------------------------------------*/
+    if (trim_br != 0.0f && !trim_bypass) brl_f = 1.0f + (brl_f - 1.0f)*(1.0f - trim_br);
+
+    brl_f = _fmaxf(0.0f, _fminf(2.0f, brl_f)); // protect for shadow grain
+  }
+
+
+
+  /***************************************************
+    Mid-Range Purity
+      This boosts mid-range purity on the low end
+      and reduces mid-range purity on the high end
+  --------------------------------------------------*/
+  // Mid Purity n'est plus ici. Il poussait ptm_low, le terme qui relache la
+  // compression de purete sur ce qui est sombre ET presque neutre : mesure, une
+  // prise de 0.010 contre 0.983 pour Highlight Density. Le module qui porte ce
+  // nom vit maintenant en lumiere de scene, avec les deux autres operateurs de
+  // densite - voir mid_purity() plus haut. Le haut du module de purete, lui,
+  // garde son reglage : Highlight Saturation, juste en dessous.
+
+  // ---- Highlight Saturation -------------------------------------------------
+  // Le haut du module de purete a son propre reglage, et ce n'est pas un
+  // decoupage cosmetique : mesure sur un orange qui monte, ce qu'il fait ne
+  // ressemble a aucun autre reglage du plugin.
+  //
+  //   Highlight Purity +1 : +0.0250 de chroma a +4 stops, +0.0530 a +4.5,
+  //     +0.0812 a +5 - il monte sans s'arreter, et il RETIENT le sommet, au
+  //     prix de 0.037 de clarte. C'est son travail : empecher la couleur de
+  //     ceder au blanc.
+  //   Celui-ci a +1 (l'ancien Mid Purity vers la gauche) : +0.0097 a +4 stops,
+  //     +0.0109 a +4.5, puis il REDESCEND a +0.0099 a +5, pour 0.004 de clarte.
+  //
+  // Autrement dit il enrichit le haut des demi-tons et le bas des hautes
+  // lumieres, presque gratuitement, et il laisse le sommet partir au blanc.
+  // C'est ce qu'on veut d'une haute lumiere qui doit rester coloree sans
+  // devenir pateuse - et c'est exactement ce que Highlight Purity ne fait pas.
+  //
+  // Vers la GAUCHE il fait l'inverse sur le meme axe : la couleur cede plus tot
+  // et plus doucement en montant, l'epaule devient cremeuse. Un axe, deux
+  // caracteres de tirage, et le sommet va au blanc dans les deux cas.
+  //
+  // Les deux cotes sont la MEME mise a l'echelle, dans les deux sens, et pas
+  // une interpolation vers une borne : ptm_high vaut deja -0.77 sur les looks,
+  // donc viser -1 a gauche ne laissait qu'un dixieme de course et le cote
+  // gauche ne faisait presque rien. Mis a l'echelle, il en a autant que le
+  // droit.
+  if (trim_hs != 0.0f && !trim_bypass) {
+    ptm_high = trim_hs > 0.0f
+             ? ptm_high*(1.0f - trim_hs*0.78f)                  // plus de couleur
+             : ptm_high*(1.0f - trim_hs*0.85f);                  // plus cremeux
+  }
+
+  float ptm_sc = 1.0f;
+  if (ptm_enable) {
+    // Mid Purity Low
+    float ptm_ach_d = complement_power(ach_d, ptm_low_st);
+    ptm_sc = sigmoid_cubic(ptm_ach_d, ptm_low*(1.0f - ts_pt));
+
+    // Mid Purity High
+    ptm_ach_d = complement_power(ach_d, ptm_high_st)*(1.0f - ts_pt) + ach_d*ach_d*ts_pt;
+    ptm_sc *= sigmoid_cubic(ptm_ach_d, ptm_high*ts_pt);
+    ptm_sc = _fmaxf(0.0f, ptm_sc); // Ensure no negative scale
+
+  }
+
+
+  // Premult hue angles for Hue Contrast and Hue Shift
+  ha_rgb *= ach_d;
+  ha_cmy *= (1.5f)*compress_toe_quadratic(ach_d, 0.5f, 0); // Stronger smoothing for CMY hue shift
+
+
+  /***************************************************
+    Hue Contrast R
+  --------------------------------------------------*/
+  if (hc_enable) {
+    float hc_ts = 1.0f - ts_pt;
+    // Limit high purity on bottom end and low purity on top end by ach_d.
+    // This helps reduce artifacts and over-saturation.
+    float hc_c = (1.0f - ach_d)*hc_ts + ach_d*(1.0f - hc_ts);
+    hc_c *= ha_rgb.x;
+    hc_ts *= hc_ts;
+    // Bias contrast based on tonescale using Lift/Mult: https://www.desmos.com/calculator/gzbgov62hl
+    float hc_f = hc_r*(hc_c - 2.0f*hc_c*hc_ts) + 1.0f;
+    rgb = make_float3(rgb.x, rgb.y*hc_f, rgb.z*hc_f);
+  }
+
+
+
+  /***************************************************
+  Hue Shift
+  --------------------------------------------------*/
+
+  // Hue Shift RGB by purity compress tonescale, shifting more as intensity increases
+  if (hs_rgb_enable) {
+    float3 hs_rgb = ha_rgb*_powf(ts_pt, 1.0f/hs_rgb_rng);
+    float3 hsf = make_float3(hs_rgb.x*hs_r, hs_rgb.y*-hs_g, hs_rgb.z*-hs_b);
+    hsf = make_float3(hsf.z - hsf.y, hsf.x - hsf.z, hsf.y - hsf.x);
+    rgb += hsf;
+  }
+
+  // Hue Shift CMY by tonescale, shifting less as intensity increases
+  if (hs_cmy_enable) {
+    float3 hs_cmy = ha_cmy*(1.0f - ts_pt);
+    float3 hsf = make_float3(hs_cmy.x*-hs_c, hs_cmy.y*hs_m, hs_cmy.z*hs_y);
+    hsf = make_float3(hsf.z - hsf.y, hsf.x - hsf.z, hsf.y - hsf.x);
+    rgb += hsf;
+  }
+
+  // Apply brilliance
+  rgb *= brl_f;
+
+  // Apply purity compression and mid purity
+  ts_pt_cmp *= ptm_sc;
+  rgb = rgb*ts_pt_cmp + 1.0f - ts_pt_cmp;
+
+  // Chroma : mise a l'echelle de la distance a l'axe achromatique. Les ratios
+  // valent 1 sur un neutre, donc (rgb - 1) EST la couleur et rien d'autre : un
+  // gris reste exactement gris a n'importe quel reglage, sans cas particulier.
+  // Applique apres le path to white pour que ce soit le rendu fini qu'on dose,
+  // et non de la saturation renvoyee dans une chaine qui a deja decide.
+  if (col_chroma != 1.0f && !col_bypass) {
+    // SATURATION SOUSTRACTIVE — modele de Nikita Petrovich, licence MIT.
+    // Le meme que NODE_01 et NODE_SKIN utilisent, pour que la saturation se
+    // manie pareil d'un plugin a l'autre. Voir licenses/MIT-SubtractiveSaturation.txt.
+    //
+    // Ce qui le distingue : l'ancre est le canal LE PLUS HAUT, pas la luminance
+    // ni la moyenne. Saturer fait donc DESCENDRE les canaux bas au lieu de
+    // faire monter le canal haut - c'est exactement ce que fait une densite de
+    // colorant, qui soustrait de la lumiere. Une couleur qui se sature
+    // s'assombrit, comme sur une epreuve, au lieu de courir vers le clip.
+    //
+    // Applique ici aux RATIOS et non aux valeurs : un ratio vaut 1 sur un
+    // neutre, donc le maximum vaut 1 lui aussi et un gris reste exactement gris
+    // a n'importe quel reglage. Le passage en espace gamma que fait NODE_01 n'a
+    // pas lieu d'etre a cet endroit : il y sert a rendre l'effet egal d'une
+    // exposition a l'autre, et un ratio ne bouge deja pas avec l'exposition.
+    // Sans l'ecretage a zero que porte la version de NODE_01. Il y est
+    // necessaire parce qu'une puissance suit ; ici rien ne suit, les ratios
+    // negatifs sont prevus par la chaine - elle les borne deja a -2 plus haut -
+    // et l'ecretage, lui, posait un COIN pile la ou un ratio passait sous zero :
+    // 0.76 pour cent de recul de luminance sur un bleu sature. Enleve, la
+    // courbe est continue et le recul tombe dans le bruit.
+    rgb = chroma_sub(rgb, col_chroma);
+  }
+
+  // Inverse Rendering Space
+  sat_L = rgb.x*rs_w.x + rgb.y*rs_w.y + rgb.z*rs_w.z;
+  rgb = (sat_L*rs_sa - rgb)/(rs_sa - 1.0f);
+
+  // Convert to final display gamut
+  float3 cwp_rgb = rgb;
+  if (display_gamut==0) {
+    if (cwp==1) cwp_rgb = vdot(matrix_p3_to_rec709_d60, rgb);
+    if (cwp==2) cwp_rgb = vdot(matrix_p3_to_rec709_d55, rgb);
+    if (cwp==3) cwp_rgb = vdot(matrix_p3_to_rec709_d50, rgb);
+    rgb = vdot(matrix_p3_to_rec709_d65, rgb);
+    if (cwp==0) cwp_rgb = rgb;
+  }
+  else if (display_gamut>=1) {
+    if (cwp==1) cwp_rgb = vdot(matrix_p3_to_p3_d60, rgb);
+    if (cwp==2) cwp_rgb = vdot(matrix_p3_to_p3_d55, rgb);
+    if (cwp==3) cwp_rgb = vdot(matrix_p3_to_p3_d50, rgb);
+  }
+
+  // Mix between Creative Whitepoint and D65 by tsn
+  float cwp_f = _powf(tsn, 1.0f - cwp_rng);
+  rgb = cwp_rgb*cwp_f + rgb*(1.0f - cwp_f);
+
+  // Tonescale overlay RGB
+  float3 crv_rgb = crv_val;
+  float3 crv_rgb_cwp = crv_rgb;
+  if (crv_enable == 1) {
+    if (display_gamut==0) {
+      if (cwp==1) crv_rgb_cwp = vdot(matrix_p3_to_rec709_d60, crv_rgb);
+      if (cwp==2) crv_rgb_cwp = vdot(matrix_p3_to_rec709_d55, crv_rgb);
+      if (cwp==3) crv_rgb_cwp = vdot(matrix_p3_to_rec709_d50, crv_rgb);
+      crv_rgb = vdot(matrix_p3_to_rec709_d65, crv_rgb);
+      if (cwp==0) crv_rgb_cwp = crv_rgb;
+    }
+    else if (display_gamut>=1) {
+      if (cwp==1) crv_rgb_cwp = vdot(matrix_p3_to_p3_d60, crv_rgb);
+      if (cwp==2) crv_rgb_cwp = vdot(matrix_p3_to_p3_d55, crv_rgb);
+      if (cwp==3) crv_rgb_cwp = vdot(matrix_p3_to_p3_d50, crv_rgb);
+    }
+
+    float crv_rgb_cwp_f = _powf(crv_val.y, 1.0f - cwp_rng);
+    crv_rgb = crv_rgb_cwp*crv_rgb_cwp_f + crv_rgb*(1.0f - crv_rgb_cwp_f);
+  }
+
+
+  // Purity Compress Low
+  if (ptl_enable) {
+    float sum0 = softplus_constraint(rgb.x, 0.2f, -100.0f, -0.3f) + rgb.y + softplus_constraint(rgb.z, 0.2f, -100.0f, -0.3f);
+    rgb.x = softplus(rgb.x, 0.06f);
+    rgb.y = softplus(rgb.y, 0.06f);
+    rgb.z = softplus(rgb.z, 0.04f);
+
+    float ptl_norm = _fminf(1.0f, sdivf(sum0, rgb.x + rgb.y + rgb.z));
+    rgb *= ptl_norm;
+  }
+
+  // Final tonescale adjustments
+  tsn *= ts_m2; // scale for inverse toe
+  tsn = compress_toe_quadratic(tsn, tn_toe, 0);
+
+  // Print Toning: virage par niveau, avant la mise a l'echelle d'affichage
+  // pour que le comportement soit identique en SDR et en HDR
+  if (tone_id > 0 && tone_amt > 0.0f)
+    rgb *= print_tone(tsn/ts_y1, tone_id, tone_amt);
+
+
+  /*----------- TRIM : Shadows -----------------
+    Gain fenetre, en diaphragmes, sur l ecart au plancher du noir.
+      - a hauteur du plancher le gain vaut 1 : le noir du look ne bouge pas,
+        donc aucun voile laiteux.
+      - la fenetre est renormalisee a zero sur le gris : ni le gris ni le
+        blanc ne bougent, ce n est pas du contraste deguise.
+      - applique sur tsn, donc les ratios RGB sont intacts : aucune derive
+        de teinte, ce qu une roue Lift ne sait pas tenir.
+    Place apres le virage, pour que celui-ci garde sa position sur la courbe.
+  -------------------------------------------*/
+  if (trim_sh != 0.0f && !trim_bypass) {
+    sh_fl = compress_toe_quadratic(sh_fl*ts_m2, tn_toe, 0);
+    const float sh_p = 0.3f*ts_y0;
+    const float sh_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0 - sh_fl, 1e-6f)/sh_p, 3.0f));
+    float sh_x = _fmaxf(0.0f, tsn - sh_fl);
+    float sh_w = sh_x/sh_p;
+    sh_w = 1.0f/(1.0f + sh_w*sh_w*sh_w);
+    sh_w = _fmaxf(0.0f, (sh_w - sh_wg)/(1.0f - sh_wg));
+    tsn = sh_fl + sh_x*_exp2f(1.5f*trim_sh*sh_w);
+  }
+  tsn *= ts_dsc; // scale for display encoding
+
+  if (crv_enable == 1) {
+    // crv_val n'a pas ete touche par le bloc du point blanc : c'est la
+    // grandeur achromatique du trace, l'exact equivalent de tsn cote image.
+    // crv_rt porte la teinte, et vaut (1,1,1) sur un point blanc D65.
+    const float crv_n = crv_val.y;
+    float3 crv_rt = crv_n > 1e-6f
+      ? make_float3(crv_rgb.x/crv_n, crv_rgb.y/crv_n, crv_rgb.z/crv_n)
+      : make_float3(1.0f, 1.0f, 1.0f);
+    float crv_ach = compress_toe_quadratic(crv_n*ts_m2, tn_toe, 0);
+
+    // Print Toning applique a la courbe : les trois canaux se separent donc
+    // des que le look a un virage, sans avoir a toucher au point blanc
+    if (tone_id > 0 && tone_amt > 0.0f)
+      crv_rt *= print_tone(crv_ach/ts_y1, tone_id, tone_amt);
+
+    if (trim_sh != 0.0f && !trim_bypass) {
+      const float shc_p = 0.3f*ts_y0;
+      const float shc_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0 - sh_fl, 1e-6f)/shc_p, 3.0f));
+      float shc_x = _fmaxf(0.0f, crv_ach - sh_fl);
+      float shc_w = shc_x/shc_p;
+      shc_w = 1.0f/(1.0f + shc_w*shc_w*shc_w);
+      shc_w = _fmaxf(0.0f, (shc_w - shc_wg)/(1.0f - shc_wg));
+      crv_ach = sh_fl + shc_x*_exp2f(1.5f*trim_sh*shc_w);
+    }
+    crv_rgb = crv_rt*crv_ach*ts_dsc;
+    // Le meme clamp que l'image. Sans lui, un contraste negatif fait plonger
+    // le bas de la courbe sous le cadre et le trace disparait a gauche, alors
+    // que le rendu, lui, se pose a plat sur le noir. Mesure : le trace devenait
+    // introuvable sur les colonnes de gauche des que Contrast passait a -0.5.
+    crv_rgb = clampf3(crv_rgb, 0.0f, 1.0f);
+    // scale to 1.0 = 1000 nits for st2084 PQ
+    if (eotf == 4) crv_rgb *= 10.0f;
+  }
+
+  // ---- Highlight Density ----------------------------------------------------
+  // Le complement de Highlight Purity, sur l'autre moitie du probleme. Purity
+  // decide combien de COULEUR survit en haut ; celui-ci decide combien de
+  // LUMIERE la porte - et c'est la lumiere qui donne a la couleur un endroit ou
+  // exister. Mesure : a Purity +1 un ciel tient 97 pour cent de sa saturation
+  // mais son canal bleu est colle a 1.000. La couleur y est, le degrade n'y est
+  // plus. En baissant ce niveau, le canal quitte le plafond et la forme revient.
+  //
+  // Pose ICI, juste avant le retour des ratios : c'est le seul endroit ou le
+  // niveau achromatique et la couleur sont encore separes, donc baisser l'un ne
+  // touche pas l'autre. La teinte et la chroma relative ne bougent pas d'un
+  // millieme, seule la hauteur change.
+  //
+  // Mise a l'echelle par la saturation DE LA SCENE (voir hd_sat plus haut) :
+  // elle vaut 0 sur un neutre, donc une haute lumiere neutre n'est jamais
+  // touchee et aucun cas particulier n'est necessaire pour la proteger ; et
+  // elle ne bouge pas avec l'exposition, donc le gain ne peut pas retourner une
+  // rampe. Bornee au haut de l'echelle, elle ne descend pas dans les demi-tons.
+  //
+  // Gain exponentiel, comme tous les reglages bornes de ce fichier : symetrique
+  // - un cran a gauche rend exactement ce qu'un cran a droite enleve - et il
+  // approche zero sans jamais l'atteindre, donc aucune valeur ne peut eteindre
+  // une haute lumiere.
+  if (trim_hd != 0.0f && !trim_bypass) {
+    // Uniquement vers le BAS, et ce n'est pas une limitation par prudence :
+    // c'est le seul sens ou ce reglage est monotone. `hi` monte avec le niveau,
+    // donc une DENSITE grandit avec lui et la rampe ne peut que descendre plus
+    // doucement - jamais reculer. Un LEVER, lui, devait s'effacer en approchant
+    // du plafond faute de place, et un gain qui retombe pendant que le niveau
+    // monte fait exactement ce que ce reglage doit reparer : l'image
+    // s'assombrissait quand la lumiere augmentait, 233 fois la courbure
+    // voisine. Pour remonter une haute lumiere saturee, c'est Brilliance.
+    float lvl = tsn/_fmaxf(ts_dsc*ts_y1, 1.0e-6f);
+    float hi = smootherstep(0.28f, 0.92f, lvl);
+    tsn *= _exp2f(-1.35f*_fmaxf(trim_hd, 0.0f)*hd_sat*hi);
+  }
+
+  // Return from RGB ratios
+  rgb *= tsn;
+
+  // Clamp
+  if (out_clamp) rgb = clampf3(rgb, 0.0f, 1.0f);
+
+  // Rec.2020 (P3 Limited)
+  if (display_gamut==2) {
+    rgb = clampminf3(rgb, 0.0f);
+    rgb = vdot(matrix_p3_to_rec2020, rgb);
+  }
+
+
+  // Apply inverse Display EOTF
+  float eotf_p = 2.0f + eotf * 0.2f;
+  if ((eotf > 0) && (eotf < 4)) rgb = spowf3(rgb, 1.0f/eotf_p);
+  else if (eotf == 4) rgb = eotf_pq(rgb, 1);
+  else if (eotf == 5) rgb = eotf_hlg(rgb, 1);
+
+  if (crv_enable == 1) {
+    if ((eotf > 0) && (eotf < 4)) crv_rgb = spowf3(crv_rgb, 1.0f/eotf_p);
+    else if (eotf == 4) crv_rgb = eotf_pq(crv_rgb, 1);
+    else if (eotf == 5) crv_rgb = eotf_hlg(crv_rgb, 1);
+  }
+
+  // ---- FALSE COLOR ----------------------------------------------------------
+  // Pose APRES l'encodage : les couleurs des zones et le panneau de legende
+  // sont choisis en valeurs de CODE. Places avant l'encodage, chacune d'elles
+  // se decalerait avec le reglage de sortie et la legende ne correspondrait
+  // plus a ce qu'elle annonce.
+  if (fc_overlay == 1) {
+    float3 fc = fc_color(fc_stops);                 // Rec.709 LINEAIRE
+    if ((eotf > 0) && (eotf < 4)) fc = spowf3(fc, 1.0f/eotf_p);
+    else if (eotf == 4) fc = eotf_pq(fc, 1);
+    else if (eotf == 5) fc = eotf_hlg(fc, 1);
+    rgb = fc;
+
+    // LEGENDE : 13 pastilles, +6 en haut. Chacune affiche EXACTEMENT la couleur
+    // de son stop, calculee par la meme fonction que l'image : la legende n'est
+    // pas une table tenue a part, c'est le rendu lui-meme, donc elle ne peut
+    // pas mentir.
+    const float fhf = res.y;
+    const float pxf = pos.x + 0.5f;
+    const float pyf = pos.y + 0.5f;
+    const float chf = 0.052f*fhf, gpf = 0.006f*fhf, cwf = 0.085f*fhf;
+    const float x0f = 0.030f*fhf, pdf = 0.012f*fhf;
+    const float bwf = _fmaxf(1.0f, 0.0020f*fhf);
+    const float blkf = 13.0f*chf + 12.0f*gpf;
+    const float y0f = 0.5f*(fhf - blkf);
+    const float ccxf = x0f + 0.5f*cwf;
+    const float sfg = _fmaxf(1.0f, _floorf(0.006f*fhf + 0.5f));
+    if (legend == 1 &&
+        pxf < x0f + cwf + pdf + 2.0f &&
+        pyf > y0f - pdf - 2.0f && pyf < y0f + blkf + pdf + 2.0f) {
+      float dpanf = ovl_rrect_sdf(pxf, pyf, ccxf, 0.5f*fhf,
+                                  0.5f*cwf + pdf, 0.5f*blkf + pdf, 0.25f*chf);
+      float apanf = ovl_cov(dpanf);
+      rgb.x = ovl_mix(rgb.x, 0.0800f, apanf);
+      rgb.y = ovl_mix(rgb.y, 0.0800f, apanf);
+      rgb.z = ovl_mix(rgb.z, 0.0800f, apanf);
+      for (int i = 0; i < 13; ++i) {
+        float cyf = y0f + (float)i*(chf + gpf) + 0.5f*chf;
+        // Contour clair trace EN PREMIER, pastille par-dessus : meme une
+        // pastille aussi sombre que le panneau reste delimitee. Sans lui, le
+        // violet du noir bouche tombait pile sur la luminance du fond et le
+        // panneau avait l'air troue.
+        float aout = ovl_cov(ovl_rrect_sdf(pxf, pyf, ccxf, cyf,
+                                           0.5f*cwf + bwf, 0.5f*chf + bwf,
+                                           0.12f*chf + bwf));
+        if (aout <= 0.0f) continue;
+        rgb.x = ovl_mix(rgb.x, 0.3200f, aout);
+        rgb.y = ovl_mix(rgb.y, 0.3200f, aout);
+        rgb.z = ovl_mix(rgb.z, 0.3200f, aout);
+        float a = ovl_cov(ovl_rrect_sdf(pxf, pyf, ccxf, cyf,
+                                        0.5f*cwf, 0.5f*chf, 0.12f*chf));
+        if (a <= 0.0f) continue;
+        int z = 12 - i;                               // haut = +6
+        float3 sw = fc_color((float)(z - 6));
+        if ((eotf > 0) && (eotf < 4)) sw = spowf3(sw, 1.0f/eotf_p);
+        else if (eotf == 4) sw = eotf_pq(sw, 1);
+        else if (eotf == 5) sw = eotf_hlg(sw, 1);
+        rgb.x = ovl_mix(rgb.x, sw.x, a);
+        rgb.y = ovl_mix(rgb.y, sw.y, a);
+        rgb.z = ovl_mix(rgb.z, sw.z, a);
+        // Label grave, couleur adaptative : noir sur pastille claire, blanc
+        // sur pastille sombre, decide par la luminance de la pastille
+        // elle-meme plutot que par une liste a tenir a jour.
+        float lyf = cyf - 2.5f*sfg;
+        float tc;
+        if (z > 6)      tc = _fmaxf(ovl_glyph_cov(pxf, pyf, ccxf - 3.5f*sfg, lyf, sfg, 10),
+                                    ovl_glyph_cov(pxf, pyf, ccxf + 0.5f*sfg, lyf, sfg, z - 6));
+        else if (z < 6) tc = _fmaxf(ovl_glyph_cov(pxf, pyf, ccxf - 3.5f*sfg, lyf, sfg, 11),
+                                    ovl_glyph_cov(pxf, pyf, ccxf + 0.5f*sfg, lyf, sfg, 6 - z));
+        else            tc = ovl_glyph_cov(pxf, pyf, ccxf - 1.5f*sfg, lyf, sfg, 0);
+        float lum_sw = 0.2126f*sw.x + 0.7152f*sw.y + 0.0722f*sw.z;
+        float tcol = (lum_sw > 0.5000f) ? 0.0f : 0.9000f;
+        rgb.x = ovl_mix(rgb.x, tcol, tc);
+        rgb.y = ovl_mix(rgb.y, tcol, tc);
+        rgb.z = ovl_mix(rgb.z, tcol, tc);
+      }
+    }
+  }
+
+  // ---- SKIN CHECK -----------------------------------------------------------
+  if (skin_check == 1) {
+    // Retour en lumiere : une teinte ne veut rien dire sur du code.
+    float3 sl = make_float3(spowf(rgb.x, eotf_p), spowf(rgb.y, eotf_p), spowf(rgb.z, eotf_p));
+
+    // Le blanc de la sonde, retire exactement comme dans NODE_SKIN.
+    const float A0 = -0.012061f, B0 = 0.014794f;
+    const float rac = 0.73728f;   // cos(42.5 deg) — ligne des tons chair du scope
+    const float rbc = 0.67559f;   // sin(42.5 deg)
+
+    float3 pq  = skchk_probe(sl);
+    float  Lnc = _fmaxf(pq.z, 1.0e-4f);
+    float  anc = pq.x / Lnc - A0;
+    float  bnc = pq.y / Lnc - B0;
+
+    float uc = anc*rac + bnc*rbc;
+    float vc = bnc*rac - anc*rbc;
+    float nc = _sqrtf(_fmaxf(uc*uc + vc*vc, 0.0f));
+    float tc = clampf(vc / (nc + uc + 1.0e-9f), -1.0e6f, 1.0e6f);   // tan(ecart/2)
+
+    const float K_YELLOW_DEG = 4.5f, K_FULL_DEG = 25.0f, K_RAMP_GAMMA = 0.45f;
+    float tY = _sinf(K_YELLOW_DEG*0.0087266463f)/_cosf(K_YELLOW_DEG*0.0087266463f);
+    float tF = _sinf(K_FULL_DEG  *0.0087266463f)/_cosf(K_FULL_DEG  *0.0087266463f);
+    float stepv = _powf(smootherstep(tY, tF, _fabs(tc)), K_RAMP_GAMMA);
+
+    float ccon = smootherstep(0.015f, 0.038f, nc);
+    float sgnc = (tc >= 0.0f) ? 1.0f : 0.0f;
+    float wGc  = stepv * sgnc;
+    float wMc  = stepv * (1.0f - sgnc);
+    float wYc  = 1.0f - stepv;
+    float ccx = wYc*1.000f + wGc*0.000f + wMc*1.000f;
+    float ccy = wYc*0.950f + wGc*1.000f + wMc*0.000f;
+    float ccz = wYc*0.000f + wGc*0.120f + wMc*1.000f;
+
+    float Vc = _fmaxf(rgb.x, _fmaxf(rgb.y, rgb.z));
+    const float K_PAINT_LEVEL = 0.52f;
+
+    // A la place de la cle de peau de NODE_SKIN, qui n'existe pas ici : une
+    // porte de chroma MESUREE sur ce moteur. La peau y rend entre 0.048 et
+    // 0.078, une tomate mure a 0.129, une robe rouge a 0.159, un ciel a 0.144.
+    // La porte s'ouvre donc a 0.085 - au-dessus de toute peau - et a tout
+    // rejete a 0.115, en dessous de tout le reste. Sans elle, un bol de fruits
+    // ou un ciel ressortaient peints avec pleine confiance, et un instrument
+    // qui prend une tomate pour un visage est pire que pas d'instrument.
+    float3 klab = ovl_oklab(sl);
+    float  kC   = _sqrtf(klab.y*klab.y + klab.z*klab.z);
+    float  pwc  = ovl_band(kC, 0.010f, 0.032f) * (1.0f - ovl_band(kC, 0.085f, 0.115f));
+    pwc = pwc * smootherstep(0.004f, 0.020f, Vc);
+    pwc = pwc * ccon;
+
+    rgb.x = rgb.x + pwc*(ccx*K_PAINT_LEVEL - rgb.x);
+    rgb.y = rgb.y + pwc*(ccy*K_PAINT_LEVEL - rgb.y);
+    rgb.z = rgb.z + pwc*(ccz*K_PAINT_LEVEL - rgb.z);
+
+    if (legend == 1)
+      rgb = draw_check_legend(rgb, (float)p_X, (float)p_Y, res.x, res.y);
+  }
+
+  if (crv_enable == 1) {
+    // La boite est centree : le zero de la courbe tombe a une demi-marge du
+    // bas de l'image, et le un a une demi-marge du haut.
+    const float crv_h = res.y*crv_size;
+    const float crv_my = res.y*(1.0f + crv_size)*0.5f;
+    const float crv_mx = res.x*(1.0f - crv_size)*0.5f;
+    float3 crv_rgb_dst = make_float3(crv_my-pos.y-crv_rgb.x*crv_h, crv_my-pos.y-crv_rgb.y*crv_h, crv_my-pos.y-crv_rgb.z*crv_h);
+    float crv_w0 = 1.1f; // width of tonescale overlay
+    crv_rgb_dst.x = _expf(-crv_rgb_dst.x*crv_rgb_dst.x*crv_w0);
+    crv_rgb_dst.y = _expf(-crv_rgb_dst.y*crv_rgb_dst.y*crv_w0);
+    crv_rgb_dst.z = _expf(-crv_rgb_dst.z*crv_rgb_dst.z*crv_w0);
+    float crv_lm = eotf < 4 ? 1.0f : 0.5f; // reduced luminance in hdr
+    crv_rgb_dst = clampf3(crv_rgb_dst, 0.0f, 1.0f);
+    // Le trace couvre l'image au lieu de s'y ajouter : chaque canal ressort
+    // en couleur franche quel que soit le fond, et les trois se fondent en
+    // blanc la ou la courbe ne separe pas les canaux. L'ancienne formule
+    // n'eclaircissait qu'un canal, ce qui devenait invisible sur une image
+    // claire et tres pale des que la separation etait faible.
+    if (pos.x < crv_mx || pos.x > crv_mx + res.x*crv_size)
+      crv_rgb_dst = make_float3(0.0f, 0.0f, 0.0f);
+    float crv_a = _fmaxf(crv_rgb_dst.x, _fmaxf(crv_rgb_dst.y, crv_rgb_dst.z));
+    rgb = rgb*(1.0f - crv_a) + crv_lm*crv_rgb_dst;
+  }
+
+  return rgb;
+}

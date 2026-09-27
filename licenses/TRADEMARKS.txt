@@ -1,0 +1,35 @@
+NODE_DRT — trademark notice
+===========================
+
+Film and paper product names appearing in this product and its documentation
+are trademarks of their respective owners and are used descriptively only, to
+say which photographic materials each preset was modelled on.
+
+This is an independent product. It is not affiliated with, sponsored by or
+endorsed by any film manufacturer, nor by Blackmagic Design.
+
+Names used descriptively in the look and toning menus:
+
+  Vision3, Portra, Ektar, Gold, Endura, Ultra Endura, Supra Endura
+      trademarks of Eastman Kodak Company
+
+  Pro 400H, Crystal Archive, 3513DI
+      trademarks of FUJIFILM Corporation
+
+  DaVinci Resolve, DaVinci Wide Gamut, DaVinci Intermediate, Blackmagic
+  Wide Gamut
+      trademarks of Blackmagic Design Pty Ltd
+
+  ACES, ACEScct, ACEScg
+      trademarks of the Academy of Motion Picture Arts and Sciences
+
+  ARRI, LogC, Wide Gamut          trademarks of Arnold & Richter Cine Technik
+  RED, Log3G10, Wide Gamut RGB    trademarks of RED.COM, LLC
+  Sony, S-Log3, S-Gamut3          trademarks of Sony Corporation
+  Panasonic, V-Log, V-Gamut       trademarks of Panasonic Corporation
+  FilmLight, T-Log, E-Gamut       trademarks of FilmLight Ltd
+  Cineon                          trademark of Eastman Kodak Company
+
+The presets are emulations fitted numerically against spectral simulations.
+They are not the stocks themselves, they are not derived from any
+manufacturer's data, and no manufacturer has reviewed or approved them.

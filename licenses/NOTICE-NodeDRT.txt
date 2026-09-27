@@ -1,0 +1,108 @@
+================================================================================
+  NODE DRT — LICENCE AND ATTRIBUTION
+================================================================================
+
+Node DRT is an OpenFX plugin for DaVinci Resolve on macOS, by Samuel Drouin.
+
+THIS ENTIRE PLUGIN IS FREE SOFTWARE, LICENSED UNDER THE GNU GENERAL PUBLIC
+LICENSE, VERSION 3 OR LATER. Not part of it — all of it.
+
+
+--------------------------------------------------------------------------------
+  WHERE IT COMES FROM
+--------------------------------------------------------------------------------
+
+The line of descent, stated plainly, because that is what decides the licence:
+
+  1.  OpenDRT v1.0.1, by Jed Smith, published under the GNU GPL version 3.
+      https://github.com/jedypod/open-display-transform
+      The tonescale, the rendering space, the purity compression, the
+      brilliance and the hue modules are his work. The image rendering itself
+      is his, and the credit for it is his.
+
+  2.  NODE_DRT, a DCTL by Samuel Drouin, which is a MODIFIED VERSION of
+      OpenDRT. Modifying a GPL work produces a GPL work.
+
+  3.  Node DRT, this OpenFX plugin, built from that DCTL.
+
+Because step 2 is a modification of Jed Smith's work, this plugin is covered
+by his licence, and so is everything in it. That is not a technicality to work
+around: it is the condition under which OpenDRT was given away, and it is
+right that it travels on.
+
+Jed Smith is not responsible for the changes made here, and this project is
+not affiliated with him.
+
+
+--------------------------------------------------------------------------------
+  OTHER WORK INSIDE IT
+--------------------------------------------------------------------------------
+
+  Film look presets
+      Sets of parameter values, fitted numerically against reference
+      renderings produced with spektrafilm by Andrea Volpato, licensed
+      CC BY-SA 4.0 — https://github.com/andreavolpato/spektrafilm
+      Each reference is a spectral simulation of one negative stock printed
+      on one print stock. NO LUT DATA IS EMBEDDED: what remains are fitted
+      parameter values belonging to this transform.
+      Full text: SPEKTRAFILM_LICENSE.txt
+
+  Subtractive saturation
+      Model by Nikita Petrovich, MIT licence. Used by the Chroma control and
+      by Mid Purity. It anchors on the strongest channel rather than on
+      luminance, so raising saturation lowers the weaker channels instead of
+      pushing the strongest one towards clipping — which is what a dye layer
+      does, and why a colour that saturates also darkens.
+      Full text: MIT-SubtractiveSaturation.txt
+
+  OpenFX support library
+      Academy Software Foundation, BSD 3-Clause.
+      Full text: BSD-3-OpenFX.txt
+
+  Film stock names
+      Trademarks of their owners, used descriptively to say which material
+      each preset was modelled on. This is an emulation; it is not the stock,
+      and it is neither endorsed by nor affiliated with those companies, nor
+      with Blackmagic Design.
+      Full text: TRADEMARKS.txt
+
+
+--------------------------------------------------------------------------------
+  WHERE THE SOURCE IS
+--------------------------------------------------------------------------------
+
+The complete corresponding source for this plugin, including everything needed
+to build this exact binary, is published at:
+
+    https://github.com/nodedrt/NodeDRT
+
+If that address ever stops working, write to nodedrt@gmail.com and you
+will be sent the source, at no more than the cost of doing so, for at least
+three years from the date you received this copy. This paragraph is the
+written offer required by section 6 of the GPL, version 3.
+
+
+--------------------------------------------------------------------------------
+  YOUR RIGHTS
+--------------------------------------------------------------------------------
+
+You may use this plugin for anything, including commercial work, with no
+royalty and no obligation to credit it in your own productions. The images you
+make are yours.
+
+You may also study it, modify it, and pass it on — including free of charge,
+and including to people who have not paid for it. Those rights cannot be taken
+away from you by any additional term, and none is imposed here. Section 10 of
+the GPL forbids it.
+
+If you paid for this plugin, you paid for a built and tested binary, for the
+calibration work behind the looks, and for support. You did not buy exclusivity,
+and none was offered.
+
+Full licence text: GPL-3.0.txt
+
+
+================================================================================
+  Node DRT — Samuel Drouin
+  Derived from OpenDRT v1.0.1 by Jed Smith. GPLv3.
+================================================================================

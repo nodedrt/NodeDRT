@@ -1,0 +1,61 @@
+NODE_ONE — what was modelled, and how
+=====================================
+
+This file records what the look presets were fitted against, so the claim in
+NOTICE-NodeOne.txt can be checked rather than taken on trust.
+
+
+The seven film looks
+--------------------
+Each look is a set of values native to Node One DRT. None of them is a LUT, a
+profile, or a copy of anything: each is the result of driving this transform's
+own parameters until its OUTPUT matched a reference rendering.
+
+Reference renderings were produced with spektrafilm (Andrea Volpato,
+CC BY-SA 4.0), run with auto-exposure off, spatial and stochastic effects off,
+and the canonical neutral print settings, so each reference is a fixed colour
+transform rather than something that depends on the picture.
+
+    1  Vision3 250D / 2383          kodak_vision3_250d / kodak_2383
+    2  Vision3 250D / 2393          kodak_vision3_250d / kodak_2393
+    3  Vision3 500T / 2383          kodak_vision3_500t / kodak_2383
+    4  Portra 400 / Endura          kodak_portra_400   / kodak_portra_endura
+    5  Ektar 100 / Ultra Endura     kodak_ektar_100    / kodak_ultra_endura
+    6  Pro 400H / Crystal Archive   fujifilm_pro_400h  / fujifilm_crystal_archive_typeii
+    7  Gold 200 / Supra Endura      kodak_gold_200     / kodak_supra_endura
+
+Fitted over 3727 colours spanning a regular grid of the cube, a dense neutral
+ramp and a cluster around skin, weighted towards the places the eye judges
+first. Error is measured in Oklab.
+
+A fitted look is a deliberate approximation of its reference, not a
+reproduction of it.
+
+
+The "Classic" look
+------------------
+Obtained the same way, against a reference display rendering rather than a film
+one, for people who want that familiar conversion. Fitting against what a
+renderer produces is not derivation from that renderer: the output of a program
+is not covered by the program's own licence.
+
+
+The engine's own defaults
+-------------------------
+Node One DRT's defaults were set by measurement against the same film
+references — where skin chroma lands (0.0897, which is film's own value), what
+the midtone slope is (0.1448 on film, 0.1473 here), and how chroma falls away
+as a source is exposed up. These are measurements of physical materials, which
+are facts.
+
+
+Verification
+------------
+Every look is checked before it ships, by drt2/check_looks.py: finite output,
+inside 0..1, a monotone grey ramp over sixteen stops, and monotone luminance
+along twelve colour ramps over five decades. That check has rejected looks
+three times; each rejection was a real defect that would have banded on a
+gradient.
+
+The shipping kernel is checked against the design reference by drt2/parity.py
+over 2000+ colours spanning seven decades, and must agree to float32 precision.
