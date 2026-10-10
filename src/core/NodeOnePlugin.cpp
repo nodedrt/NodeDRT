@@ -143,6 +143,15 @@ private:
     // groupe est donc remis a zero lui aussi, sans que personne ait a y penser -
     // et un reglage deplace ailleurs cesse d'etre touche, ce qui est correct.
     // Tout se fait dans un seul bloc d'edition, donc une seule annulation.
+    // Un reglage est dans un groupe s'il y est directement ou dans l'une de
+    // ses sous-sections : Reset Trims remet aussi Contrast, Midtones...
+    bool inGroup(int g, int target) const
+    {
+        for (int n = 0; g >= 0 && n < 8; ++n, g = _def.groups[g].parent)
+            if (g == target) return true;
+        return false;
+    }
+
     bool resetGroupOf(const std::string& buttonName)
     {
         int gi = -99;
@@ -153,7 +162,7 @@ private:
         beginEditBlock("reset");
         for (int i = 0; i < _def.nParams; ++i) {
             const ParamSpec& p = _def.params[i];
-            if (p.group != gi || !_params[i]) continue;
+            if (!inGroup(p.group, gi) || !_params[i]) continue;
             if (p.offset == kNoOffset) continue;      // les synthetiques n'ont pas de valeur
             if (p.kind == kParamFloat)
                 static_cast<OFX::DoubleParam*>(_params[i])->setValue(p.def);
@@ -370,7 +379,10 @@ void describePlugin(const PluginDef& def, OFX::ImageEffectDescriptor& desc)
     desc.addSupportedBitDepth(OFX::eBitDepthFloat);
     desc.setSingleInstance(false);
     desc.setHostFrameThreading(false);
-    desc.setSupportsMultiResolution(false);
+    // Un effet per-pixel rend la meme image a toute echelle : Resolve peut alors
+    // le rendre a resolution reduite (proxy, lecture optimisee) au lieu de
+    // toujours calculer la pleine definition.
+    desc.setSupportsMultiResolution(def.spatial == 0);
     desc.setSupportsTiles(false);
     desc.setTemporalClipAccess(false);
     desc.setRenderTwiceAlways(false);
@@ -395,18 +407,14 @@ void describePluginInContext(const PluginDef& def, OFX::ImageEffectDescriptor& d
 
     OFX::PageParamDescriptor* page = desc.definePageParam("Controls");
 
-    std::vector<OFX::GroupParamDescriptor*> groups;
-    for (int g = 0; g < def.nGroups; ++g) {
-        OFX::GroupParamDescriptor* gp = desc.defineGroupParam(def.groups[g].name);
-        gp->setLabels(def.groups[g].label, def.groups[g].label, def.groups[g].label);
-        gp->setOpen(def.groups[g].open != 0);
-        groups.push_back(gp);
-    }
+    // GROUPES. Un groupe est defini au moment ou son premier reglage arrive,
+    // donc dans l'ordre de lecture de l'Inspector. Un sous-groupe (parent >= 0)
+    // est un groupe OFX standard niche dans son parent : une sous-section
+    // repliable, comme dans les effets livres avec Resolve. Le parent est
+    // toujours defini avant ses enfants.
+    std::vector<OFX::GroupParamDescriptor*> groups(def.nGroups, nullptr);
 
-    // Parameters in group order, so the Inspector reads top to bottom.
-    for (int g = -1; g < def.nGroups; ++g) {
-        if (g >= 0) page->addChild(*groups[g]);
-
+    auto addLutMenu = [&](int g) {
         // The LUT menu belongs with the Look controls: choosing a print LUT is
         // choosing a look, and it replaces the renderer that the looks drive.
         const bool lutHere = def.lutLogModeParam &&
@@ -435,48 +443,74 @@ void describePluginInContext(const PluginDef& def, OFX::ImageEffectDescriptor& d
             if (g >= 0) n->setParent(*groups[g]);
             page->addChild(*n);
         }
-        for (int i = 0; i < def.nParams; ++i) {
-            const ParamSpec& p = def.params[i];
-            if (p.group != g) continue;
-            // Un bouton n'est pas un ValueParamDescriptor : il derive directement
-            // de ParamDescriptor et n'a ni valeur ni animation. On garde donc les
-            // deux pointeurs, le commun pour le libelle et le parent, le second
-            // pour ce qui n'existe que sur un parametre porteur de valeur.
-            OFX::ParamDescriptor* pd = nullptr;
-            OFX::ValueParamDescriptor* vp = nullptr;
-            if (p.kind == kParamFloat) {
-                OFX::DoubleParamDescriptor* d = desc.defineDoubleParam(p.name);
-                d->setDoubleType(OFX::eDoubleTypePlain);
-                d->setDefault(p.def);
-                d->setRange(p.min, p.max);
-                d->setDisplayRange(p.min, p.max);
-                d->setIncrement(p.step > 0 ? p.step : 0.001);
-                d->setDigits(digitsForStep(p.step));
-                // Un flottant SYNTHETIQUE est un afficheur, pas un reglage : le
-                // score de confiance de l'analyse est ecrit par le plugin et n'a
-                // pas de sens si l'utilisateur le change. Il est donc grise, et il
-                // ne s'anime pas.
-                if (p.offset == kNoOffset) { d->setEnabled(false); d->setAnimates(false); }
-                vp = d;
-            } else if (p.kind == kParamBool) {
-                OFX::BooleanParamDescriptor* b = desc.defineBooleanParam(p.name);
-                b->setDefault(p.def != 0.0);
-                vp = b;
-            } else if (p.kind == kParamPush) {
-                pd = desc.definePushButtonParam(p.name);
-            } else {
-                OFX::ChoiceParamDescriptor* c = desc.defineChoiceParam(p.name);
-                for (int o = 0; o < p.nOptions; ++o) c->appendOption(p.options[o]);
-                c->setDefault((int)std::lround(p.def));
-                vp = c;
-            }
-            if (vp) { if (!(p.kind == kParamFloat && p.offset == kNoOffset)) vp->setAnimates(true); pd = vp; }
-            if (!pd) continue;
-            pd->setLabels(p.label, p.label, p.label);
-            if (p.hint && *p.hint) pd->setHint(p.hint);
-            if (g >= 0) pd->setParent(*groups[g]);
-            page->addChild(*pd);
+    };
+
+    auto openGroup = [&](int g) {
+        int chain[8]; int n = 0;
+        for (int x = g; x >= 0 && n < 8; x = def.groups[x].parent) chain[n++] = x;
+        for (int k = n - 1; k >= 0; --k) {
+            const int x = chain[k];
+            if (groups[x]) continue;
+            OFX::GroupParamDescriptor* gp = desc.defineGroupParam(def.groups[x].name);
+            gp->setLabels(def.groups[x].label, def.groups[x].label, def.groups[x].label);
+            gp->setOpen(def.groups[x].open != 0);
+            if (def.groups[x].parent >= 0) gp->setParent(*groups[def.groups[x].parent]);
+            page->addChild(*gp);
+            groups[x] = gp;
+            addLutMenu(x);
         }
+    };
+
+    auto defineParam = [&](const ParamSpec& p, OFX::GroupParamDescriptor* parent) {
+        // Un bouton n'est pas un ValueParamDescriptor : il derive directement
+        // de ParamDescriptor et n'a ni valeur ni animation. On garde donc les
+        // deux pointeurs, le commun pour le libelle et le parent, le second
+        // pour ce qui n'existe que sur un parametre porteur de valeur.
+        OFX::ParamDescriptor* pd = nullptr;
+        OFX::ValueParamDescriptor* vp = nullptr;
+        if (p.kind == kParamFloat) {
+            OFX::DoubleParamDescriptor* d = desc.defineDoubleParam(p.name);
+            d->setDoubleType(OFX::eDoubleTypePlain);
+            d->setDefault(p.def);
+            d->setRange(p.min, p.max);
+            d->setDisplayRange(p.min, p.max);
+            d->setIncrement(p.step > 0 ? p.step : 0.001);
+            d->setDigits(digitsForStep(p.step));
+            // Un flottant SYNTHETIQUE est un afficheur, pas un reglage : le
+            // score de confiance de l'analyse est ecrit par le plugin et n'a
+            // pas de sens si l'utilisateur le change. Il est donc grise, et il
+            // ne s'anime pas.
+            if (p.offset == kNoOffset) { d->setEnabled(false); d->setAnimates(false); }
+            vp = d;
+        } else if (p.kind == kParamBool) {
+            OFX::BooleanParamDescriptor* b = desc.defineBooleanParam(p.name);
+            b->setDefault(p.def != 0.0);
+            vp = b;
+        } else if (p.kind == kParamPush) {
+            pd = desc.definePushButtonParam(p.name);
+        } else {
+            OFX::ChoiceParamDescriptor* c = desc.defineChoiceParam(p.name);
+            for (int o = 0; o < p.nOptions; ++o) c->appendOption(p.options[o]);
+            c->setDefault((int)std::lround(p.def));
+            vp = c;
+        }
+        if (vp) { if (!(p.kind == kParamFloat && p.offset == kNoOffset)) vp->setAnimates(true); pd = vp; }
+        if (!pd) return;
+        pd->setLabels(p.label, p.label, p.label);
+        if (p.hint && *p.hint) pd->setHint(p.hint);
+        if (parent) pd->setParent(*parent);
+        page->addChild(*pd);
+    };
+
+    // Reglages hors groupe d'abord, puis les groupes, dans l'ordre de la table.
+    addLutMenu(-1);
+    for (int i = 0; i < def.nParams; ++i)
+        if (def.params[i].group == -1) defineParam(def.params[i], nullptr);
+    for (int i = 0; i < def.nParams; ++i) {
+        const int g = def.params[i].group;
+        if (g < 0) continue;
+        openGroup(g);
+        defineParam(def.params[i], groups[g]);
     }
 
     // About — read-only text, collapsed.

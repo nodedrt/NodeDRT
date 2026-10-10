@@ -30,6 +30,12 @@ def P(name, label=None, hint=None, **kw):
     return d
 
 
+# Sous-section d'un groupe : un groupe OFX standard niche dans son parent,
+# repliable, comme dans les effets livres avec Resolve.
+def SUB(name, label, params, open=True):
+    return {'sub': True, 'name': name, 'label': label, 'open': open, 'params': params}
+
+
 def vector(color, key, dens, sat, hs, ht):
     return {
         'name': 'vec_' + key, 'label': color, 'open': False,
@@ -49,51 +55,64 @@ PLUGINS = [
                     'by Jed Smith, GPLv3, with film look presets fitted against '
                     'spektrafilm references. ' + WORKFLOW,
         groups=[
-            {'name': 'grp_input', 'label': 'Input', 'open': True, 'params': [
-                P('in_gamut', 'Gamut'),
-                P('in_oetf', 'Log Curve'),
-            ]},
-            {'name': 'grp_display', 'label': 'Display', 'open': True, 'params': [
-                P('display_encoding_preset', 'Output'),
-                P('tn_Lp', 'Peak Nits'),
-                P('tn_gb', 'HDR Grey Boost'),
-                P('pt_hdr', 'HDR Purity'),
-                P('out_clamp', 'Clamp To Display'),
-            ]},
-            {'name': 'grp_look', 'label': 'Look', 'open': True, 'params': [
-                P('look_preset', 'Look'),
-                P('look_intensity', 'Look Intensity'),
-                P('look_bypass', 'Bypass Look'),
-            ]},
-            {'name': 'grp_toning', 'label': 'Toning', 'open': True, 'params': [
-                P('print_tone_sel', 'Toning'),
-                P('tone_intensity', 'Toning Intensity'),
-                P('tone_bypass', 'Bypass Toning'),
-            ]},
-            {'name': 'grp_tone', 'label': 'Tone', 'open': True, 'params': [
-                P('tonescale_preset', 'Tonescale'),
-                P('tone_curve_bypass', 'Bypass Tone'),
-            ]},
-            {'name': 'grp_trims', 'label': 'Trims', 'open': True, 'params': [
-                P('trim_con', 'Log Contrast'), P('trim_piv', 'Pivot'),
-                P('trim_ovl', 'Overlay'),
-                P('trim_sh', 'Shadows'), P('trim_hp', 'Highlight Purity'),
-                P('trim_hd', 'Highlight Density'),
-                P('trim_hs', 'Highlight Saturation'),
-                P('trim_br', 'Brilliance'),
-                P('trim_mp', 'Mid Purity'), P('trim_mp_pv', 'Mid Purity Pivot'),
-                P('trim_bypass', 'Bypass Trims'),
-                P('trim_reset', 'Reset Trims', synth='push',
-                  hint='Returns every control in this group to its default in one click, as a single undo step. It reads the group itself rather than a hand-written list, so a control added here later is reset too without anyone having to remember. It does not touch anything outside the group - Color, White and the look are left exactly as they are.'),
+            # ORGANISATION (9 octobre 2026). Les groupes suivent l'ordre du
+            # traitement : ce qui entre et ce qui sort d'abord - a regler une
+            # fois - puis la balance des blancs (posee en lumiere de scene,
+            # avant le look), le look, la couleur, les trims, la peau, et les
+            # instruments a la fin. Chaque groupe est decoupe en sous-parties
+            # repliables, chacune avec son bypass a l'interieur ; chaque groupe
+            # creatif a son Reset. Les noms OFX ne changent pas : un etalonnage
+            # deja fait retrouve toutes ses valeurs.
+            # A l'ouverture : seul Input / Output est deplie (ce qu'on regle en
+            # premier) ; les sous-parties restent depliees a l'interieur, pour
+            # que chaque groupe montre ses reglages des qu'on l'ouvre.
+            {'name': 'grp_io', 'label': 'Input / Output', 'open': True, 'params': [
+                SUB('grp_input', 'Input', [
+                    P('in_gamut', 'Gamut'),
+                    P('in_oetf', 'Log Curve'),
+                ]),
+                SUB('grp_display', 'Output', [
+                    P('display_encoding_preset', 'Output'),
+                    P('tn_Lp', 'Peak Nits'),
+                    P('tn_gb', 'HDR Grey Boost'),
+                    P('pt_hdr', 'HDR Purity'),
+                    P('out_clamp', 'Clamp To Display'),
+                ]),
             ]},
             {'name': 'grp_white', 'label': 'White', 'open': False, 'params': [
-                P('wb_preset', 'Illuminant'),
-                P('wb_kelvin', 'Kelvin'),
-                P('wb_temp', 'Temp'),
-                P('wb_tint', 'Tint'),
-                P('wb_bypass', 'Bypass Illuminant'),
-                P('_cwp', 'Creative White'), P('_cwp_rng', 'Creative White Range'),
-                P('cw_bypass', 'Bypass Creative White'),
+                SUB('grp_white_ill', 'Illuminant', [
+                    P('wb_preset', 'Illuminant'),
+                    P('wb_kelvin', 'Kelvin'),
+                    P('wb_temp', 'Temp'),
+                    P('wb_tint', 'Tint'),
+                    P('wb_bypass', 'Bypass Illuminant'),
+                ]),
+                SUB('grp_white_cw', 'Creative White', [
+                    P('_cwp', 'Creative White'), P('_cwp_rng', 'Creative White Range'),
+                    P('cw_bypass', 'Bypass Creative White'),
+                ]),
+                P('white_reset', 'Reset White', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
+            ]},
+            # LOOK / TONING / TONE : les trois decident ensemble de ce qu'est
+            # le look - la couleur, le virage, la courbe. Le nom 'grp_look' est
+            # garde : c'est lui qui porte l'etat ouvert/ferme.
+            {'name': 'grp_look', 'label': 'Look / Toning / Tone', 'open': False, 'params': [
+                SUB('grp_look_lk', 'Look', [
+                    P('look_preset', 'Look'),
+                    P('look_intensity', 'Look Intensity'),
+                    P('look_bypass', 'Bypass Look'),
+                ]),
+                SUB('grp_look_tn', 'Toning', [
+                    P('print_tone_sel', 'Toning'),
+                    P('tone_intensity', 'Toning Intensity'),
+                    P('tone_bypass', 'Bypass Toning'),
+                ]),
+                SUB('grp_look_ts', 'Tone', [
+                    P('tonescale_preset', 'Tonescale'),
+                    P('ts_intensity', 'Tonescale Intensity'),
+                    P('tone_curve_bypass', 'Bypass Tone'),
+                ]),
+                P('look_reset', 'Reset Look', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
             {'name': 'grp_colour', 'label': 'Color', 'open': False, 'params': [
                 P('col_chroma', 'Chroma'),
@@ -102,6 +121,44 @@ PLUGINS = [
                 P('col_weight', 'Color Weight'),
                 P('col_dens', 'Color Density'),
                 P('col_bypass', 'Bypass Color'),
+                P('color_reset', 'Reset Color', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
+            ]},
+            {'name': 'grp_trims', 'label': 'Trims', 'open': False, 'params': [
+                SUB('grp_trims_con', 'Contrast', [
+                    P('trim_con', 'Log Contrast'), P('trim_piv', 'Pivot'),
+                    P('trim_ovl', 'Overlay'),
+                    P('trim_con_bypass', 'Bypass Contrast'),
+                ]),
+                SUB('grp_trims_hl', 'Shadows & Highlights', [
+                    P('trim_sh', 'Shadows'), P('trim_hp', 'Highlight Purity'),
+                    P('trim_hd', 'Highlight Density'),
+                    P('trim_hs', 'Highlight Saturation'),
+                    P('trim_br', 'Brilliance'),
+                    P('trim_hl_bypass', 'Bypass Shadows & Highlights'),
+                ]),
+                SUB('grp_trims_mid', 'Midtones', [
+                    P('trim_mp', 'Mid Purity'), P('trim_mp_pv', 'Mid Purity Pivot'),
+                    P('trim_mid_bypass', 'Bypass Midtones'),
+                ]),
+                P('trim_reset', 'Reset Trims', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
+            ]},
+            # SKIN : les noms OFX trim_skin / trim_skin_sat sont gardes.
+            {'name': 'grp_skin', 'label': 'Skin', 'open': False, 'params': [
+                SUB('grp_skin_col', 'Color', [
+                    P('trim_skin', 'Skin Line'),
+                    P('trim_skin_sat', 'Skin Saturation'),
+                    P('skin_col_bypass', 'Bypass Color'),
+                ]),
+                SUB('grp_skin_light', 'Light', [
+                    P('skin_hi', 'Highlights'),
+                    P('skin_mid', 'Midtones'),
+                    P('skin_sh', 'Shadows'),
+                    P('skin_piv', 'Zone Pivot'),
+                    P('skin_soft', 'Mask Softness'),
+                    P('skin_zones', 'Show Zones'),
+                    P('skin_light_bypass', 'Bypass Light'),
+                ]),
+                P('skin_reset', 'Reset Skin', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
             {'name': 'grp_view', 'label': 'Scopes', 'open': False, 'params': [
                 P('crv_enable', 'Curve View'), P('crv_size', 'Curve Size'),
@@ -115,6 +172,7 @@ PLUGINS = [
                'Modified OpenDRT v1.0.1 by Jed Smith, licensed GPLv3 — github.com/jedypod/open-display-transform. The rendering engine is his work; this plugin is a modified version and is distributed under the same licence, source included.',
                'Look presets fitted against spektrafilm references by Andrea Volpato, CC BY-SA 4.0 — github.com/andreavolpato/spektrafilm. No LUT data is embedded; what remains are fitted parameter values.',
                'Subtractive saturation model by Nikita Petrovich, MIT licence — the Chroma control in the Color group. See MIT-SubtractiveSaturation.txt.',
+               'Skin Line turns hue in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.',
                'OpenFX support library: Academy Software Foundation, BSD 3-Clause.'],
     ),
 ]

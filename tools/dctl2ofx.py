@@ -225,6 +225,28 @@ def rewrite_transform(body, params):
     cp = match_paren(body, op)
     args = body[op + 1:cp]
     texture = '__TEXTURE__' in args
+    # Un DCTL a signature texture qui ne lit QUE son propre pixel - les trois
+    # _tex2D(p_TexR/G/B, p_X, p_Y) et rien d'autre - est en realite per-pixel.
+    # On le repasse en per-pixel : l'hote n'a plus a fournir l'image entiere
+    # (ROI), le plugin n'a plus a copier la source quand l'entree et la sortie
+    # partagent un tampon, et le kernel lit son pixel directement. Sortie
+    # identique au bit pres.
+    if texture:
+        calls = re.findall(r'_tex2D\s*\(([^()]*)\)', body)
+        local = [re.sub(r'\s+', '', c) for c in calls]
+        names = re.findall(r'__TEXTURE__\s+(\w+)', args)
+        if (len(names) == 3 and local and
+                all(c in ('%s,p_X,p_Y' % n for n in names) for c in local) and
+                body.count('_tex2D') == len(calls)):
+            for n, ch in zip(names, ('p_R', 'p_G', 'p_B')):
+                body = re.sub(r'_tex2D\s*\(\s*%s\s*,\s*p_X\s*,\s*p_Y\s*\)' % n, ch, body)
+            m = re.search(r'__DEVICE__\s+float3\s+transform\s*\(', body)
+            op = body.index('(', m.start())
+            cp = match_paren(body, op)
+            body = body[:op + 1] + 'int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B' + body[cp:]
+            cp = match_paren(body, op)
+            args = body[op + 1:cp]
+            texture = False
     brace = body.index('{', cp)
     if body[cp + 1:brace].strip():
         die('unexpected tokens between transform() and its body')
@@ -361,37 +383,50 @@ def build_plugin(spec, prelude):
     byname = {p.name: p for p in params}
 
     # ---- layout ------------------------------------------------------------
-    groups = spec['groups']
+    # Les groupes sont aplatis dans l'ordre de lecture : un SOUS-GROUPE (une
+    # entree {'sub': True, ...} dans la liste d'un groupe) prend la place
+    # suivante et garde l'indice de son parent. Le plugin le niche dans le
+    # parent : une sous-section repliable standard.
+    groups = []
     placed = {}
     synth = []
     ordered = []   # (param, groupIndex, label, hint, options)
-    for gi, g in enumerate(groups):
+    def walk(g, parent):
+        gi = len(groups)
+        groups.append(dict(g, parent=parent))
         for item in g['params']:
-            if isinstance(item, str):
-                item = {'name': item}
-            name = item['name']
-            # SYNTHETIQUE : un parametre qui n'existe que dans le plugin, sans
-            # contrepartie dans le DCTL - le bouton d'analyse de la balance des
-            # blancs et le champ qui rend son score de confiance. Il n'a pas de
-            # place dans le bloc de parametres du kernel, donc pas d'offset.
-            if item.get('synth'):
-                sp = UIParam()
-                sp.name, sp.rawlabel = name, item.get('label', name)
-                sp.kind = 'push' if item['synth'] == 'push' else 'float'
-                sp.default = float(item.get('default', 0.0))
-                sp.min = float(item.get('min', 0.0))
-                sp.max = float(item.get('max', 100.0))
-                sp.step = float(item.get('step', 0.1))
-                sp.tooltip = item.get('hint')
-                sp.synthetic = True
-                ordered.append((sp, gi, item))
+            if isinstance(item, dict) and item.get('sub'):
+                walk(item, gi)
                 continue
-            if name not in byname:
-                die('%s: layout names unknown parameter %s' % (key, name))
-            if name in placed:
-                die('%s: parameter %s placed twice' % (key, name))
-            placed[name] = gi
-            ordered.append((byname[name], gi, item))
+            place(item, gi)
+    def place(item, gi):
+        if isinstance(item, str):
+            item = {'name': item}
+        name = item['name']
+        # SYNTHETIQUE : un parametre qui n'existe que dans le plugin, sans
+        # contrepartie dans le DCTL - le bouton d'analyse de la balance des
+        # blancs et le champ qui rend son score de confiance. Il n'a pas de
+        # place dans le bloc de parametres du kernel, donc pas d'offset.
+        if item.get('synth'):
+            sp = UIParam()
+            sp.name, sp.rawlabel = name, item.get('label', name)
+            sp.kind = {'push': 'push'}.get(item['synth'], 'float')
+            sp.default = float(item.get('default', 0.0))
+            sp.min = float(item.get('min', 0.0))
+            sp.max = float(item.get('max', 100.0))
+            sp.step = float(item.get('step', 0.1))
+            sp.tooltip = item.get('hint')
+            sp.synthetic = True
+            ordered.append((sp, gi, item))
+            return
+        if name not in byname:
+            die('%s: layout names unknown parameter %s' % (key, name))
+        if name in placed:
+            die('%s: parameter %s placed twice' % (key, name))
+        placed[name] = gi
+        ordered.append((byname[name], gi, item))
+    for g in spec['groups']:
+        walk(g, -1)
     for name in spec.get('hidden', []):
         if name not in byname:
             die('%s: hidden names unknown parameter %s' % (key, name))
@@ -423,7 +458,7 @@ def build_plugin(spec, prelude):
         lines.append('    {%s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %s},' % (
             c_str(p.name), c_str(label), c_str(hint), kind, fnum(item.get('default', p.default)), fnum(p.min),
             fnum(p.max), fnum(p.step), opts, nopts, gi, poff))
-    glines = ['    {%s, %s, %d},' % (c_str(g['name']), c_str(g['label']), 1 if g.get('open') else 0) for g in groups]
+    glines = ['    {%s, %s, %d, %d},' % (c_str(g['name']), c_str(g['label']), 1 if g.get('open') else 0, g['parent']) for g in groups]
     about = spec.get('about', [])
     ns = 'nodeone_' + key
     metal_src = emit_metal(prelude, spec['file'], pblock, body, texture)
@@ -450,7 +485,7 @@ def build_plugin(spec, prelude):
     cpp.append('namespace %s {' % ns)
     cpp.append('static const char* const kMetalSource =\n%s;' % raw_string(metal_src))
     cpp.extend(opt_arrays)
-    cpp.append('static const nodeone::GroupSpec kGroups[] = {\n%s\n    {nullptr, nullptr, 0}\n};' % '\n'.join(glines))
+    cpp.append('static const nodeone::GroupSpec kGroups[] = {\n%s\n    {nullptr, nullptr, 0, -1}\n};' % '\n'.join(glines))
     cpp.append('static const nodeone::ParamSpec kParams[] = {\n%s\n};' % '\n'.join(lines))
     cpp.append('static const char* const kAbout[] = {%s nullptr};' % ''.join(c_str(a) + ', ' for a in about))
     # The plugin writes each slider at ParamSpec::offset. Prove that every one

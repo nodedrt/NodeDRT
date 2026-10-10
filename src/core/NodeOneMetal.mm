@@ -133,6 +133,8 @@ struct MetalScratch {
     NSUInteger bytes = 0;
     id<MTLBuffer> lutBuf = nil;      // the uploaded LUT table
     const Lut3D* lutHeld = nullptr;  // which LUT it holds, to avoid re-uploading
+    id<MTLBuffer> input = nil;       // copy of the source for an in-place spatial render
+    NSUInteger inputBytes = 0;
 };
 
 MetalScratch* metalScratchCreate() { return new MetalScratch(); }
@@ -144,6 +146,7 @@ void metalScratchDestroy(MetalScratch* s)
         s->buf[0] = nil;
         s->buf[1] = nil;
         s->lutBuf = nil;
+        s->input = nil;
     }
     delete s;
 }
@@ -352,12 +355,22 @@ bool metalRender(const MetalJob& j, std::string& error)
         // La sonde lit la source AVANT tout ce qui pourrait l'ecraser : quand la
         // source et la destination sont le meme tampon, l'etage ecrit dedans.
         // Spatial kernels must never read pixels they are writing.
+        // La copie vit dans le tampon de travail de l'instance, garde d'une image
+        // a l'autre : allouer un tampon de la taille de l'image a CHAQUE rendu
+        // (130 Mo en 4K flottant) est une allocation lourde a chaque image. Un DCTL
+        // per-pixel n'en a jamais besoin - il lit et ecrit le meme pixel.
         id<MTLBuffer> input = src;
-        if (src == dst && j.def->spatial) {
-            input = [dev newBufferWithLength:src.length options:MTLResourceStorageModePrivate];
-            id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-            [blit copyFromBuffer:src sourceOffset:0 toBuffer:input destinationOffset:0 size:src.length];
-            [blit endEncoding];
+        if (src == dst && j.def->spatial && j.scratch) {
+            if (j.scratch->inputBytes < src.length) {
+                j.scratch->input = [dev newBufferWithLength:src.length options:MTLResourceStorageModePrivate];
+                j.scratch->inputBytes = j.scratch->input ? src.length : 0;
+            }
+            if (j.scratch->input) {
+                input = j.scratch->input;
+                id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+                [blit copyFromBuffer:src sourceOffset:0 toBuffer:input destinationOffset:0 size:src.length];
+                [blit endEncoding];
+            }
         }
 
         // Without a LUT the DCTL writes the output directly; with one it writes

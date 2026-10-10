@@ -30,6 +30,9 @@ struct GroupSpec {
     const char* name;
     const char* label;
     int open;                  // expanded by default
+    int parent;                // index of the enclosing group, -1 = top level.
+                               // A sub-group is a standard OFX group nested in
+                               // its parent: a collapsible sub-section.
 };
 
 typedef void (*CpuRenderFn)(const void* params,

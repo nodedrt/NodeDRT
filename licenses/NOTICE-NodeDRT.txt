@@ -48,12 +48,16 @@ not affiliated with him.
       Full text: SPEKTRAFILM_LICENSE.txt
 
   Subtractive saturation
-      Model by Nikita Petrovich, MIT licence. Used by the Chroma control and
-      by Mid Purity. It anchors on the strongest channel rather than on
+      Model by Nikita Petrovich, MIT licence. Used by the Chroma control, by
+      Mid Purity and by Skin Saturation. It anchors on the strongest channel rather than on
       luminance, so raising saturation lowers the weaker channels instead of
       pushing the strongest one towards clipping — which is what a dye layer
       does, and why a colour that saturates also darkens.
       Full text: MIT-SubtractiveSaturation.txt
+
+  Oklab
+      Colour space by Bjorn Ottosson (public domain / MIT), used by Skin Line
+      to turn hue. Written here from the published formulas; no code copied.
 
   OpenFX support library
       Academy Software Foundation, BSD 3-Clause.
