@@ -668,6 +668,27 @@ __DEVICE__ float softplus_constraint(float x, float s, float x0, float y0) {
   return s*_logf(_fmaxf(0.0f, m + _expf(x/s)));
 }
 
+// Max et min ADOUCIS (polynomiaux, raccord C1 sur une largeur k) : egaux au
+// max et au min exacts des que les deux valeurs s'ecartent de plus de k.
+// Audit du 26 octobre 2026, pour Highlight Density.
+__DEVICE__ float smooth_max2(float a, float b, float k) {
+  const float h = _fmaxf(k - _fabs(a - b), 0.0f)/k;
+  return _fmaxf(a, b) + h*h*k*0.25f;
+}
+__DEVICE__ float smooth_min2(float a, float b, float k) {
+  const float h = _fmaxf(k - _fabs(a - b), 0.0f)/k;
+  return _fminf(a, b) - h*h*k*0.25f;
+}
+
+// Rampe DOUCE : 0 pour y <= 0, y pour y >= w, et entre les deux le cubique
+// 2y^2/w - y^3/w^2 qui raccorde valeur et pente aux deux bouts. Remplace un
+// max(0, y) - meme resultat hors de ]0, w[, sans le coin. Audit du 26/10/2026.
+__DEVICE__ float smooth_relu(float y, float w) {
+  if (y <= 0.0f) return 0.0f;
+  if (y >= w) return y;
+  return y*y*(2.0f*w - y)/(w*w);
+}
+
 __DEVICE__ float softplus(float x, float s) {
   // Softplus unconstrained
   // https://www.desmos.com/calculator/mr9rmujsmn
@@ -756,6 +777,22 @@ __DEVICE__ float con_scene(float x, float f, float pv) {
   const float sg = x < 0.0f ? -1.0f : 1.0f;
   const float d = _fminf(di_encode(_fabs(x))/dt, 1.0f);
   const float p = clampf(pv/dt, 1e-4f, 0.9999f);
+  // AUDIT 26 octobre 2026. Contraste NEGATIF (f < 1) : pow(d/p, f) a une
+  // pente infinie en zero, et le prolongement symetrique en fait une pointe.
+  // Le bruit du noir, qui oscille autour de zero canal par canal, y etait
+  // amplifie sans limite : bruit COLORE dans les noirs (pente locale x7 a
+  // -0.5). Sous DI 0.0336 - environ 5 stops sous le gris - la branche est
+  // remplacee par le polynome impair qui la rejoint en valeur et en pente :
+  // pente finie, croissante, aucun recollement ; au-dessus, rien ne change.
+  // Contraste positif ou nul : intact.
+  if (f < 1.0f) {
+    const float d0 = _fminf(0.0336f/dt, 0.5f*p);
+    if (d < d0) {
+      const float v0 = roll_contrast(d0, f, p), s0 = f*v0/d0;
+      const float qb = (s0*d0 - v0)/(d0*d0), qa = (2.0f*v0 - s0*d0)/d0;
+      return sg*oetf_davinci_intermediate((qa*d + qb*d*d)*dt);
+    }
+  }
   return sg*oetf_davinci_intermediate(roll_contrast(d, f, p)*dt);
 }
 
@@ -1258,7 +1295,14 @@ __DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
      chroma_sub juste en dessous, donc les deux reglages se manient pareil. Prix
      paye, assume : une couleur qui se sature s'assombrit un peu. C'est ce que
      fait une densite de colorant, et c'est ce que Color Weight fait expres. */
-  const float xm = _fmaxf(xr, _fmaxf(xg, xb));
+  // Audit du 26 octobre 2026 : max ADOUCI. Le max exact change de canal d'un
+  // coup quand deux canaux se croisent, et la pente de la sortie sautait la,
+  // sur chaque tour de teinte. La largeur du raccord est proportionnelle a
+  // l'ecart des canaux (un quart de l'etendue) : elle s'annule sur un neutre,
+  // ou le resultat redevient exactement l'ancien.
+  const float xspan = _fmaxf(xr, _fmaxf(xg, xb)) - _fminf(xr, _fminf(xg, xb));
+  const float xw = 0.25f*xspan + 1.0e-12f;
+  const float xm = smooth_max2(smooth_max2(xr, xg, xw), xb, xw);
   (void)m; (void)dr; (void)dg; (void)db;
   return make_float3(_exp2f(xm + (xr - xm)*k),
                      _exp2f(xm + (xg - xm)*k),
@@ -1277,7 +1321,14 @@ __DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
    n'y a aucun point de recollement - a k = 1 la fonction et sa pente sont
    celles du modele d'origine.                                               */
 __DEVICE__ float3 chroma_sub(float3 c, float k) {
-  const float base = _fmaxf(c.x, _fmaxf(c.y, c.z));
+  // Audit du 26 octobre 2026 : ancrage sur un max ADOUCI, pour la meme
+  // raison que dans mid_purity : pas de saut de pente
+  // quand deux canaux se croisent. Il reste >= a chaque canal, donc aucune
+  // des proprietes ci-dessous ne change.
+  // Largeur proportionnelle a l'etendue des canaux : nulle sur un neutre,
+  // donc un gris garde exactement son niveau a tout reglage.
+  const float bk = 0.25f*(_fmaxf(c.x, _fmaxf(c.y, c.z)) - _fminf(c.x, _fminf(c.y, c.z))) + 1.0e-12f;
+  const float base = smooth_max2(smooth_max2(c.x, c.y, bk), c.z, bk);
   if (base <= 0.0f) return c;
   const float kk = _fmaxf(k, 0.0f);
   const float k1 = _fminf(kk, 1.0f);
@@ -2059,41 +2110,84 @@ __DEVICE__ float2 skin_dev(float3 c709) {
 // chromas faibles les bouchait tous, mais prenait la route et les murs gris
 // chauds : 21 pour cent du decor au lieu de 12. Le cote jaune et la porte de
 // chroma sont ceux de Skin Line.
-__DEVICE__ float skin_face_w(float3 c709, float soft) {
+// Poids "c'est de la peau" LU DANS LA SCENE, pour Skin Saturation.
+// AUDIT 26 octobre 2026. skin_dev porte une fenetre de teinte calee sur la
+// peau de l'IMAGE RENDUE (Skin Check, Skin Line). Mais Skin Saturation lit son
+// poids dans la SCENE, avant le look, et la peau n'y a pas la meme teinte :
+// mesure sur neuf visages S-Log3 (FX3), mediane de -17 a -32 degres, vers -20,
+// contre -9 a -15 sur l'image rendue. La fenetre pleine s'arretait a -15 : sur
+// le visage FX3, 43 pour cent des pixels tombaient dans la pente du masque, et
+// chaque pore, chaque rougeur recevait un dosage different - des taches et
+// des points sur la peau des que le reglage bougeait. Ecart de teinte d'un
+// pixel a son voisin sur une peau : quelques degres ; pente de l'ancien bord :
+// le poids passait de 1 a 0 pour 6 pour cent d'ecart sur le canal vert.
+// Fenetre de SCENE : pleine de -35 a +5 degres, nulle a -65 et a +30.
+//   - le bord jaune s'annule au meme endroit qu'avant (+30) : feuillage
+//     d'automne mesure dans la scene a +49 de mediane, p5 a +3 ;
+//   - le bord magenta est recule de 20 degres : le visage entier est sur le
+//     plateau, levres et cernes (vers -40 a -60) sur la pente douce.
+// Porte de chroma et porte du noir identiques a skin_dev.
+// Mesure partagee par les deux poids de SCENE : angle a la ligne des tons
+// chair (meme sonde que Skin Check) et chroma relative lue dans la MEME sonde
+// (C/L ; 1.02 fois la chroma Oklab en moyenne, ecart 0.01). Une seule racine
+// cubique par echantillon au lieu de deux : c'est ce qui rend le masque
+// spatial abordable (17 echantillons par pixel).
+__DEVICE__ float2 skin_feat(float3 c709) {
   const float A0 = -0.012061f, B0 = 0.014794f;
   const float rac = 0.73728f, rbc = 0.67559f;
   const float3 pq = skchk_probe(c709);
   const float Ln = _fmaxf(pq.z, 1.0e-4f);
   const float an = pq.x/Ln - A0, bn = pq.y/Ln - B0;
   const float uc = an*rac + bn*rbc, vc = bn*rac - an*rbc;
-  const float phi = _atan2f(vc, uc);
-  const float3 klab = ovl_oklab(c709);
-  const float cr = _sqrtf(klab.y*klab.y + klab.z*klab.z)/_fmaxf(klab.x, 1.0e-4f);
-  // Mask Softness. De 0 a 0.50 : chaque bord garde son point a 50 pour cent
-  // et se resserre (0.35 a 1 fois sa largeur) - le masque se durcit sans
-  // bouger. De 0.50 a 1 : les bords INTERIEURS restent ou ils sont - le coeur
-  // du visage reste plein, les reglages Light gardent toute leur force - et
-  // les bords EXTERIEURS s'eloignent jusqu'a 5 fois leur largeur : la chute
-  // du masque devient tres longue et tres douce, cote magenta (levres,
-  // cernes) jusqu'a 167 degres, cote jaune jusqu'a 76, vers les neutres et
-  // vers les couleurs franches aussi. A 0.50, le masque par defaut.
+  return make_float2(_atan2f(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
+}
+
+__DEVICE__ float skin_win_s(float2 f) {
+  const float phi = f.x, cr = f.y;
+  float w = smootherstep(0.015f, 0.05f, cr)*(1.0f - smootherstep(0.24f, 0.34f, cr));
+  w *= phi >= 0.0f ? 1.0f - smootherstep(0.0873f, 0.5236f, phi)
+                   : 1.0f - smootherstep(0.6109f, 1.1345f, -phi);
+  return w;
+}
+
+// Poids "c'est un visage" pour Skin Light (Light, Density, Show Zones) :
+// plus large que celui de Skin Saturation du cote magenta - cernes, levres,
+// taches de rousseur sont dedans, sinon un trou dans la cle est un pore qui
+// ne s'eclaire pas. Recentre le 26 octobre 2026 sur la peau de la SCENE : a
+// Mask Softness 0.50, cote jaune plein jusqu'a +5 degres et nul a +30, cote
+// magenta plein jusqu'a -50 et nul a -95. Mask Softness : de 0 a 0.50 chaque
+// bord garde son point a 50 pour cent et se resserre (0.35 a 1 fois sa
+// largeur) ; de 0.50 a 1 les bords interieurs restent, les bords exterieurs
+// s'eloignent jusqu'a 5 fois leur largeur.
+__DEVICE__ float skin_win_l(float2 fe, float soft) {
+  const float phi = fe.x, cr = fe.y;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
   const float c0 = _fmaxf(0.0325f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0325f + 0.0175f*f;
   const float c2 = 0.29f - 0.05f*f, c3 = 0.29f + 0.05f*f + 0.40f*h;
-  const float y0 = _fmaxf(0.3665f - 0.1571f*f, 0.03f), y1 = 0.3665f + 0.1571f*f + 0.80f*h;
-  const float m0 = _fmaxf(0.9163f - 0.3927f*f, 0.08f), m1 = 0.9163f + 0.3927f*f + 1.60f*h;
+  const float y0 = _fmaxf(0.3054f - 0.2182f*f, 0.03f), y1 = 0.3054f + 0.2182f*f + 0.80f*h;
+  const float m0 = _fmaxf(1.2654f - 0.3927f*f, 0.08f), m1 = 1.2654f + 0.3927f*f + 1.60f*h;
   float w = smootherstep(c0, c1, cr)*(1.0f - smootherstep(c2, c3, cr));
   w *= phi >= 0.0f ? 1.0f - smootherstep(y0, y1, phi)
                    : 1.0f - smootherstep(m0, m1, -phi);
   return w;
 }
-__DEVICE__ float3 skin_line(float3 rgb, int p3, float k) {
+
+__DEVICE__ float3 skin_line(float3 rgb, int p3, float k, float wsp) {
   const float3x3 to_lms = p3 ? ok_p3_to_lms : ok_rec709_to_lms;
   const float3x3 from_lms = p3 ? ok_lms_to_p3 : ok_lms_to_rec709;
   const float3 c709 = p3 ? vdot(matrix_p3_to_rec709_d65, rgb) : rgb;
   const float2 d0 = skin_dev(c709);
-  const float kw = k*d0.y;
+  // AUDIT 26 octobre 2026 : le poids est celui du masque spatial (wsp), lu
+  // dans la scene et adouci dans l'image, et non plus d0.y, lu pixel par
+  // pixel : la rotation reste mesuree et visee exactement comme avant.
+  // Porte de chroma de l'image rendue, douce : un quasi-neutre n'a pas de
+  // teinte fiable et ne tourne pas ; une couleur franche non plus.
+  const float3 sl_lab = ovl_oklab(c709);
+  const float sl_cr = _sqrtf(sl_lab.y*sl_lab.y + sl_lab.z*sl_lab.z)/_fmaxf(sl_lab.x, 1.0e-4f);
+  const float sl_g = smootherstep(0.015f, 0.05f, sl_cr)*(1.0f - smootherstep(0.24f, 0.34f, sl_cr))
+                   * smootherstep(0.004f, 0.020f, fmaxf3(c709));
+  const float kw = k*wsp*sl_g;
   if (kw <= 0.0f) return rgb;
   // Luminance d'affichage, dans les primaires de la sortie.
   const float3 yw = p3 ? make_float3(0.228974640369f, 0.691738605499f, 0.079286918044f)
@@ -2105,7 +2199,21 @@ __DEVICE__ float3 skin_line(float3 rgb, int p3, float k) {
   // manque. Trois pas. Mesure sur 400 000 couleurs tirees au hasard, dont 62 000
   // reconnues comme peau : ecart a l'angle vise 0.03 degre en moyenne, 1.6 au
   // pire (deux pas : 0.14 et 3.5). Luminance tenue a 3e-5, l'arrondi du float.
-  const float target = d0.x*(1.0f - kw);
+  // AUDIT 26 octobre 2026 : la rotation suit l'ecart pres de la ligne et
+  // plafonne en douceur a 25 degres (sigmoide algebrique, pente entre 0 et 1).
+  // La teinte de sortie a donc une pente 1 - kw*g' >= 1 - k >= 0 : elle ne
+  // peut jamais se replier, et aucune couleur lointaine - levre, rouge
+  // franc - n'est tournee de plus de 25 degres fois le reglage. Pres de la
+  // ligne (moins de 10 degres) l'ecart a la forme d'avant est sous 7 pour cent.
+  // Profil de rotation en CLOCHE gaussienne de l'ecart : r = kw.phi.b(phi),
+  // b = exp(-phi^2 / 2 sigma^2), sigma 22 degres cote magenta, 15 cote jaune
+  // - la forme de l'ancienne fenetre (levre corrigee a moitie, couleur
+  // lointaine intacte) sans son bord raide. Garanti : la teinte de sortie a
+  // une pente 1 - kw.b.(1 - phi^2/sigma^2), entre 1 - kw et 1 + 0.45 kw,
+  // donc toujours croissante pour kw <= 1 - aucun repli, aucun coude.
+  const float sl_s = d0.x < 0.0f ? 0.3840f : 0.2618f;
+  const float sl_b = _expf(-0.5f*(d0.x/sl_s)*(d0.x/sl_s));
+  const float target = d0.x - kw*d0.x*sl_b;
   float3 c = rgb;
   for (int it = 0; it < 3; ++it) {
     const float cur = it == 0 ? d0.x : skin_dev(p3 ? vdot(matrix_p3_to_rec709_d65, c) : c).x;
@@ -2215,6 +2323,90 @@ __DEVICE__ ts_out ts_core(float3 rgb, float3 crv_val, int crv_on,
 __DEVICE__ float ts_mix(float a, float b, float k) {
   const float ea = spowf(_fmaxf(a, 0.0f), 1.0f/2.4f), eb = spowf(_fmaxf(b, 0.0f), 1.0f/2.4f);
   return spowf(ea + (eb - ea)*k, 2.4f);
+}
+
+// =============================================================================
+//  MASQUE PEAU SPATIAL - audit du 26 octobre 2026
+// -----------------------------------------------------------------------------
+//  Un masque lu pixel par pixel sur la seule couleur ne peut pas etre a la
+//  fois selectif et propre sur une peau : elle n'est qu'a 0.06 du gris en
+//  chroma relative, et a cette distance quelques pour cent d'ecart sur un
+//  canal - le grain, un pore, une rougeur - font tourner la teinte de 5 a 10
+//  degres. Un bord de masque assez net pour separer peau et decor dosait donc
+//  chaque pixel differemment de son voisin : taches, points, cassures.
+//
+//  La solution est celle des qualifieurs professionnels : le masque est
+//  ADOUCI DANS L'IMAGE. Chaque pixel prend la moyenne ponderee du masque
+//  sur 17 echantillons autour de lui (le centre, un anneau a R/2, un anneau
+//  a R decale d'un demi-pas), R = hauteur/360 - 6 px en UHD, 3 en HD - donc
+//  la meme taille a l'image quelle que soit la resolution.
+//
+//  La moyenne est GUIDEE PAR LA LUMIERE : un echantillon compte d'autant
+//  moins que sa luminance de scene s'eloigne de celle du pixel (gaussienne
+//  de 0.75 stop). L'effet ne bave donc pas d'un visage sur des cheveux noirs
+//  ou sur un fond clair : le masque suit les contours de l'image.
+//
+//  Ce que la moyenne lit est la couleur de SCENE de chaque voisin, par le
+//  meme chemin que le pixel : courbe d'entree, balance des blancs, gamut,
+//  espace de rendu du look. Les trims de contraste et de couleur n'y entrent
+//  pas : ils ne changent pas ce qui est de la peau, et le masque reste
+//  stable quand on les pousse.
+//
+//  Garanties gardees :
+//    - le poids est normalise par le canal fort, donc constant le long d'une
+//      rampe d'exposition : aucune rampe ne peut reculer ;
+//    - rien n'est calcule quand aucun reglage peau n'est actif : identite au
+//      bit pres, et aucun cout.
+// =============================================================================
+// Masque spatial : 17 echantillons (centre, 8 a R/2, 8 a R). Mesure : 9
+// echantillons laissaient 8 fois plus de pixels douteux sur un plan de nuit.
+#define SKM_TAPS 17
+#define SKM_R1 0.5f
+__DEVICE__ float3 skin_proxy_p3(float3 code, int tf, float3x3 pre, float rs_sa, float3 rs_w) {
+  float3 c = vdot(pre, linearize(code, tf));
+  const float L = c.x*rs_w.x + c.y*rs_w.y + c.z*rs_w.z;
+  return L*rs_sa + c*(1.0f - rs_sa);
+}
+
+// .x = poids Skin Saturation / Skin Line, .y = poids Skin Light (Mask Softness)
+// Ce sont les POIDS qui sont moyennes, pas les couleurs : un bord de masque
+// ne peut pas etre plus raide que le noyau spatial lui-meme.
+__DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ tB,
+                                    int X, int Y, int H, int tf, float3x3 pre,
+                                    float rs_sa, float3 rs_w, float gain, float soft,
+                                    int need_s, int need_l) {
+  const float R = _fmaxf(1.0f, (float)H/360.0f);
+  const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
+  float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
+  for (int k = 0; k < SKM_TAPS; ++k) {
+    float ox = 0.0f, oy = 0.0f, gsp = 1.0f;
+    if (k >= 1 && k <= 8) {
+      const float a = (float)(k - 1)*0.785398163f;
+      ox = SKM_R1*R*_cosf(a); oy = SKM_R1*R*_sinf(a); gsp = 0.75f;
+    } else if (k >= 9) {
+      const float a = (float)(k - 9)*0.785398163f + 0.392699082f;
+      ox = R*_cosf(a); oy = R*_sinf(a); gsp = 0.40f;
+    }
+    const int xx = X + (int)_floorf(ox + 0.5f);
+    const int yy = Y + (int)_floorf(oy + 0.5f);
+    const float3 code = make_float3(_tex2D(tR, xx, yy), _tex2D(tG, xx, yy), _tex2D(tB, xx, yy));
+    const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
+    const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
+    if (k == 0) lyc = ly;
+    const float dl = ly - lyc;
+    const float g = gsp*_expf(-0.5f*dl*dl/(0.75f*0.75f));
+    const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
+    const float m = fmaxf3(c709);
+    if (m > 1.0e-6f) {
+      const float gate = smootherstep(-12.0f, -7.5f, _log2f(m));
+      const float3 cn = c709*(0.5f/m);
+      const float2 fe = skin_feat(cn);
+      if (need_s) ws += g*skin_win_s(fe)*gate;
+      if (need_l) wl += g*skin_win_l(fe, soft)*gate;
+    }
+    gs += g;
+  }
+  return make_float2(ws/gs, wl/gs);
 }
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
@@ -2587,6 +2779,8 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   const float fc_code = 0.2126f*rgb.x + 0.7152f*rgb.y + 0.0722f*rgb.z;
   // Linearize if a non-linear input oetf / transfer function is selected
   rgb = linearize(rgb, in_oetf);
+  // Matrice de balance des blancs, gardee pour le masque peau spatial.
+  float3x3 wb_m = identity();
 
   /*----------- WHITE : BALANCE DES BLANCS -----------------
     Posee ICI : en lumiere de scene, dans le gamut d'entree, et AVANT tout le
@@ -2655,6 +2849,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
       const float3x3 cat = mat3_mul(mat3_inv(in_to_xyz),
                                     mat3_mul(wb_cat(w_src, w_dst), in_to_xyz));
       rgb = vdot(cat, rgb);
+      wb_m = cat;
     }
   }
 
@@ -2795,18 +2990,20 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // d'une rampe. La couleur est normalisee par son canal fort, donc seule la
   // teinte et la chroma comptent ; une porte de niveau garde le bruit du noir.
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
-  if ((trim_skin_sat != 0.0f && !skin_col_bypass) ||
+  if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
-    const float3 sc709 = vdot(matrix_p3_to_rec709_d65, rgb);
-    const float scm = fmaxf3(sc709);
-    if (scm > 1.0e-6f)
-      // Porte du noir en STOPS, sur 4.5 stops (2^-12 a 2^-7.5) : avec Light et
-      // Density cumules jusqu'a 1.75 stop, une porte plus courte faisait
-      // varier le gain plus vite que le niveau et la rampe reculait pres du
-      // noir (83 marches, Shadows -1 avec Density +1). Pente ici : 0.73.
-      sk_w_scene = skin_dev(sc709*(0.5f/scm)).y*smootherstep(-12.0f, -7.5f, _log2f(scm));
-    if (scm > 1.0e-6f && (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1))
-      sk_wl_scene = skin_face_w(sc709*(0.5f/scm), skin_soft)*smootherstep(-12.0f, -7.5f, _log2f(scm));
+    // Porte du noir en STOPS, sur 4.5 stops (2^-12 a 2^-7.5) : avec Light et
+    // Density cumules jusqu'a 1.75 stop, une porte plus courte faisait
+    // varier le gain plus vite que le niveau et la rampe reculait pres du
+    // noir (83 marches, Shadows -1 avec Density +1). Pente ici : 0.73.
+    // Masque ADOUCI DANS L'IMAGE, voir skin_mask_spatial.
+    const float3x3 sk_pre = mat3_mul(matrix_xyz_to_p3d65, mat3_mul(in_to_xyz, wb_m));
+    const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
+                                         rs_sa, rs_w, look_exp, skin_soft,
+                                         (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0,
+                                         (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0);
+    sk_w_scene = skm.x;
+    sk_wl_scene = skm.y;
   }
 
   /*----------- SKIN : Light -----------------
@@ -2930,6 +3127,19 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     float hs_mx = _fmaxf(rgb.x, _fmaxf(rgb.y, rgb.z));
     float hs_mn = _fminf(rgb.x, _fminf(rgb.y, rgb.z));
     hd_sat = hs_mx > 1.0e-9f ? clampf((hs_mx - hs_mn)/hs_mx, 0.0f, 1.0f) : 0.0f;
+  }
+  // Variante ADOUCIE pour Highlight Density (audit du 26 octobre 2026). Le
+  // max et le min exacts ont un coin chaque fois que deux canaux se croisent :
+  // sur un tour de teinte, la densite changeait de pente a chaque croisement.
+  // Max et min adoucis sur 5 pour cent du niveau : meme valeur a 1 pour cent
+  // pres, pente continue. hd_sat (dosage des neons) reste exact.
+  float hd_sat_s;
+  {
+    const float hk = 0.05f*(_fabs(rgb.x) + _fabs(rgb.y) + _fabs(rgb.z))/3.0f + 1.0e-9f;
+    const float smx = smooth_max2(smooth_max2(rgb.x, rgb.y, hk), rgb.z, hk);
+    const float smn = smooth_min2(smooth_min2(rgb.x, rgb.y, hk), rgb.z, hk);
+    hd_sat_s = smx > 1.0e-9f ? smooth_min2((smx - smn)/smx, 1.0f, 0.05f) : 0.0f;
+    hd_sat_s = _fmaxf(hd_sat_s, 0.0f);
   }
   // Meme regle pour le trace, au meme endroit de la chaine.
   if (crv_enable == 1) crv_val = clampminf3(crv_val, 0.0f);
@@ -3107,7 +3317,29 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // garde la meme sensibilite qu'avant - et elle ne peut pas sortir de [0,1]
     // puisque ts_pt_cmp y est deja. A k = 1 elle est l'identite exacte, donc
     // quitter le zero du slider ne fait aucun saut.
-    ts_pt_cmp = spowf(ts_pt_cmp, hp_k);
+    // AUDIT 26 octobre 2026. Pour k < 1 (slider positif), x^k a une pente
+    // INFINIE en x = 0 : la ou la couleur cede entierement au blanc, la
+    // purete basculait d'un coup - frontiere franche dans un ciel, un neon,
+    // des que le slider approchait +1 (pente locale mesuree x10 a +1). Sous
+    // x0 (0.05 a 0.30 selon le reglage) la puissance est remplacee par le polynome du second degre qui
+    // la rejoint avec la meme valeur et la meme pente en x0 : pente finie,
+    // croissante, aucun recollement. Au-dessus de x0 rien ne change, et le
+    // cote negatif (k > 1, pente nulle en 0) est intact.
+    if (hp_k < 1.0f) {
+      // x0 grandit avec le reglage : 0.05 pres de zero, 0.30 a +1, pour que la
+      // courbure du raccord reste etalee quand k devient tres petit.
+      const float hp_x0 = 0.05f + 0.25f*(1.0f - hp_k)*(1.0f - hp_k);
+      const float hp_x = _fmaxf(ts_pt_cmp, 0.0f);
+      if (hp_x >= hp_x0) ts_pt_cmp = _powf(hp_x, hp_k);
+      else {
+        const float hp_v0 = _powf(hp_x0, hp_k), hp_s0 = hp_k*hp_v0/hp_x0;
+        const float hp_b = (hp_s0*hp_x0 - hp_v0)/(hp_x0*hp_x0);
+        const float hp_a = (2.0f*hp_v0 - hp_s0*hp_x0)/hp_x0;
+        ts_pt_cmp = hp_a*hp_x + hp_b*hp_x*hp_x;
+      }
+    } else {
+      ts_pt_cmp = spowf(ts_pt_cmp, hp_k);
+    }
   }
 
 
@@ -3190,7 +3422,10 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // Mid Purity High
     ptm_ach_d = complement_power(ach_d, ptm_high_st)*(1.0f - ts_pt) + ach_d*ach_d*ts_pt;
     ptm_sc *= sigmoid_cubic(ptm_ach_d, ptm_high*ts_pt);
-    ptm_sc = _fmaxf(0.0f, ptm_sc); // Ensure no negative scale
+    // Ensure no negative scale - sans coin (audit 26/10/2026) : le raccord
+    // s'elargit quand Highlight Saturation pousse vers le cremeux, la ou
+    // l'echelle atteint zero.
+    ptm_sc = smooth_relu(ptm_sc, 0.02f + 0.15f*_fmaxf(-trim_hs, 0.0f)*(trim_hl_bypass ? 0.0f : 1.0f));
 
   }
 
@@ -3326,7 +3561,14 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     rgb.y = softplus(rgb.y, 0.06f);
     rgb.z = softplus(rgb.z, 0.04f);
 
-    float ptl_norm = _fminf(1.0f, sdivf(sum0, rgb.x + rgb.y + rgb.z));
+    // AUDIT 26 octobre 2026 : min(1, r) avait un COIN la ou r passe 1 - un
+    // saut de pente sur les jaunes et les verts satures vers +2 stops, que
+    // Color Weight, Mid Purity et Highlight Density deplacaient dans l'image.
+    // Raccord UNILATERAL : exactement 1 pour r >= 1, exactement r pour
+    // r <= 0.98, et entre les deux le cubique qui raccorde valeur et pente.
+    // Un pixel ordinaire (r a peine sous 1) ne bouge que de l'ordre de 1 - r.
+    const float ptl_r = sdivf(sum0, rgb.x + rgb.y + rgb.z);
+    float ptl_norm = 1.0f - smooth_relu(1.0f - ptl_r, 0.02f);
     rgb *= ptl_norm;
   }
 
@@ -3359,10 +3601,16 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     sh_fl = compress_toe_quadratic(sh_fl*ts_m2_e, tn_toe_e, 0);
     const float sh_p = 0.3f*ts_y0_e;
     const float sh_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0_e - sh_fl, 1e-6f)/sh_p, 3.0f));
-    float sh_x = _fmaxf(0.0f, tsn - sh_fl);
-    float sh_w = sh_x/sh_p;
+    // Audit du 26 octobre 2026 : deux coins enleves. La fenetre etait coupee
+    // a zero au gris par un max (saut de pente au gris) : rampe douce,
+    // toujours exactement 0 au gris et au-dessus. Et sous le plancher du noir
+    // l'image etait ecrasee a plat (max(0, tsn - sh_fl)) : elle continue
+    // maintenant avec le gain du plancher, donc le bruit du noir n'est plus
+    // aplati et la pente ne saute pas.
+    float sh_x = tsn - sh_fl;
+    float sh_w = _fmaxf(sh_x, 0.0f)/sh_p;
     sh_w = 1.0f/(1.0f + sh_w*sh_w*sh_w);
-    sh_w = _fmaxf(0.0f, (sh_w - sh_wg)/(1.0f - sh_wg));
+    sh_w = smooth_relu((sh_w - sh_wg)/(1.0f - sh_wg), 0.05f);
     tsn = sh_fl + sh_x*_exp2f(1.5f*trim_sh*sh_w);
   }
   tsn *= ts_dsc; // scale for display encoding
@@ -3385,10 +3633,10 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     if (trim_sh != 0.0f && !trim_hl_bypass) {
       const float shc_p = 0.3f*ts_y0_e;
       const float shc_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0_e - sh_fl, 1e-6f)/shc_p, 3.0f));
-      float shc_x = _fmaxf(0.0f, crv_ach - sh_fl);
-      float shc_w = shc_x/shc_p;
+      float shc_x = crv_ach - sh_fl;
+      float shc_w = _fmaxf(shc_x, 0.0f)/shc_p;
       shc_w = 1.0f/(1.0f + shc_w*shc_w*shc_w);
-      shc_w = _fmaxf(0.0f, (shc_w - shc_wg)/(1.0f - shc_wg));
+      shc_w = smooth_relu((shc_w - shc_wg)/(1.0f - shc_wg), 0.05f);
       crv_ach = sh_fl + shc_x*_exp2f(1.5f*trim_sh*shc_w);
     }
     crv_rgb = crv_rt*crv_ach*ts_dsc;
@@ -3433,9 +3681,24 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // monte fait exactement ce que ce reglage doit reparer : l'image
     // s'assombrissait quand la lumiere augmentait, 233 fois la courbure
     // voisine. Pour remonter une haute lumiere saturee, c'est Brilliance.
+    // AUDIT 26 octobre 2026, deux corrections.
+    // 1. Monotonie. La rampe d'un ton sature reculait des 0.7 : la densite
+    //    montait plus vite que la lumiere (pente du gain en lumiere 1.35 *
+    //    ln2 * lvl * hi' > 1). La rampe est maintenant posee en STOPS, et sa
+    //    largeur s'ouvre avec la dose : pente de densite au plus 0.9 par stop,
+    //    donc la sortie monte toujours d'au moins 0.1 stop par stop. Jusqu'a
+    //    une dose de 0.82, la rampe garde ses bornes d'origine (0.28 a 0.92).
+    // 2. Neutres. hd_sat a un coin en zero : sur un blanc presque neutre, le
+    //    moindre ecart de couleur - le bruit d'un ciel, d'un nuage - devenait
+    //    un ecart de densite. Il est adouci sous 0.25 de saturation (pente
+    //    nulle sur le neutre), identique au-dessus.
+    const float hd_w = hd_sat_s*smootherstep(0.0f, 0.25f, hd_sat_s);
+    const float hd_a = 1.35f*_fmaxf(trim_hd, 0.0f)*hd_w;
+    const float hd_e = -0.1203f;                               // log2(0.92)
+    const float hd_W = _sqrtf(1.7162f*1.7162f + 4.3403f*hd_a*hd_a); // >= log2(0.92/0.28) et >= 1.875/0.9 * dose, sans coin
     float lvl = tsn/_fmaxf(ts_dsc*ts_y1, 1.0e-6f);
-    float hi = smootherstep(0.28f, 0.92f, lvl);
-    tsn *= _exp2f(-1.35f*_fmaxf(trim_hd, 0.0f)*hd_sat*hi);
+    float hi = smootherstep(hd_e - hd_W, hd_e, _log2f(_fmaxf(lvl, 1.0e-6f)));
+    tsn *= _exp2f(-hd_a*hi);
   }
 
   // Return from RGB ratios
@@ -3452,7 +3715,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     const float sk_pk = ts_y1*ts_dsc;   // ramene au pic : meme comportement en SDR et en HDR
     const int sk_p3 = display_gamut >= 1;
     float3 sk = rgb/sk_pk;
-    if (trim_skin > 0.0f) sk = skin_line(sk, sk_p3, trim_skin);
+    if (trim_skin > 0.0f) sk = skin_line(sk, sk_p3, trim_skin, sk_w_scene);
     /*----------- TRIM : Skin Saturation -----------------
       Le modele de saturation soustractive de Nikita Petrovich (MIT), le MEME
       que le reglage Chroma du groupe Color : ancre sur le canal le plus fort,

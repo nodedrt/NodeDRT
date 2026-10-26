@@ -831,6 +831,27 @@ __DEVICE__ float softplus_constraint(float x, float s, float x0, float y0) {
   return s*_logf(_fmaxf(0.0f, m + _expf(x/s)));
 }
 
+
+
+
+__DEVICE__ float smooth_max2(float a, float b, float k) {
+  const float h = _fmaxf(k - _fabs(a - b), 0.0f)/k;
+  return _fmaxf(a, b) + h*h*k*0.25f;
+}
+__DEVICE__ float smooth_min2(float a, float b, float k) {
+  const float h = _fmaxf(k - _fabs(a - b), 0.0f)/k;
+  return _fminf(a, b) - h*h*k*0.25f;
+}
+
+
+
+
+__DEVICE__ float smooth_relu(float y, float w) {
+  if (y <= 0.0f) return 0.0f;
+  if (y >= w) return y;
+  return y*y*(2.0f*w - y)/(w*w);
+}
+
 __DEVICE__ float softplus(float x, float s) {
   
   
@@ -919,6 +940,22 @@ __DEVICE__ float con_scene(float x, float f, float pv) {
   const float sg = x < 0.0f ? -1.0f : 1.0f;
   const float d = _fminf(di_encode(_fabs(x))/dt, 1.0f);
   const float p = clampf(pv/dt, 1e-4f, 0.9999f);
+  
+  
+  
+  
+  
+  
+  
+  
+  if (f < 1.0f) {
+    const float d0 = _fminf(0.0336f/dt, 0.5f*p);
+    if (d < d0) {
+      const float v0 = roll_contrast(d0, f, p), s0 = f*v0/d0;
+      const float qb = (s0*d0 - v0)/(d0*d0), qa = (2.0f*v0 - s0*d0)/d0;
+      return sg*oetf_davinci_intermediate((qa*d + qb*d*d)*dt);
+    }
+  }
   return sg*oetf_davinci_intermediate(roll_contrast(d, f, p)*dt);
 }
 
@@ -1421,7 +1458,14 @@ __DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
 
 
 
-  const float xm = _fmaxf(xr, _fmaxf(xg, xb));
+  
+  
+  
+  
+  
+  const float xspan = _fmaxf(xr, _fmaxf(xg, xb)) - _fminf(xr, _fminf(xg, xb));
+  const float xw = 0.25f*xspan + 1.0e-12f;
+  const float xm = smooth_max2(smooth_max2(xr, xg, xw), xb, xw);
   (void)m; (void)dr; (void)dg; (void)db;
   return make_float3(_exp2f(xm + (xr - xm)*k),
                      _exp2f(xm + (xg - xm)*k),
@@ -1440,7 +1484,14 @@ __DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
 
 
 __DEVICE__ float3 chroma_sub(float3 c, float k) {
-  const float base = _fmaxf(c.x, _fmaxf(c.y, c.z));
+  
+  
+  
+  
+  
+  
+  const float bk = 0.25f*(_fmaxf(c.x, _fmaxf(c.y, c.z)) - _fminf(c.x, _fminf(c.y, c.z))) + 1.0e-12f;
+  const float base = smooth_max2(smooth_max2(c.x, c.y, bk), c.z, bk);
   if (base <= 0.0f) return c;
   const float kk = _fmaxf(k, 0.0f);
   const float k1 = _fminf(kk, 1.0f);
@@ -2222,41 +2273,84 @@ __DEVICE__ float2 skin_dev(float3 c709) {
 
 
 
-__DEVICE__ float skin_face_w(float3 c709, float soft) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+__DEVICE__ float2 skin_feat(float3 c709) {
   const float A0 = -0.012061f, B0 = 0.014794f;
   const float rac = 0.73728f, rbc = 0.67559f;
   const float3 pq = skchk_probe(c709);
   const float Ln = _fmaxf(pq.z, 1.0e-4f);
   const float an = pq.x/Ln - A0, bn = pq.y/Ln - B0;
   const float uc = an*rac + bn*rbc, vc = bn*rac - an*rbc;
-  const float phi = _atan2f(vc, uc);
-  const float3 klab = ovl_oklab(c709);
-  const float cr = _sqrtf(klab.y*klab.y + klab.z*klab.z)/_fmaxf(klab.x, 1.0e-4f);
-  
-  
-  
-  
-  
-  
-  
-  
+  return make_float2(_atan2f(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
+}
+
+__DEVICE__ float skin_win_s(float2 f) {
+  const float phi = f.x, cr = f.y;
+  float w = smootherstep(0.015f, 0.05f, cr)*(1.0f - smootherstep(0.24f, 0.34f, cr));
+  w *= phi >= 0.0f ? 1.0f - smootherstep(0.0873f, 0.5236f, phi)
+                   : 1.0f - smootherstep(0.6109f, 1.1345f, -phi);
+  return w;
+}
+
+
+
+
+
+
+
+
+
+
+__DEVICE__ float skin_win_l(float2 fe, float soft) {
+  const float phi = fe.x, cr = fe.y;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
   const float c0 = _fmaxf(0.0325f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0325f + 0.0175f*f;
   const float c2 = 0.29f - 0.05f*f, c3 = 0.29f + 0.05f*f + 0.40f*h;
-  const float y0 = _fmaxf(0.3665f - 0.1571f*f, 0.03f), y1 = 0.3665f + 0.1571f*f + 0.80f*h;
-  const float m0 = _fmaxf(0.9163f - 0.3927f*f, 0.08f), m1 = 0.9163f + 0.3927f*f + 1.60f*h;
+  const float y0 = _fmaxf(0.3054f - 0.2182f*f, 0.03f), y1 = 0.3054f + 0.2182f*f + 0.80f*h;
+  const float m0 = _fmaxf(1.2654f - 0.3927f*f, 0.08f), m1 = 1.2654f + 0.3927f*f + 1.60f*h;
   float w = smootherstep(c0, c1, cr)*(1.0f - smootherstep(c2, c3, cr));
   w *= phi >= 0.0f ? 1.0f - smootherstep(y0, y1, phi)
                    : 1.0f - smootherstep(m0, m1, -phi);
   return w;
 }
-__DEVICE__ float3 skin_line(float3 rgb, int p3, float k) {
+
+__DEVICE__ float3 skin_line(float3 rgb, int p3, float k, float wsp) {
   const dctl_float3x3 to_lms = p3 ? ok_p3_to_lms : ok_rec709_to_lms;
   const dctl_float3x3 from_lms = p3 ? ok_lms_to_p3 : ok_lms_to_rec709;
   const float3 c709 = p3 ? vdot(matrix_p3_to_rec709_d65, rgb) : rgb;
   const float2 d0 = skin_dev(c709);
-  const float kw = k*d0.y;
+  
+  
+  
+  
+  
+  const float3 sl_lab = ovl_oklab(c709);
+  const float sl_cr = _sqrtf(sl_lab.y*sl_lab.y + sl_lab.z*sl_lab.z)/_fmaxf(sl_lab.x, 1.0e-4f);
+  const float sl_g = smootherstep(0.015f, 0.05f, sl_cr)*(1.0f - smootherstep(0.24f, 0.34f, sl_cr))
+                   * smootherstep(0.004f, 0.020f, fmaxf3(c709));
+  const float kw = k*wsp*sl_g;
   if (kw <= 0.0f) return rgb;
   
   const float3 yw = p3 ? make_float3(0.228974640369f, 0.691738605499f, 0.079286918044f)
@@ -2268,7 +2362,21 @@ __DEVICE__ float3 skin_line(float3 rgb, int p3, float k) {
   
   
   
-  const float target = d0.x*(1.0f - kw);
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  const float sl_s = d0.x < 0.0f ? 0.3840f : 0.2618f;
+  const float sl_b = _expf(-0.5f*(d0.x/sl_s)*(d0.x/sl_s));
+  const float target = d0.x - kw*d0.x*sl_b;
   float3 c = rgb;
   for (int it = 0; it < 3; ++it) {
     const float cur = it == 0 ? d0.x : skin_dev(p3 ? vdot(matrix_p3_to_rec709_d65, c) : c).x;
@@ -2380,15 +2488,99 @@ __DEVICE__ float ts_mix(float a, float b, float k) {
   return spowf(ea + (eb - ea)*k, 2.4f);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define SKM_TAPS 17
+#define SKM_R1 0.5f
+__DEVICE__ float3 skin_proxy_p3(float3 code, int tf, dctl_float3x3 pre, float rs_sa, float3 rs_w) {
+  float3 c = vdot(pre, linearize(code, tf));
+  const float L = c.x*rs_w.x + c.y*rs_w.y + c.z*rs_w.z;
+  return L*rs_sa + c*(1.0f - rs_sa);
+}
+
+
+
+
+__DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ tB,
+                                    int X, int Y, int H, int tf, dctl_float3x3 pre,
+                                    float rs_sa, float3 rs_w, float gain, float soft,
+                                    int need_s, int need_l) {
+  const float R = _fmaxf(1.0f, (float)H/360.0f);
+  const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
+  float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
+  for (int k = 0; k < SKM_TAPS; ++k) {
+    float ox = 0.0f, oy = 0.0f, gsp = 1.0f;
+    if (k >= 1 && k <= 8) {
+      const float a = (float)(k - 1)*0.785398163f;
+      ox = SKM_R1*R*_cosf(a); oy = SKM_R1*R*_sinf(a); gsp = 0.75f;
+    } else if (k >= 9) {
+      const float a = (float)(k - 9)*0.785398163f + 0.392699082f;
+      ox = R*_cosf(a); oy = R*_sinf(a); gsp = 0.40f;
+    }
+    const int xx = X + (int)_floorf(ox + 0.5f);
+    const int yy = Y + (int)_floorf(oy + 0.5f);
+    const float3 code = make_float3(_tex2D(tR, xx, yy), _tex2D(tG, xx, yy), _tex2D(tB, xx, yy));
+    const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
+    const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
+    if (k == 0) lyc = ly;
+    const float dl = ly - lyc;
+    const float g = gsp*_expf(-0.5f*dl*dl/(0.75f*0.75f));
+    const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
+    const float m = fmaxf3(c709);
+    if (m > 1.0e-6f) {
+      const float gate = smootherstep(-12.0f, -7.5f, _log2f(m));
+      const float3 cn = c709*(0.5f/m);
+      const float2 fe = skin_feat(cn);
+      if (need_s) ws += g*skin_win_s(fe)*gate;
+      if (need_l) wl += g*skin_win_l(fe, soft)*gate;
+    }
+    gs += g;
+  }
+  return make_float2(ws/gs, wl/gs);
+}
+
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
   
   
   
   
   
-  float3 rgb = make_float3(p_R,
-                           p_G,
-                           p_B);
+  float3 rgb = make_float3(_tex2D(p_TexR, p_X, p_Y),
+                           _tex2D(p_TexG, p_X, p_Y),
+                           _tex2D(p_TexB, p_X, p_Y));
 
   
 
@@ -2749,6 +2941,8 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   const float fc_code = 0.2126f*rgb.x + 0.7152f*rgb.y + 0.0722f*rgb.z;
   
   rgb = linearize(rgb, in_oetf);
+  
+  dctl_float3x3 wb_m = identity();
 
   
 
@@ -2817,6 +3011,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
       const dctl_float3x3 cat = mat3_mul(mat3_inv(in_to_xyz),
                                     mat3_mul(wb_cat(w_src, w_dst), in_to_xyz));
       rgb = vdot(cat, rgb);
+      wb_m = cat;
     }
   }
 
@@ -2957,18 +3152,20 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
-  if ((trim_skin_sat != 0.0f && !skin_col_bypass) ||
+  if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
-    const float3 sc709 = vdot(matrix_p3_to_rec709_d65, rgb);
-    const float scm = fmaxf3(sc709);
-    if (scm > 1.0e-6f)
-      
-      
-      
-      
-      sk_w_scene = skin_dev(sc709*(0.5f/scm)).y*smootherstep(-12.0f, -7.5f, _log2f(scm));
-    if (scm > 1.0e-6f && (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1))
-      sk_wl_scene = skin_face_w(sc709*(0.5f/scm), skin_soft)*smootherstep(-12.0f, -7.5f, _log2f(scm));
+    
+    
+    
+    
+    
+    const dctl_float3x3 sk_pre = mat3_mul(matrix_xyz_to_p3d65, mat3_mul(in_to_xyz, wb_m));
+    const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
+                                         rs_sa, rs_w, look_exp, skin_soft,
+                                         (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0,
+                                         (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0);
+    sk_w_scene = skm.x;
+    sk_wl_scene = skm.y;
   }
 
   
@@ -3092,6 +3289,19 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     float hs_mx = _fmaxf(rgb.x, _fmaxf(rgb.y, rgb.z));
     float hs_mn = _fminf(rgb.x, _fminf(rgb.y, rgb.z));
     hd_sat = hs_mx > 1.0e-9f ? clampf((hs_mx - hs_mn)/hs_mx, 0.0f, 1.0f) : 0.0f;
+  }
+  
+  
+  
+  
+  
+  float hd_sat_s;
+  {
+    const float hk = 0.05f*(_fabs(rgb.x) + _fabs(rgb.y) + _fabs(rgb.z))/3.0f + 1.0e-9f;
+    const float smx = smooth_max2(smooth_max2(rgb.x, rgb.y, hk), rgb.z, hk);
+    const float smn = smooth_min2(smooth_min2(rgb.x, rgb.y, hk), rgb.z, hk);
+    hd_sat_s = smx > 1.0e-9f ? smooth_min2((smx - smn)/smx, 1.0f, 0.05f) : 0.0f;
+    hd_sat_s = _fmaxf(hd_sat_s, 0.0f);
   }
   
   if (crv_enable == 1) crv_val = clampminf3(crv_val, 0.0f);
@@ -3269,7 +3479,29 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     
-    ts_pt_cmp = spowf(ts_pt_cmp, hp_k);
+    
+    
+    
+    
+    
+    
+    
+    
+    if (hp_k < 1.0f) {
+      
+      
+      const float hp_x0 = 0.05f + 0.25f*(1.0f - hp_k)*(1.0f - hp_k);
+      const float hp_x = _fmaxf(ts_pt_cmp, 0.0f);
+      if (hp_x >= hp_x0) ts_pt_cmp = _powf(hp_x, hp_k);
+      else {
+        const float hp_v0 = _powf(hp_x0, hp_k), hp_s0 = hp_k*hp_v0/hp_x0;
+        const float hp_b = (hp_s0*hp_x0 - hp_v0)/(hp_x0*hp_x0);
+        const float hp_a = (2.0f*hp_v0 - hp_s0*hp_x0)/hp_x0;
+        ts_pt_cmp = hp_a*hp_x + hp_b*hp_x*hp_x;
+      }
+    } else {
+      ts_pt_cmp = spowf(ts_pt_cmp, hp_k);
+    }
   }
 
 
@@ -3352,7 +3584,10 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     ptm_ach_d = complement_power(ach_d, ptm_high_st)*(1.0f - ts_pt) + ach_d*ach_d*ts_pt;
     ptm_sc *= sigmoid_cubic(ptm_ach_d, ptm_high*ts_pt);
-    ptm_sc = _fmaxf(0.0f, ptm_sc); 
+    
+    
+    
+    ptm_sc = smooth_relu(ptm_sc, 0.02f + 0.15f*_fmaxf(-trim_hs, 0.0f)*(trim_hl_bypass ? 0.0f : 1.0f));
 
   }
 
@@ -3488,7 +3723,14 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     rgb.y = softplus(rgb.y, 0.06f);
     rgb.z = softplus(rgb.z, 0.04f);
 
-    float ptl_norm = _fminf(1.0f, sdivf(sum0, rgb.x + rgb.y + rgb.z));
+    
+    
+    
+    
+    
+    
+    const float ptl_r = sdivf(sum0, rgb.x + rgb.y + rgb.z);
+    float ptl_norm = 1.0f - smooth_relu(1.0f - ptl_r, 0.02f);
     rgb *= ptl_norm;
   }
 
@@ -3521,10 +3763,16 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     sh_fl = compress_toe_quadratic(sh_fl*ts_m2_e, tn_toe_e, 0);
     const float sh_p = 0.3f*ts_y0_e;
     const float sh_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0_e - sh_fl, 1e-6f)/sh_p, 3.0f));
-    float sh_x = _fmaxf(0.0f, tsn - sh_fl);
-    float sh_w = sh_x/sh_p;
+    
+    
+    
+    
+    
+    
+    float sh_x = tsn - sh_fl;
+    float sh_w = _fmaxf(sh_x, 0.0f)/sh_p;
     sh_w = 1.0f/(1.0f + sh_w*sh_w*sh_w);
-    sh_w = _fmaxf(0.0f, (sh_w - sh_wg)/(1.0f - sh_wg));
+    sh_w = smooth_relu((sh_w - sh_wg)/(1.0f - sh_wg), 0.05f);
     tsn = sh_fl + sh_x*_exp2f(1.5f*trim_sh*sh_w);
   }
   tsn *= ts_dsc; 
@@ -3547,10 +3795,10 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     if (trim_sh != 0.0f && !trim_hl_bypass) {
       const float shc_p = 0.3f*ts_y0_e;
       const float shc_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0_e - sh_fl, 1e-6f)/shc_p, 3.0f));
-      float shc_x = _fmaxf(0.0f, crv_ach - sh_fl);
-      float shc_w = shc_x/shc_p;
+      float shc_x = crv_ach - sh_fl;
+      float shc_w = _fmaxf(shc_x, 0.0f)/shc_p;
       shc_w = 1.0f/(1.0f + shc_w*shc_w*shc_w);
-      shc_w = _fmaxf(0.0f, (shc_w - shc_wg)/(1.0f - shc_wg));
+      shc_w = smooth_relu((shc_w - shc_wg)/(1.0f - shc_wg), 0.05f);
       crv_ach = sh_fl + shc_x*_exp2f(1.5f*trim_sh*shc_w);
     }
     crv_rgb = crv_rt*crv_ach*ts_dsc;
@@ -3595,9 +3843,24 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    const float hd_w = hd_sat_s*smootherstep(0.0f, 0.25f, hd_sat_s);
+    const float hd_a = 1.35f*_fmaxf(trim_hd, 0.0f)*hd_w;
+    const float hd_e = -0.1203f;                               
+    const float hd_W = _sqrtf(1.7162f*1.7162f + 4.3403f*hd_a*hd_a); 
     float lvl = tsn/_fmaxf(ts_dsc*ts_y1, 1.0e-6f);
-    float hi = smootherstep(0.28f, 0.92f, lvl);
-    tsn *= _exp2f(-1.35f*_fmaxf(trim_hd, 0.0f)*hd_sat*hi);
+    float hi = smootherstep(hd_e - hd_W, hd_e, _log2f(_fmaxf(lvl, 1.0e-6f)));
+    tsn *= _exp2f(-hd_a*hi);
   }
 
   
@@ -3614,7 +3877,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     const float sk_pk = ts_y1*ts_dsc;   
     const int sk_p3 = display_gamut >= 1;
     float3 sk = rgb/sk_pk;
-    if (trim_skin > 0.0f) sk = skin_line(sk, sk_p3, trim_skin);
+    if (trim_skin > 0.0f) sk = skin_line(sk, sk_p3, trim_skin, sk_w_scene);
     
 
 
@@ -3883,8 +4146,11 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
     const int x = (int)gid.x;
     const int row = (int)gid.y;
     const int y = D.flipY ? (H - 1 - row) : row;
+    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY};
+    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY};
+    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY};
     const device float* s = src + row * D.rowFloatsSrc + x * 4;
     device float* d = dst + row * D.rowFloatsDst + x * 4;
-    const float3 o = dctl_transform(P, W, H, x, y, s[0], s[1], s[2]);
+    const float3 o = dctl_transform(P, W, H, x, y, tr, tg, tb);
     d[0] = o.x; d[1] = o.y; d[2] = o.z; d[3] = s[3];
 }

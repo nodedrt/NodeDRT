@@ -105,6 +105,26 @@ creative group has a one-click Reset.
 - **Tonescale Intensity**: doses the curve picked in the Tonescale menu against
   the look's own curve by mixing the outputs of the two curves, so it is
   linear too.
+- **No control breaks the picture** (audit of 26 October 2026). Every slider
+  was swept across its whole range on real footage and on dense colour ramps:
+  no NaN, no gradient that steps backwards, no isolated kink.
+  - The skin mask (Skin Line, Skin Saturation, Skin Light) is **smoothed in
+    the image**, like a professional qualifier: each pixel averages the mask
+    over 17 samples (radius = height/360, so the same size at any
+    resolution), weighted by scene-luminance similarity so it follows the
+    edges of the picture. Grain, pores and blemishes no longer get a dose
+    different from their neighbours. Its hue window is centred on skin as it
+    is in the SCENE (measured on nine S-Log3 faces), where it is evaluated.
+  - Skin Line turns hue with a Gaussian profile: monotone for any setting,
+    no fold, no corner.
+  - Highlight Density is monotone by construction (it used to step backwards
+    above 0.7); Highlight Purity, negative Log Contrast and the OpenDRT
+    purity-compression limit no longer have an infinite slope or a corner;
+    Chroma, Mid Purity, Shadows and Highlight Saturation no longer change
+    slope where two channels cross or where a scale reaches zero.
+  - With every control at rest the render matches the previous build to
+    within 0.5/255 (most pixels to the bit). Rendering costs about twice as
+    much only while a Skin control is active.
 
 ---
 
