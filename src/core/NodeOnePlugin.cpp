@@ -401,7 +401,12 @@ void describePlugin(const PluginDef& def, OFX::ImageEffectDescriptor& desc)
     // Un effet per-pixel rend la meme image a toute echelle : Resolve peut alors
     // le rendre a resolution reduite (proxy, lecture optimisee) au lieu de
     // toujours calculer la pleine definition.
-    desc.setSupportsMultiResolution(def.spatial == 0);
+    // Multi-resolution : oui, meme en spatial. Les echantillons du masque peau
+    // ont un rayon proportionnel a la HAUTEUR de l'image (H/360) et les
+    // incrustations sont dessinees en fraction de la hauteur : a une echelle
+    // de rendu reduite (visionneuse, proxy), le resultat est le meme a
+    // l'echelle. Le refuser forcait Resolve a calculer en pleine resolution.
+    desc.setSupportsMultiResolution(true);
     desc.setSupportsTiles(false);
     desc.setTemporalClipAccess(false);
     desc.setRenderTwiceAlways(false);

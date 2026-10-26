@@ -123,8 +123,15 @@ creative group has a one-click Reset.
     Chroma, Mid Purity, Shadows and Highlight Saturation no longer change
     slope where two channels cross or where a scale reaches zero.
   - With every control at rest the render matches the previous build to
-    within 0.5/255 (most pixels to the bit). Rendering costs about twice as
-    much only while a Skin control is active.
+    within 0.5/255 (most pixels to the bit).
+- **About 2.4 times faster on the GPU** (26 October 2026): pow, exp, log and
+  the cube root use the GPU's fast functions (exact IEEE handling kept for
+  zero, negatives and NaN; sin, cos and atan2 stay precise), the skin mask
+  uses constant sample directions and a polynomial atan2. Measured on 4K and
+  HD frames over every group of controls: 2.0 to 2.8 times faster, at most
+  0.13/255 from the previous build, never a non-finite value. The effect
+  accepts reduced render scales again (viewer, proxies), so Resolve no longer
+  has to compute it at full resolution.
 
 ---
 

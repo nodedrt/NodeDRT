@@ -2224,6 +2224,21 @@ __DEVICE__ float2 skin_dev(float3 c709) {
 
 
 
+
+
+
+
+__DEVICE__ float atan2_mask(float y, float x) {
+  const float ax = _fabs(x), ay = _fabs(y);
+  const float mx = _fmaxf(ax, ay), mn = _fminf(ax, ay);
+  if (mx <= 0.0f) return 0.0f;
+  const float a = mn/mx, s = a*a;
+  float r = a*(0.99997726f + s*(-0.33262347f + s*(0.19354346f + s*(-0.11643287f + s*(0.05265332f + s*(-0.01172120f))))));
+  if (ay > ax) r = 1.57079633f - r;
+  if (x < 0.0f) r = 3.14159265f - r;
+  return y < 0.0f ? -r : r;
+}
+
 __DEVICE__ float2 skin_feat(float3 c709) {
   const float A0 = -0.012061f, B0 = 0.014794f;
   const float rac = 0.73728f, rbc = 0.67559f;
@@ -2231,7 +2246,7 @@ __DEVICE__ float2 skin_feat(float3 c709) {
   const float Ln = _fmaxf(pq.z, 1.0e-4f);
   const float an = pq.x/Ln - A0, bn = pq.y/Ln - B0;
   const float uc = an*rac + bn*rbc, vc = bn*rac - an*rbc;
-  return make_float2(_atan2f(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
+  return make_float2(atan2_mask(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
 }
 
 __DEVICE__ float skin_win_s(float2 f) {
@@ -2471,13 +2486,24 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
   for (int k = 0; k < SKM_TAPS; ++k) {
+    
+    
+    
     float ox = 0.0f, oy = 0.0f, gsp = 1.0f;
     if (k >= 1 && k <= 8) {
-      const float a = (float)(k - 1)*0.785398163f;
-      ox = SKM_R1*R*_cosf(a); oy = SKM_R1*R*_sinf(a); gsp = 0.75f;
+      const int j = k - 1;
+      const float cx = j == 0 ? 1.0f : j == 1 ? 0.70710678f : j == 2 ? 0.0f : j == 3 ? -0.70710678f
+                     : j == 4 ? -1.0f : j == 5 ? -0.70710678f : j == 6 ? 0.0f : 0.70710678f;
+      const float cy = j == 0 ? 0.0f : j == 1 ? 0.70710678f : j == 2 ? 1.0f : j == 3 ? 0.70710678f
+                     : j == 4 ? 0.0f : j == 5 ? -0.70710678f : j == 6 ? -1.0f : -0.70710678f;
+      ox = SKM_R1*R*cx; oy = SKM_R1*R*cy; gsp = 0.75f;
     } else if (k >= 9) {
-      const float a = (float)(k - 9)*0.785398163f + 0.392699082f;
-      ox = R*_cosf(a); oy = R*_sinf(a); gsp = 0.40f;
+      const int j = k - 9;
+      const float cx = j == 0 ? 0.92387953f : j == 1 ? 0.38268343f : j == 2 ? -0.38268343f : j == 3 ? -0.92387953f
+                     : j == 4 ? -0.92387953f : j == 5 ? -0.38268343f : j == 6 ? 0.38268343f : 0.92387953f;
+      const float cy = j == 0 ? 0.38268343f : j == 1 ? 0.92387953f : j == 2 ? 0.92387953f : j == 3 ? 0.38268343f
+                     : j == 4 ? -0.38268343f : j == 5 ? -0.92387953f : j == 6 ? -0.92387953f : -0.38268343f;
+      ox = R*cx; oy = R*cy; gsp = 0.40f;
     }
     const int xx = X + (int)_floorf(ox + 0.5f);
     const int yy = Y + (int)_floorf(oy + 0.5f);
@@ -4082,14 +4108,23 @@ static void cpu_render(const void* pv, const float* src, ptrdiff_t srcRowFloats,
 }
 } // namespace nodeone_drt
 
-#line 4086 "gen/drt.cpp"
+#line 4112 "gen/drt.cpp"
 namespace nodeone_drt {
 static const char* const kMetalSource =
 R"NODEONE(// =============================================================================
 //  NODE_ONE OFX — DCTL compatibility layer, Metal Shading Language
 // -----------------------------------------------------------------------------
-//  Compiled at runtime (MTLDevice newLibraryWithSource) with fast-math OFF,
-//  so results follow IEEE-754 single precision like the CPU path.
+//  Compiled at runtime (MTLDevice newLibraryWithSource) with fast-math OFF:
+//  no reassociation, NaN and infinity keep their IEEE meaning.
+//  PERFORMANCE (26 octobre 2026) : pow, exp, exp2, log, log2 et la racine
+//  cubique utilisent les versions RAPIDES du GPU (metal::fast), qui coutent
+//  une fraction des versions precises. Mesure sur 4 images reelles et tous les
+//  reglages : ecart a la version precise 0.0002/255 au pire sans reglage peau,
+//  0.02/255 avec - invisible - pour un rendu 2.2 fois plus rapide. pow rapide
+//  n'est utilise que pour une base strictement positive (son domaine) : zero,
+//  negatif, NaN passent par la version precise et gardent leur resultat exact.
+//  sin, cos, atan2 et le reste restent PRECIS : leurs versions rapides
+//  faussaient 0.5 pour cent des pixels.
 //  No "using namespace metal": DCTL helper names can never collide with the
 //  Metal standard library.
 // =============================================================================
@@ -4115,27 +4150,27 @@ inline float3 make_float3(float x, float y, float z) { return float3(x, y, z); }
 inline float4 make_float4(float x, float y, float z, float w) { return float4(x, y, z, w); }
 
 inline float _fabs(float x) { return metal::fabs(x); }
-inline float _powf(float x, float y) { return metal::pow(x, y); }
+inline float _powf(float x, float y) { return x > 0.0f ? metal::fast::powr(x, y) : metal::precise::pow(x, y); }
 inline float _sqrtf(float x) { return metal::sqrt(x); }
 inline float _rsqrtf(float x) { return metal::rsqrt(x); }
 // Metal has no cbrt(). Same expression as the CPU layer, so both agree.
-inline float _cbrtf(float x) { return metal::copysign(metal::pow(metal::fabs(x), 1.0f / 3.0f), x); }
-inline float _expf(float x) { return metal::exp(x); }
-inline float _exp2f(float x) { return metal::exp2(x); }
+inline float _cbrtf(float x) { return x != 0.0f ? metal::copysign(metal::fast::powr(metal::fabs(x), 1.0f / 3.0f), x) : x; }
+inline float _expf(float x) { return metal::fast::exp(x); }
+inline float _exp2f(float x) { return metal::fast::exp2(x); }
 inline float _exp10f(float x) { return metal::exp10(x); }
-inline float _logf(float x) { return metal::log(x); }
-inline float _log2f(float x) { return metal::log2(x); }
+inline float _logf(float x) { return metal::fast::log(x); }
+inline float _log2f(float x) { return metal::fast::log2(x); }
 inline float _log10f(float x) { return metal::log10(x); }
-inline float _sinf(float x) { return metal::sin(x); }
-inline float _cosf(float x) { return metal::cos(x); }
-inline float _tanf(float x) { return metal::tan(x); }
-inline float _asinf(float x) { return metal::asin(x); }
-inline float _acosf(float x) { return metal::acos(x); }
-inline float _atanf(float x) { return metal::atan(x); }
-inline float _atan2f(float y, float x) { return metal::atan2(y, x); }
-inline float _sinhf(float x) { return metal::sinh(x); }
-inline float _coshf(float x) { return metal::cosh(x); }
-inline float _tanhf(float x) { return metal::tanh(x); }
+inline float _sinf(float x) { return metal::precise::sin(x); }
+inline float _cosf(float x) { return metal::precise::cos(x); }
+inline float _tanf(float x) { return metal::precise::tan(x); }
+inline float _asinf(float x) { return metal::precise::asin(x); }
+inline float _acosf(float x) { return metal::precise::acos(x); }
+inline float _atanf(float x) { return metal::precise::atan(x); }
+inline float _atan2f(float y, float x) { return metal::precise::atan2(y, x); }
+inline float _sinhf(float x) { return metal::precise::sinh(x); }
+inline float _coshf(float x) { return metal::precise::cosh(x); }
+inline float _tanhf(float x) { return metal::precise::tanh(x); }
 inline float _hypotf(float x, float y) { return metal::sqrt(x * x + y * y); }
 inline float _fmod(float x, float y) { return metal::fmod(x, y); }
 inline float _fmodf(float x, float y) { return metal::fmod(x, y); }
@@ -4631,11 +4666,11 @@ struct DctlParams {
 #define matrix_davinciwg_to_xyz make_float3x3(make_float3(0.700622320175f, 0.148774802685f, 0.101058728993f), make_float3(0.274118483067f, 0.873631775379f, -0.147750422359f), make_float3(-0.098962903023f, -0.137895315886, 1.325916051865f))
 
 
-#define matrix_p3_to_p3_d50 make_float3x3(make_float3(0.9287127388f, 0.06578032793f, 0.005506708345f), make_float3(-0.002887159176f, 0.8640709228f, 4.3593718e-05f), make_float3(-0.001009551548f, -0.01073503317f, 0.6672692039f))
+#define matrix_p3_to_)NODEONE"
+R"NODEONE(p3_d50 make_float3x3(make_float3(0.9287127388f, 0.06578032793f, 0.005506708345f), make_float3(-0.002887159176f, 0.8640709228f, 4.3593718e-05f), make_float3(-0.001009551548f, -0.01073503317f, 0.6672692039f))
 #define matrix_p3_to_p3_d55 make_float3x3(make_float3(0.9559790976f, 0.0403850003f, 0.003639287409f), make_float3(-0.001771929896f, 0.9163058305f, 3.3300759e-05f), make_float3(-0.000674760809f, -0.0072466358f, 0.7831189153f))
 #define matrix_p3_to_p3_d60 make_float3x3(make_float3(0.979832881f, 0.01836378979f, 0.001803284786f), make_float3(-0.000805359793f, 0.9618000331f, 1.8876121e-05f), make_float3(-0.000338382322f, -0.003671835795f, 0.894139105f))
-#define matrix_p3_to_rec709_d50 make_float3x3(make_float3(1.103807322f, -0.1103425121f, 0.006531676079f), make_float3(-0.04079386701f, 0.8704694227f, -0.000180522628f), make_float3(-0)NODEONE"
-R"NODEONE(.01854055914f, -0.07857582481f, 0.7105498861f))
+#define matrix_p3_to_rec709_d50 make_float3x3(make_float3(1.103807322f, -0.1103425121f, 0.006531676079f), make_float3(-0.04079386701f, 0.8704694227f, -0.000180522628f), make_float3(-0.01854055914f, -0.07857582481f, 0.7105498861f))
 #define matrix_p3_to_rec709_d55 make_float3x3(make_float3(1.149327514f, -0.1536910745f, 0.004366526746f), make_float3(-0.0412590771f, 0.9351717477f, -0.000116126221f), make_float3(-0.01900949528f, -0.07928282823f, 0.8437884317f))
 #define matrix_p3_to_rec709_d60 make_float3x3(make_float3(1.189986856f, -0.192168414f, 0.002185496045f), make_float3(-0.04168263635f, 0.9927757018f, -5.5660878e-05f), make_float3(-0.01937995127f, -0.07933006919f, 0.9734397041f))
 #define matrix_p3_to_rec709_d65 make_float3x3(make_float3(1.224940181f, -0.2249402404f, 0.0f), make_float3(-0.04205697775f, 1.042057037f, -1.4901e-08f), make_float3(-0.01963755488f, -0.07863604277f, 1.098273635f))
@@ -5074,7 +5109,8 @@ __DEVICE__ float f_overlay_self(float b) {
 
 
 
-__DEVICE__ float3 ovl_limit_chroma(float3 c, float3 r, float gmax) {
+__DEVICE__ float3 ovl_limit_chroma(float3 )NODEONE"
+R"NODEONE(c, float3 r, float gmax) {
   if (gmax >= 2.999f) return r;
   const float Lc = 0.2126f*c.x + 0.7152f*c.y + 0.0722f*c.z;
   const float Lr = 0.2126f*r.x + 0.7152f*r.y + 0.0722f*r.z;
@@ -5096,8 +5132,7 @@ __DEVICE__ float3 overlay_scene(float3 rgb, float amt, float gmax) {
   
   
   
-  const float sx = rgb.x < 0.0f ? -)NODEONE"
-R"NODEONE(1.0f : 1.0f;
+  const float sx = rgb.x < 0.0f ? -1.0f : 1.0f;
   const float sy = rgb.y < 0.0f ? -1.0f : 1.0f;
   const float sz = rgb.z < 0.0f ? -1.0f : 1.0f;
   float3 lg = make_float3(di_encode(_fabs(rgb.x)), di_encode(_fabs(rgb.y)), di_encode(_fabs(rgb.z)));
@@ -5609,9 +5644,9 @@ __DEVICE__ float soft_sat(float x, float s) {
 
 
 __CONSTANT__ float PT_TOP[7][3][97] = {
-  {{0.072200f,0.076944f,0.081662f,0.086332f,0.090942f,0.095483f,0.099949f,0.104333f,0.108628f,0.112827f,0.116922f,0.120906f,0.124772f,0.128312f,0.131116f,0.132574f,0.132483f,0.131069f,0.128971f,0.126638f,0.124294f,0.121951f,0.119607f,0.117263f,0.114919f,0.112576f,0.110232f,0.107888f,0.105544f,0.103201f,0.100857f,0.098513f,0.096169f,0.093826f,0.091482f,0.089138f,0.086794f,0.084451f,0.082107f,0.079763f,0.077419f,0.075076f,0.072732f,0.070388f,0.068044f,0.065701f,0.063357f,0.061013f,0.058669f,0.056326f,0.053982f,0.051638f,0.049294f,0.046951f,0.044607f,0.042263f,0.039919f,0.037576f,0.035232f,0.032888f,0.030544f,0.028201f,0.025857f,0.023513f,0.021169f,0.018826f,0.016482f,0.014138f,0.011794f,0.009451f,0.007107f,0.004763f,0.002419f,0.000076f,-0.002268f,-0.004612f,-0.006956f,-0.009299f,-0.011643f,-0.013987f,-0.016331f,-0.018674f,-0.021018f,-0.023362f,-0.025706f,-0.028049f,-0.030393f,-0.032737f,-0.035081f,-0.037424f,-0.039768f,-0.041867f,-0.042656f,-0.040139f,-0.032130f,-0.018086f,0.000000f},
-   {0.008653f,0.013136f,0.017604f,0.022043f,0.026443f,0.030797f,0.035097f,0.039336f,0.043507f,0.047601f,0.051611f,0.055529f,0.059347f,0.063058f,0.066653f,0.070123f,0.073380f,0.076146f,0.077963f,0.078438f,0.077579f,0.075774f,0.073544f,0.071200f,0.068856f,0.066512f,0.064169f,0.06)NODEONE"
-R"NODEONE(1825f,0.059481f,0.057137f,0.054794f,0.052450f,0.050106f,0.047762f,0.045419f,0.043075f,0.040731f,0.038387f,0.036044f,0.033700f,0.031356f,0.029012f,0.026669f,0.024325f,0.021981f,0.019637f,0.017294f,0.014950f,0.012606f,0.010262f,0.007919f,0.005575f,0.003231f,0.000887f,-0.001456f,-0.003800f,-0.006144f,-0.008488f,-0.010831f,-0.013175f,-0.015519f,-0.017863f,-0.020206f,-0.022550f,-0.024894f,-0.027238f,-0.029581f,-0.031925f,-0.034269f,-0.036613f,-0.038956f,-0.041300f,-0.043644f,-0.045988f,-0.048331f,-0.050675f,-0.053019f,-0.055363f,-0.057706f,-0.060050f,-0.062394f,-0.064738f,-0.067081f,-0.069425f,-0.071769f,-0.074113f,-0.076456f,-0.078800f,-0.081144f,-0.083359f,-0.084578f,-0.083096f,-0.076655f,-0.064156f,-0.045958f,-0.023918f,0.000000f},
+  {{0.072200f,0.076944f,0.081662f,0.086332f,0.090942f,0.095483f,0.099949f,0.104333f,0.108628f,0.112827f,0.116922f,0.120906f,0.124772f,0.128312f,0.131116f,0.132574f,0.132483f,0.131069f,0.128971f,0.126638f,0.124294f,0.121951f,0.119607f,0.117263f,0.114919f,0.112576f,0.110232f,0.107888f,0.105544f,0.103201f,0.100857f,0.098513f,0.096169f,0.093826f,0.091482f,0.089138f,0.086794f,0.084451f,0.082107f,0.079763f,0.077419f,0.075076f,0.072732f)NODEONE"
+R"NODEONE(,0.070388f,0.068044f,0.065701f,0.063357f,0.061013f,0.058669f,0.056326f,0.053982f,0.051638f,0.049294f,0.046951f,0.044607f,0.042263f,0.039919f,0.037576f,0.035232f,0.032888f,0.030544f,0.028201f,0.025857f,0.023513f,0.021169f,0.018826f,0.016482f,0.014138f,0.011794f,0.009451f,0.007107f,0.004763f,0.002419f,0.000076f,-0.002268f,-0.004612f,-0.006956f,-0.009299f,-0.011643f,-0.013987f,-0.016331f,-0.018674f,-0.021018f,-0.023362f,-0.025706f,-0.028049f,-0.030393f,-0.032737f,-0.035081f,-0.037424f,-0.039768f,-0.041867f,-0.042656f,-0.040139f,-0.032130f,-0.018086f,0.000000f},
+   {0.008653f,0.013136f,0.017604f,0.022043f,0.026443f,0.030797f,0.035097f,0.039336f,0.043507f,0.047601f,0.051611f,0.055529f,0.059347f,0.063058f,0.066653f,0.070123f,0.073380f,0.076146f,0.077963f,0.078438f,0.077579f,0.075774f,0.073544f,0.071200f,0.068856f,0.066512f,0.064169f,0.061825f,0.059481f,0.057137f,0.054794f,0.052450f,0.050106f,0.047762f,0.045419f,0.043075f,0.040731f,0.038387f,0.036044f,0.033700f,0.031356f,0.029012f,0.026669f,0.024325f,0.021981f,0.019637f,0.017294f,0.014950f,0.012606f,0.010262f,0.007919f,0.005575f,0.003231f,0.000887f,-0.001456f,-0.003800f,-0.006144f,-0.008488f,-0.010831f,-0.013175f,-0.015519f,-0.017863f,-0.020206f,-0.022550f,-0.024894f,-0.027238f,-0.029581f,-0.031925f,-0.034269f,-0.036613f,-0.038956f,-0.041300f,-0.043644f,-0.045988f,-0.048331f,-0.050675f,-0.053019f,-0.055363f,-0.057706f,-0.060050f,-0.062394f,-0.064738f,-0.067081f,-0.069425f,-0.071769f,-0.074113f,-0.076456f,-0.078800f,-0.081144f,-0.083359f,-0.084578f,-0.083096f,-0.076655f,-0.064156f,-0.045958f,-0.023918f,0.000000f},
    {-0.071858f,-0.069239f,-0.066648f,-0.064107f,-0.061629f,-0.059223f,-0.056895f,-0.054652f,-0.052590f,-0.050955f,-0.050140f,-0.050411f,-0.051717f,-0.053704f,-0.055981f,-0.058325f,-0.060669f,-0.063013f,-0.065356f,-0.067700f,-0.070044f,-0.072388f,-0.074731f,-0.077075f,-0.079419f,-0.081763f,-0.084106f,-0.086450f,-0.088794f,-0.091138f,-0.093481f,-0.095825f,-0.098169f,-0.100513f,-0.102856f,-0.105200f,-0.107544f,-0.109888f,-0.112231f,-0.114575f,-0.116919f,-0.119263f,-0.121606f,-0.123950f,-0.126294f,-0.128638f,-0.130981f,-0.133325f,-0.135669f,-0.138013f,-0.140356f,-0.142700f,-0.145044f,-0.147388f,-0.149731f,-0.152075f,-0.154419f,-0.156763f,-0.159106f,-0.161450f,-0.163794f,-0.166138f,-0.168481f,-0.170825f,-0.173169f,-0.175513f,-0.177856f,-0.180200f,-0.182544f,-0.184888f,-0.187231f,-0.189575f,-0.191919f,-0.194263f,-0.196606f,-0.198950f,-0.201294f,-0.203638f,-0.205981f,-0.208325f,-0.210669f,-0.213013f,-0.215356f,-0.217700f,-0.220044f,-0.222336f,-0.223764f,-0.222660f,-0.216554f,-0.204194f,-0.185710f,-0.162643f,-0.136015f,-0.106247f,-0.073280f,-0.037493f,0.000000f}},
   {{0.042611f,0.047409f,0.052177f,0.056891f,0.061538f,0.066108f,0.070595f,0.074991f,0.079288f,0.083480f,0.087558f,0.091515f,0.095323f,0.098747f,0.101352f,0.102568f,0.102260f,0.100712f,0.098561f,0.096218f,0.093874f,0.091530f,0.089186f,0.086843f,0.084499f,0.082155f,0.079811f,0.077468f,0.075124f,0.072780f,0.070436f,0.068093f,0.065749f,0.063405f,0.061061f,0.058718f,0.056374f,0.054030f,0.051686f,0.049343f,0.046999f,0.044655f,0.042311f,0.039968f,0.037624f,0.035280f,0.032936f,0.030593f,0.028249f,0.025905f,0.023561f,0.021218f,0.018874f,0.016530f,0.014186f,0.011843f,0.009499f,0.007155f,0.004811f,0.002468f,0.000124f,-0.002220f,-0.004564f,-0.006907f,-0.009251f,-0.011595f,-0.013939f,-0.016282f,-0.018626f,-0.020970f,-0.023314f,-0.025657f,-0.028001f,-0.030345f,-0.032689f,-0.035032f,-0.037376f,-0.039720f,-0.042064f,-0.044407f,-0.046751f,-0.049095f,-0.051439f,-0.053782f,-0.056126f,-0.058470f,-0.060814f,-0.063157f,-0.065501f,-0.067845f,-0.069964f,-0.070780f,-0.068249f,-0.059926f,-0.044849f,-0.023983f,0.000000f},
    {0.023961f,0.028835f,0.033686f,0.038497f,0.043254f,0.047949f,0.052576f,0.057125f,0.061591f,0.065965f,0.070239f,0.074405f,0.078455f,0.082382f,0.086176f,0.089707f,0.092642f,0.094459f,0.094823f,0.093816f,0.091926f,0.089664f,0.087320f,0.084976f,0.082632f,0.080289f,0.077945f,0.075601f,0.073257f,0.070914f,0.068570f,0.066226f,0.063882f,0.061539f,0.059195f,0.056851f,0.054507f,0.052164f,0.049820f,0.047476f,0.045132f,0.042789f,0.040445f,0.038101f,0.035757f,0.033414f,0.031070f,0.028726f,0.026382f,0.024039f,0.021695f,0.019351f,0.017007f,0.014664f,0.012320f,0.009976f,0.007632f,0.005289f,0.002945f,0.000601f,-0.001743f,-0.004086f,-0.006430f,-0.008774f,-0.011118f,-0.013461f,-0.015805f,-0.018149f,-0.020493f,-0.022836f,-0.025180f,-0.027524f,-0.029868f,-0.032211f,-0.034555f,-0.036899f,-0.039243f,-0.041586f,-0.043930f,-0.046274f,-0.048618f,-0.050961f,-0.053305f,-0.055649f,-0.057993f,-0.060336f,-0.062680f,-0.065024f,-0.067368f,-0.069711f,-0.071653f,-0.071968f,-0.068506f,-0.059284f,-0.043746f,-0.023189f,0.000000f},
@@ -5622,8 +5657,8 @@ R"NODEONE(1825f,0.059481f,0.057137f,0.054794f,0.052450f,0.050106f,0.047762f,0.04
   {{0.010262f,0.015533f,0.020771f,0.025948f,0.031048f,0.036062f,0.040982f,0.045801f,0.050510f,0.055101f,0.059566f,0.063898f,0.068070f,0.071838f,0.074748f,0.076192f,0.076021f,0.074530f,0.072393f,0.070049f,0.067706f,0.065362f,0.063018f,0.060674f,0.058331f,0.055987f,0.053643f,0.051299f,0.048956f,0.046612f,0.044268f,0.041924f,0.039581f,0.037237f,0.034893f,0.032549f,0.030206f,0.027862f,0.025518f,0.023174f,0.020831f,0.018487f,0.016143f,0.013799f,0.011456f,0.009112f,0.006768f,0.004424f,0.002081f,-0.000263f,-0.002607f,-0.004951f,-0.007294f,-0.009638f,-0.011982f,-0.014326f,-0.016669f,-0.019013f,-0.021357f,-0.023701f,-0.026044f,-0.028388f,-0.030732f,-0.033076f,-0.035419f,-0.037763f,-0.040107f,-0.042451f,-0.044794f,-0.047138f,-0.049482f,-0.051826f,-0.054169f,-0.056513f,-0.058857f,-0.061201f,-0.063544f,-0.065888f,-0.068232f,-0.070576f,-0.072919f,-0.075263f,-0.077607f,-0.079951f,-0.082294f,-0.084638f,-0.086982f,-0.089326f,-0.091669f,-0.093992f,-0.095426f,-0.094149f,-0.087331f,-0.073483f,-0.052788f,-0.027509f,0.000000f},
    {0.064446f,0.069128f,0.073771f,0.078345f,0.082832f,0.087222f,0.091508f,0.095682f,0.099736f,0.103562f,0.106843f,0.109058f,0.109782f,0.109036f,0.107267f,0.105040f,0.102696f,0.100353f,0.098009f,0.095665f,0.093321f,0.090978f,0.088634f,0.086290f,0.083946f,0.081603f,0.079259f,0.076915f,0.074571f,0.072228f,0.069884f,0.067540f,0.065196f,0.062853f,0.060509f,0.058165f,0.055821f,0.053478f,0.051134f,0.048790f,0.046446f,0.044103f,0.041759f,0.039415f,0.037071f,0.034728f,0.032384f,0.030040f,0.027696f,0.025353f,0.023009f,0.020665f,0.018321f,0.015978f,0.013634f,0.011290f,0.008946f,0.006603f,0.004259f,0.001915f,-0.000429f,-0.002772f,-0.005116f,-0.007460f,-0.009804f,-0.012147f,-0.014491f,-0.016835f,-0.019179f,-0.021522f,-0.023866f,-0.026210f,-0.028554f,-0.030897f,-0.033241f,-0.035585f,-0.037929f,-0.040272f,-0.042616f,-0.044960f,-0.047304f,-0.049647f,-0.051991f,-0.054335f,-0.056679f,-0.059022f,-0.061366f,-0.063710f,-0.066054f,-0.068397f,-0.070741f,-0.072287f,-0.071130f,-0.064129f,-0.049302f,-0.026878f,0.000000f},
    {0.085165f,0.089694f,0.094172f,0.098562f,0.102843f,0.107003f,0.111036f,0.114816f,0.118011f,0.120086f,0.120662f,0.119794f,0.117966f,0.115720f,0.113376f,0.111032f,0.108689f,0.106345f,0.104001f,0.101657f,0.099314f,0.096970f,0.094626f,0.092282f,0.089939f,0.087595f,0.085251f,0.082907f,0.080564f,0.078220f,0.075876f,0.073532f,0.071189f,0.068845f,0.066501f,0.064157f,0.061814f,0.059470f,0.057126f,0.054782f,0.052439f,0.050095f,0.047751f,0.045407f,0.043064f,0.040720f,0.038376f,0.036032f,0.033689f,0.031345f,0.029001f,0.026657f,0.024314f,0.021970f,0.019626f,0.017282f,0.014939f,0.012595f,0.010251f,0.007907f,0.005564f,0.003220f,0.000876f,-0.001468f,-0.003811f,-0.006155f,-0.008499f,-0.010843f,-0.013186f,-0.015530f,-0.017874f,-0.020218f,-0.022561f,-0.024905f,-0.027249f,-0.029593f,-0.031936f,-0.034280f,-0.036624f,-0.038968f,-0.041311f,-0.043655f,-0.045999f,-0.048343f,-0.050686f,-0.053030f,-0.055374f,-0.057718f,-0.060061f,-0.062405f,-0.064749f,-0.066712f,-0.066713f,-0.061832f,-0.048956f,-0.027372f,0.000000f}},
-  {{0.247712f,0.245368f,0.243025f,0.240681f,0.238337f,0.235993f,0.233650f,0.231306f,0.228962f,0.226618f,0.224275f,0.221931f,0.219587f,0.217243f,0.214900f,0.212556f,0.210212f,0.207868f,0.205525f,0.203181f,0.200837f,0.198493f,0.196150f,0.193806f,0.191462f,0.189118f,0.186775f,0.184431f,0.182087f,0.179743f,0.177400f,0.175056f,0.172712f,0.170368f,0.168025f,0.165681f,0.163337f,0.160993f,0.158650f,0.156306f,0.153962f,0.151618f,0.149275f,0.146931f,0.144587f,0.142243f,0.139900f,0.137556f,0.135212f,0.132868f,0.130525f,0.128181f,0.125837f,0.123493f,0.121150f,0.118806f,0.116462f,0.114118f,0.111775f,0.109431f,0.107087f,0.104743f,0.102400f,0.100056f,0.097712f,0.095368f,0.093025f,0.090681f,0.088337f,0.085993f,0.083650f,0.081306f,0.078962f,0.076618f,0.074275f,0.071931f,0.069587f,0.067243f,0.064900f,0.062556f,0.060212f,0.057868f,0.055525f,0.053181f,0.050837f,0.048493f,0.046150f,0.043806f,0.041462f,0.039118f,0.036775f,0.034431f,0.032087f,0.029743f,0.027400f,0.025056f,0.)NODEONE"
-R"NODEONE(000000f},
+  {{0.247712f,0.245368f,0.243025f,0.240681f,0.238337f,0.235993f,0.233650f,0.231306f,0.228962f,0.226618f,0.224275f,0.221931f)NODEONE"
+R"NODEONE(,0.219587f,0.217243f,0.214900f,0.212556f,0.210212f,0.207868f,0.205525f,0.203181f,0.200837f,0.198493f,0.196150f,0.193806f,0.191462f,0.189118f,0.186775f,0.184431f,0.182087f,0.179743f,0.177400f,0.175056f,0.172712f,0.170368f,0.168025f,0.165681f,0.163337f,0.160993f,0.158650f,0.156306f,0.153962f,0.151618f,0.149275f,0.146931f,0.144587f,0.142243f,0.139900f,0.137556f,0.135212f,0.132868f,0.130525f,0.128181f,0.125837f,0.123493f,0.121150f,0.118806f,0.116462f,0.114118f,0.111775f,0.109431f,0.107087f,0.104743f,0.102400f,0.100056f,0.097712f,0.095368f,0.093025f,0.090681f,0.088337f,0.085993f,0.083650f,0.081306f,0.078962f,0.076618f,0.074275f,0.071931f,0.069587f,0.067243f,0.064900f,0.062556f,0.060212f,0.057868f,0.055525f,0.053181f,0.050837f,0.048493f,0.046150f,0.043806f,0.041462f,0.039118f,0.036775f,0.034431f,0.032087f,0.029743f,0.027400f,0.025056f,0.000000f},
    {0.302263f,0.299919f,0.297576f,0.295232f,0.292888f,0.290544f,0.288201f,0.285857f,0.283513f,0.281169f,0.278826f,0.276482f,0.274138f,0.271794f,0.269451f,0.267107f,0.264763f,0.262419f,0.260076f,0.257732f,0.255388f,0.253044f,0.250701f,0.248357f,0.246013f,0.243669f,0.241326f,0.238982f,0.236638f,0.234294f,0.231951f,0.229607f,0.227263f,0.224919f,0.222576f,0.220232f,0.217888f,0.215544f,0.213201f,0.210857f,0.208513f,0.206169f,0.203826f,0.201482f,0.199138f,0.196794f,0.194451f,0.192107f,0.189763f,0.187419f,0.185076f,0.182732f,0.180388f,0.178044f,0.175701f,0.173357f,0.171013f,0.168669f,0.166326f,0.163982f,0.161638f,0.159294f,0.156951f,0.154607f,0.152263f,0.149919f,0.147576f,0.145232f,0.142888f,0.140544f,0.138201f,0.135857f,0.133513f,0.131169f,0.128826f,0.126482f,0.124138f,0.121794f,0.119451f,0.117107f,0.114763f,0.112419f,0.110076f,0.107732f,0.105388f,0.103044f,0.100701f,0.098357f,0.096013f,0.093669f,0.091326f,0.088982f,0.086638f,0.084294f,0.081951f,0.079607f,0.000000f},
    {0.396322f,0.393978f,0.391634f,0.389291f,0.386947f,0.384603f,0.382259f,0.379916f,0.377572f,0.375228f,0.372884f,0.370541f,0.368197f,0.365853f,0.363509f,0.361166f,0.358822f,0.356478f,0.354134f,0.351791f,0.349447f,0.347103f,0.344759f,0.342416f,0.340072f,0.337728f,0.335384f,0.333041f,0.330697f,0.328353f,0.326009f,0.323666f,0.321322f,0.318978f,0.316634f,0.314291f,0.311947f,0.309603f,0.307259f,0.304916f,0.302572f,0.300228f,0.297884f,0.295541f,0.293197f,0.290853f,0.288509f,0.286166f,0.283822f,0.281478f,0.279134f,0.276791f,0.274447f,0.272103f,0.269759f,0.267416f,0.265072f,0.262728f,0.260384f,0.258041f,0.255697f,0.253353f,0.251009f,0.248666f,0.246322f,0.243978f,0.241634f,0.239291f,0.236947f,0.234603f,0.232259f,0.229916f,0.227572f,0.225228f,0.222884f,0.220541f,0.218197f,0.215853f,0.213509f,0.211166f,0.208822f,0.206478f,0.204134f,0.201791f,0.199447f,0.197103f,0.194759f,0.192416f,0.190072f,0.187728f,0.185384f,0.183041f,0.180697f,0.178353f,0.176009f,0.173666f,0.000000f}},
   {{0.008483f,0.010040f,0.011597f,0.013152f,0.014704f,0.016249f,0.017786f,0.019311f,0.020820f,0.022311f,0.023781f,0.025226f,0.026643f,0.028030f,0.029382f,0.030696f,0.031968f,0.033197f,0.034377f,0.035506f,0.036580f,0.037595f,0.038549f,0.039438f,0.040258f,0.041007f,0.041679f,0.042274f,0.042786f,0.043214f,0.043553f,0.043801f,0.043956f,0.044013f,0.043970f,0.043826f,0.043576f,0.043220f,0.042755f,0.042179f,0.041489f,0.040686f,0.039751f,0.038630f,0.037241f,0.035522f,0.033499f,0.031269f,0.028948f,0.026604f,0.024261f,0.021917f,0.019573f,0.017229f,0.014886f,0.012542f,0.010198f,0.007854f,0.005511f,0.003167f,0.000823f,-0.001521f,-0.003864f,-0.006208f,-0.008552f,-0.010896f,-0.013239f,-0.015583f,-0.017927f,-0.020271f,-0.022614f,-0.024958f,-0.027302f,-0.029646f,-0.031989f,-0.034333f,-0.036677f,-0.039021f,-0.041364f,-0.043708f,-0.046005f,-0.048117f,-0.049802f,-0.050831f,-0.051100f,-0.050654f,-0.049581f,-0.047922f,-0.045655f,-0.042727f,-0.039084f,-0.034671f,-0.029426f,-0.023286f,-0.016230f,-0.008361f,0.000000f},
@@ -5666,7 +5701,8 @@ __DEVICE__ float3 print_tone(float tsn, int id, float amt, float lim) {
   else if (id==6) { 
     lg.x = env*(-17.036161f + u*(75.0012782f + u*(-66.2380399f + u*(-75.000634f + u*(55.547801f + u*(75.0007173f + u*(24.4933467f + u*(-75.0032348f))))))));
     lg.y = env*(2.00638068f + u*(-19.9364656f + u*(68.5388444f + u*(-75.0043493f + u*(-40.4129738f + u*(75.004962f + u*(62.3137434f + u*(-75.0205765f))))))));
-    lg.z = env*(2.95869853f + u*(-25.6098124f + u*(75.0008824f + u*(-63.5196209f + u*(-61.3893484f + u*(75.0004029f + u*(70.2066583f + u*(-75.0020002f))))))));
+    lg.z = env*(2.958698)NODEONE"
+R"NODEONE(53f + u*(-25.6098124f + u*(75.0008824f + u*(-63.5196209f + u*(-61.3893484f + u*(75.0004029f + u*(70.2066583f + u*(-75.0020002f))))))));
   }
   else if (id==7) { 
     lg.x = env*(5.84156135f + u*(-70.6893669f + u*(259.495625f + u*(-300.008047f + u*(-144.414894f + u*(300.008991f + u*(239.269539f + u*(-300.036682f))))))));
@@ -5688,8 +5724,7 @@ __DEVICE__ float3 print_tone(float tsn, int id, float amt, float lim) {
   if (lim > 0.0f && id >= 1 && id <= 7) {
     const float tl = _log2f(_fmaxf(tsn, 1.0e-12f));
     if (tl > -1.5000f && tl < 0.0f) {
-      const float p = (tl - (-1.5)NODEONE"
-R"NODEONE(000f))*64.000000f;
+      const float p = (tl - (-1.5000f))*64.000000f;
       const int i0 = (int)_fminf(p, 95.0f);
       const int i1 = i0 + 1;
       const float f = p - (float)i0;
@@ -5986,7 +6021,8 @@ __DEVICE__ float3 draw_check_legend(float3 base, float px, float py, float Wf, f
     
     col = over_di(col, make_float3(0.0f, 0.0f, 0.0f),
                   (1.0f - smootherstep(0.0f, 28.0f*s, _fmaxf(d, 0.0f))) * 0.42f);
-    col = over_di(col, make_float3(0.075f, 0.085f, 0.125f), cov_sdf(d, aa) * 0.88f);
+    col = over_di(col, make_float3(0.075f, 0.085f, 0.125f), cov_sdf(d, aa) * 0.88f)NODEONE"
+R"NODEONE();
     col = over_di(col, make_float3(0.560f, 0.480f, 0.320f),
                   cov_sdf(_fabs(d) - _fmaxf(1.15f*s, 0.9f), aa) * 0.80f);
 
@@ -6011,8 +6047,7 @@ __DEVICE__ float3 draw_check_legend(float3 base, float px, float py, float Wf, f
                    72.0f*s + _fmaxf(1.6f*s, 1.0f), aa) * 0.55f);
 
     
-    float3 co)NODEONE"
-R"NODEONE(l_yellow  = make_float3(0.520f, 0.494f, 0.000f);
+    float3 col_yellow  = make_float3(0.520f, 0.494f, 0.000f);
     float3 col_green   = make_float3(0.000f, 0.520f, 0.062f);
     float3 col_magenta = make_float3(0.520f, 0.000f, 0.520f);
 
@@ -6280,7 +6315,8 @@ __DEVICE__ float3 fc_color(float s) {
 #define ok_rec709_to_lms make_float3x3(make_float3(0.4122215303f, 0.5363324835f, 0.0514459862f), make_float3(0.2119035465f, 0.6806995152f, 0.1073969383f), make_float3(0.0883024866f, 0.2817188412f, 0.6299786721f))
 #define ok_lms_to_rec709 make_float3x3(make_float3(4.0767411527f, -3.3077109761f, 0.2309698234f), make_float3(-1.2684381910f, 2.6097575508f, -0.3413193598f), make_float3(-0.0041960844f, -0.7034186848f, 1.7076147691f))
 
-__DEVICE__ float3 ok_rgb_to_lab(float3 c, dctl_float3x3 to_lms) {
+__DEVICE__ float3 ok_rgb_to_lab(float3 c, dctl_f)NODEONE"
+R"NODEONE(loat3x3 to_lms) {
   float3 l = vdot(to_lms, c);
   l = make_float3(_cbrtf(l.x), _cbrtf(l.y), _cbrtf(l.z));
   return make_float3(0.2104542553f*l.x + 0.7936177850f*l.y - 0.0040720468f*l.z,
@@ -6319,8 +6355,7 @@ __DEVICE__ float3 ok_lab_to_rgb(float3 lab, dctl_float3x3 from_lms) {
 #define SKL_T 1.5f
 #define SKL_K 4.2f
 __DEVICE__ float2 skin_dev(float3 c709) {
-  const floa)NODEONE"
-R"NODEONE(t A0 = -0.012061f, B0 = 0.014794f;
+  const float A0 = -0.012061f, B0 = 0.014794f;
   const float rac = 0.73728f, rbc = 0.67559f;     
   const float3 pq = skchk_probe(c709);
   const float Ln = _fmaxf(pq.z, 1.0e-4f);
@@ -6389,6 +6424,21 @@ R"NODEONE(t A0 = -0.012061f, B0 = 0.014794f;
 
 
 
+
+
+
+
+__DEVICE__ float atan2_mask(float y, float x) {
+  const float ax = _fabs(x), ay = _fabs(y);
+  const float mx = _fmaxf(ax, ay), mn = _fminf(ax, ay);
+  if (mx <= 0.0f) return 0.0f;
+  const float a = mn/mx, s = a*a;
+  float r = a*(0.99997726f + s*(-0.33262347f + s*(0.19354346f + s*(-0.11643287f + s*(0.05265332f + s*(-0.01172120f))))));
+  if (ay > ax) r = 1.57079633f - r;
+  if (x < 0.0f) r = 3.14159265f - r;
+  return y < 0.0f ? -r : r;
+}
+
 __DEVICE__ float2 skin_feat(float3 c709) {
   const float A0 = -0.012061f, B0 = 0.014794f;
   const float rac = 0.73728f, rbc = 0.67559f;
@@ -6396,7 +6446,7 @@ __DEVICE__ float2 skin_feat(float3 c709) {
   const float Ln = _fmaxf(pq.z, 1.0e-4f);
   const float an = pq.x/Ln - A0, bn = pq.y/Ln - B0;
   const float uc = an*rac + bn*rbc, vc = bn*rac - an*rbc;
-  return make_float2(_atan2f(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
+  return make_float2(atan2_mask(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
 }
 
 __DEVICE__ float skin_win_s(float2 f) {
@@ -6636,13 +6686,24 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
   for (int k = 0; k < SKM_TAPS; ++k) {
+    
+    
+    
     float ox = 0.0f, oy = 0.0f, gsp = 1.0f;
     if (k >= 1 && k <= 8) {
-      const float a = (float)(k - 1)*0.785398163f;
-      ox = SKM_R1*R*_cosf(a); oy = SKM_R1*R*_sinf(a); gsp = 0.75f;
+      const int j = k - 1;
+      const float cx = j == 0 ? 1.0f : j == 1 ? 0.70710678f : j == 2 ? 0.0f : j == 3 ? -0.70710678f
+                     : j == 4 ? -1.0f : j == 5 ? -0.70710678f : j == 6 ? 0.0f : 0.70710678f;
+      const float cy = j == 0 ? 0.0f : j == 1 ? 0.70710678f : j == 2 ? 1.0f : j == 3 ? 0.70710678f
+                     : j == 4 ? 0.0f : j == 5 ? -0.70710678f : j == 6 ? -1.0f : -0.70710678f;
+      ox = SKM_R1*R*cx; oy = SKM_R1*R*cy; gsp = 0.75f;
     } else if (k >= 9) {
-      const float a = (float)(k - 9)*0.785398163f + 0.392699082f;
-      ox = R*_cosf(a); oy = R*_sinf(a); gsp = 0.40f;
+      const int j = k - 9;
+      const float cx = j == 0 ? 0.92387953f : j == 1 ? 0.38268343f : j == 2 ? -0.38268343f : j == 3 ? -0.92387953f
+                     : j == 4 ? -0.92387953f : j == 5 ? -0.38268343f : j == 6 ? 0.38268343f : 0.92387953f;
+      const float cy = j == 0 ? 0.38268343f : j == 1 ? 0.92387953f : j == 2 ? 0.92387953f : j == 3 ? 0.38268343f
+                     : j == 4 ? -0.38268343f : j == 5 ? -0.92387953f : j == 6 ? -0.92387953f : -0.38268343f;
+      ox = R*cx; oy = R*cy; gsp = 0.40f;
     }
     const int xx = X + (int)_floorf(ox + 0.5f);
     const int yy = Y + (int)_floorf(oy + 0.5f);
@@ -6655,7 +6716,8 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
     const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
     const float m = fmaxf3(c709);
     if (m > 1.0e-6f) {
-      const float gate = smootherstep(-12.0f, -7.5f, _log2f(m));
+      const float gate = smootherstep()NODEONE"
+R"NODEONE(-12.0f, -7.5f, _log2f(m));
       const float3 cn = c709*(0.5f/m);
       const float2 fe = skin_feat(cn);
       if (need_s) ws += g*skin_win_s(fe)*gate;
@@ -6666,8 +6728,7 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(ws/gs, wl/gs);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh =)NODEONE"
-R"NODEONE( P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
   
   
   
@@ -6762,7 +6823,8 @@ R"NODEONE( P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonesca
 
 
   float tsk_Lg = tn_Lg, tsk_con = tn_con, tsk_sh = tn_sh, tsk_toe = tn_toe, tsk_off = tn_off;
-  float tsk_hcon = tn_hcon_enable ? tn_hcon : 0.0f, tsk_hcon_pv = tn_hcon_pv, tsk_hcon_st = tn_hcon_st;
+  float tsk_hcon = tn_hcon_enable ? tn_hcon : 0.0f, tsk_hcon_pv = tn_hcon_pv, tsk_hcon_st =)NODEONE"
+R"NODEONE( tn_hcon_st;
   float tsk_lcon = tn_lcon_enable ? tn_lcon : 0.0f, tsk_lcon_w = tn_lcon_w, tsk_lcon_pc = tn_lcon_pc;
 
   
@@ -6832,8 +6894,7 @@ R"NODEONE( P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonesca
     tn_Lg = 10.42f, tn_con = 1.2f, tn_sh = 0.5f, tn_toe = 0.02f, tn_off = 0.0f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 1.0f, tn_lcon_enable = 0, tn_lcon = 0.0f, tn_lcon_w = 0.6f, tn_lcon_pc = 1.0f;
   }
   else if (ts_sel==8) { 
-    tn_Lg = 11.1f, tn_con = 1.15f, tn_sh = 0.5f, tn_toe = 0.04f, tn_off = 0)NODEONE"
-R"NODEONE(.006f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 0.0f, tn_hcon_st = 0.5f, tn_lcon_enable = 1, tn_lcon = 0.5f, tn_lcon_w = 2.0f, tn_lcon_pc = 0.5f;
+    tn_Lg = 11.1f, tn_con = 1.15f, tn_sh = 0.5f, tn_toe = 0.04f, tn_off = 0.006f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 0.0f, tn_hcon_st = 0.5f, tn_lcon_enable = 1, tn_lcon = 0.5f, tn_lcon_w = 2.0f, tn_lcon_pc = 0.5f;
   }
   else if (ts_sel==9) { 
     tn_Lg = 6.0f, tn_con = 1.8f, tn_sh = 0.5f, tn_toe = 0.001f, tn_off = 0.015f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 1.0f, tn_lcon_w = 1.0f, tn_lcon_pc = 1.0f;
@@ -7213,7 +7274,8 @@ R"NODEONE(.006f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 0.0f, tn_hcon_
   const float ts_x1 = _powf(2.0f, 6.0f*tn_sh + 4.0f);
   const float ts_y1 = tn_Lp/100.0f;
   const float ts_x0 = 0.18f + tn_off;
-  const float ts_y0 = tn_Lg/100.0f*(1.0f + tn_gb*_log2f(ts_y1));
+  const float ts_y0 = tn_Lg/100.0f*(1.0f )NODEONE"
+R"NODEONE(+ tn_gb*_log2f(ts_y1));
   const float ts_s0 = compress_toe_quadratic(ts_y0, tn_toe, 1);
   const float ts_s10 = ts_x0*(_powf(ts_s0, -1.0f/tn_con) - 1.0f);
   const float ts_m1 = ts_y1/_powf(ts_x1/(ts_x1 + ts_s10), tn_con);
@@ -7300,8 +7362,7 @@ R"NODEONE(.006f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 0.0f, tn_hcon_
   if (sk_wl_scene > 0.0f) {
     const float Ys = 0.2289746f*rgb.x + 0.6917385f*rgb.y + 0.0792869f*rgb.z;
     skz_x = _log2f(_fmaxf(Ys, 1.0e-10f)/0.18f) - skin_piv;
-    const float Tm = SKL_T*_powf(3.0f, (skin_soft - 0.5f)*)NODEONE"
-R"NODEONE(2.0f);
+    const float Tm = SKL_T*_powf(3.0f, (skin_soft - 0.5f)*2.0f);
     const float T1 = _fmaxf(Tm, SKL_K*_fabs(skin_mid - skin_sh));
     const float T2 = _fmaxf(Tm, SKL_K*_fabs(skin_hi - skin_mid));
     skz_s1 = smootherstep(SKL_B1 - 0.5f*T1, SKL_B1 + 0.5f*T1, skz_x);
@@ -7775,7 +7836,8 @@ R"NODEONE(2.0f);
   
   float3 cwp_rgb = rgb;
   if (display_gamut==0) {
-    if (cwp==1) cwp_rgb = vdot(matrix_p3_to_rec709_d60, rgb);
+    if (cwp==1) cwp_rgb = vdot(matrix_p3_to_rec709_d60, rgb);)NODEONE"
+R"NODEONE(
     if (cwp==2) cwp_rgb = vdot(matrix_p3_to_rec709_d55, rgb);
     if (cwp==3) cwp_rgb = vdot(matrix_p3_to_rec709_d50, rgb);
     rgb = vdot(matrix_p3_to_rec709_d65, rgb);
@@ -7843,8 +7905,7 @@ R"NODEONE(2.0f);
       
       const float pt_lim = 0.500f + 0.500f*smootherstep(0.450f, 0.850f, hd_sat);
       rgb *= print_tone(tsn/ts_y1, tone_id, tone_amt, pt_lim);
-   )NODEONE"
-R"NODEONE( }
+    }
 
 
   
@@ -8206,7 +8267,8 @@ R"NODEONE( }
     const float crv_h = res.y*crv_size;
     const float crv_my = res.y*(1.0f + crv_size)*0.5f;
     const float crv_mx = res.x*(1.0f - crv_size)*0.5f;
-    float3 crv_rgb_dst = make_float3(crv_my-pos.y-crv_rgb.x*crv_h, crv_my-pos.y-crv_rgb.y*crv_h, crv_my-pos.y-crv_rgb.z*crv_h);
+    flo)NODEONE"
+R"NODEONE(at3 crv_rgb_dst = make_float3(crv_my-pos.y-crv_rgb.x*crv_h, crv_my-pos.y-crv_rgb.y*crv_h, crv_my-pos.y-crv_rgb.z*crv_h);
     float crv_w0 = 1.1f; 
     crv_rgb_dst.x = _expf(-crv_rgb_dst.x*crv_rgb_dst.x*crv_w0);
     crv_rgb_dst.y = _expf(-crv_rgb_dst.y*crv_rgb_dst.y*crv_w0);

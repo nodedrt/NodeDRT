@@ -2132,6 +2132,21 @@ __DEVICE__ float2 skin_dev(float3 c709) {
 // (C/L ; 1.02 fois la chroma Oklab en moyenne, ecart 0.01). Une seule racine
 // cubique par echantillon au lieu de deux : c'est ce qui rend le masque
 // spatial abordable (17 echantillons par pixel).
+// atan2 polynomial (minimax d'ordre 11, erreur < 1e-5 rad = 0.0006 degre),
+// pour le masque peau seulement : 17 atan2 precis par pixel coutaient plus
+// que tout le reste du masque. Le masque est une moyenne de poids lisses, un
+// cent-millieme de radian n'y change rien. Meme code sur CPU et GPU.
+__DEVICE__ float atan2_mask(float y, float x) {
+  const float ax = _fabs(x), ay = _fabs(y);
+  const float mx = _fmaxf(ax, ay), mn = _fminf(ax, ay);
+  if (mx <= 0.0f) return 0.0f;
+  const float a = mn/mx, s = a*a;
+  float r = a*(0.99997726f + s*(-0.33262347f + s*(0.19354346f + s*(-0.11643287f + s*(0.05265332f + s*(-0.01172120f))))));
+  if (ay > ax) r = 1.57079633f - r;
+  if (x < 0.0f) r = 3.14159265f - r;
+  return y < 0.0f ? -r : r;
+}
+
 __DEVICE__ float2 skin_feat(float3 c709) {
   const float A0 = -0.012061f, B0 = 0.014794f;
   const float rac = 0.73728f, rbc = 0.67559f;
@@ -2139,7 +2154,7 @@ __DEVICE__ float2 skin_feat(float3 c709) {
   const float Ln = _fmaxf(pq.z, 1.0e-4f);
   const float an = pq.x/Ln - A0, bn = pq.y/Ln - B0;
   const float uc = an*rac + bn*rbc, vc = bn*rac - an*rbc;
-  return make_float2(_atan2f(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
+  return make_float2(atan2_mask(vc, uc), _sqrtf(an*an + bn*bn)*1.0243f);
 }
 
 __DEVICE__ float skin_win_s(float2 f) {
@@ -2379,13 +2394,24 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
   for (int k = 0; k < SKM_TAPS; ++k) {
+    // Directions des echantillons : table de constantes (cos, sin des
+    // multiples de 45 degres, puis decales de 22.5), au lieu de 32 sinus et
+    // cosinus recalcules pour chaque pixel. Decalages identiques.
     float ox = 0.0f, oy = 0.0f, gsp = 1.0f;
     if (k >= 1 && k <= 8) {
-      const float a = (float)(k - 1)*0.785398163f;
-      ox = SKM_R1*R*_cosf(a); oy = SKM_R1*R*_sinf(a); gsp = 0.75f;
+      const int j = k - 1;
+      const float cx = j == 0 ? 1.0f : j == 1 ? 0.70710678f : j == 2 ? 0.0f : j == 3 ? -0.70710678f
+                     : j == 4 ? -1.0f : j == 5 ? -0.70710678f : j == 6 ? 0.0f : 0.70710678f;
+      const float cy = j == 0 ? 0.0f : j == 1 ? 0.70710678f : j == 2 ? 1.0f : j == 3 ? 0.70710678f
+                     : j == 4 ? 0.0f : j == 5 ? -0.70710678f : j == 6 ? -1.0f : -0.70710678f;
+      ox = SKM_R1*R*cx; oy = SKM_R1*R*cy; gsp = 0.75f;
     } else if (k >= 9) {
-      const float a = (float)(k - 9)*0.785398163f + 0.392699082f;
-      ox = R*_cosf(a); oy = R*_sinf(a); gsp = 0.40f;
+      const int j = k - 9;
+      const float cx = j == 0 ? 0.92387953f : j == 1 ? 0.38268343f : j == 2 ? -0.38268343f : j == 3 ? -0.92387953f
+                     : j == 4 ? -0.92387953f : j == 5 ? -0.38268343f : j == 6 ? 0.38268343f : 0.92387953f;
+      const float cy = j == 0 ? 0.38268343f : j == 1 ? 0.92387953f : j == 2 ? 0.92387953f : j == 3 ? 0.38268343f
+                     : j == 4 ? -0.38268343f : j == 5 ? -0.92387953f : j == 6 ? -0.92387953f : -0.38268343f;
+      ox = R*cx; oy = R*cy; gsp = 0.40f;
     }
     const int xx = X + (int)_floorf(ox + 0.5f);
     const int yy = Y + (int)_floorf(oy + 0.5f);
