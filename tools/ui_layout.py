@@ -167,7 +167,7 @@ PLUGINS = [
                 P('legend', 'Legend'),
             ]},
         ],
-        hidden=['credits'],
+        hidden=['credits', 'trial_mark'],
         about=['NODE_DRT by Samuel Drouin.',
                'Modified OpenDRT v1.0.1 by Jed Smith, licensed GPLv3 — github.com/jedypod/open-display-transform. The rendering engine is his work; this plugin is a modified version and is distributed under the same licence, source included.',
                'Look presets fitted against spektrafilm references by Andrea Volpato, CC BY-SA 4.0 — github.com/andreavolpato/spektrafilm. No LUT data is embedded; what remains are fitted parameter values.',

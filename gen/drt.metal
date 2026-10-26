@@ -155,11 +155,16 @@ struct DctlParams {
     int tonescale_preset;
     float ts_intensity;
     int credits;
+    int trial_mark;
     int display_encoding_preset;
     float look_intensity;
     float tone_intensity;
 };
 #line 1 "NODE_DRT.dctl"
+
+
+
+
 
 
 
@@ -1773,6 +1778,25 @@ __DEVICE__ float txt_cov(float px, float py, float x0, float y0, float fp, int n
 
 
 
+__DEVICE__ float3 trial_wm(float3 rgb, float px, float py, float Hf) {
+    float fp = _fmaxf(Hf / 160.0f, 1.0f);
+    float u = px / fp, v = py / fp;
+    float row = _floorf(v / 26.0f);
+    float sh = (row - 2.0f*_floorf(row*0.5f)) * 42.0f;
+    float uu = u + sh;
+    float lx = (uu - 84.0f*_floorf(uu / 84.0f)) * fp;
+    float ly = (v - 26.0f*row) * fp;
+    float c1 = txt_cov(lx, ly, 18.0f*fp, 5.0f*fp, fp, 8,
+                       C_N, C_O, C_D, C_E, C_SP, C_D, C_R, C_T, C_SP, C_SP, C_SP);
+    float c2 = txt_cov(lx, ly, 9.5f*fp, 14.0f*fp, fp, 11,
+                       C_T, C_R, C_I, C_A, C_L, C_SP, C_E, C_N, C_D, C_E, C_D);
+    float c = _fmaxf(c1, c2);
+    float3 d = rgb * 0.3f;
+    return d + (make_float3(0.8f, 0.8f, 0.8f) - d) * c;
+}
+
+
+
 __DEVICE__ float3 skchk_probe(float3 c) {
     float ap1_r = 0.603141865f*c.x + 0.326348821f*c.y + 0.048032249f*c.z;
     float ap1_g = 0.070048331f*c.x + 0.919956673f*c.y + 0.012762703f*c.z;
@@ -2356,7 +2380,7 @@ __DEVICE__ float ts_mix(float a, float b, float k) {
   return spowf(ea + (eb - ea)*k, 2.4f);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
   
   
   
@@ -3839,8 +3863,10 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     rgb = rgb*(1.0f - crv_a) + crv_lm*crv_rgb_dst;
   }
 
+  if (trial_mark == 1) rgb = trial_wm(rgb, (float)p_X, (float)p_Y, (float)p_Height);
   return rgb;
   }
+  if (trial_mark == 1) rgb = trial_wm(rgb, (float)p_X, (float)p_Y, (float)p_Height);
   return rgb;
 }
 

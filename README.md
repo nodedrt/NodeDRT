@@ -72,17 +72,39 @@ simply does not exist here.
 
 ## The plugin
 
-46 controls in nine groups: Input, Display, Look, Toning, Tone, Trims, White,
-Color, Scopes.
+59 controls in seven groups, in the order the picture is processed: Input /
+Output, White, Look / Toning / Tone, Color, Trims, Skin, Scopes. Groups are
+split into collapsible sub-sections, each with its own bypass, and every
+creative group has a one-click Reset.
 
 - **Seven film looks**, each a set of parameter values fitted numerically
   against a spectral simulation of one negative stock printed on one print
-  stock, measured over several thousand colours.
+  stock, measured over several thousand colours - refitted on 9 October 2026
+  with the current engine, under constraints that hold 18% grey exactly and
+  forbid any gradient, neutral, coloured or neon, from stepping backwards.
 - **Sixteen input gamuts** and **ten log curves**.
 - **SDR and HDR** output: Rec.1886, sRGB, Display P3, Rec.2100 PQ and HLG.
 - 18 % grey lands at the same level on all eight looks, so changing look does
   not move your camera exposure.
-- Every bypass returns to the resting state to the bit.
+- **Skin**, its own section: Skin Line pulls skin onto the vectorscope skin
+  tone line (the line Skin Check reads) with luminance held exactly; Skin
+  Saturation doses skin colour with the subtractive saturation model.
+  Highlights, Midtones and Shadows relight the face zone by zone, each up to
+  one stop; Zone Pivot places the three zones on the face you are grading,
+  Mask Softness sets how gradually the skin mask ends, and Show Zones paints
+  the zones with a legend of their limits in stops. The three lights are
+  exposures on scene light, before the curve, so a brightened highlight rolls
+  into the look's shoulder instead of clipping, and they are monotone whatever
+  the settings: a gradient across a face never steps backwards. Skin is found
+  on the scene colour, so the selection does not move when the exposure
+  changes.
+- **Look Intensity** is exactly linear: between 0 and 1 the picture is
+  rendered with the full look and with Default and the two outputs are mixed,
+  so 0.50 is precisely half way, pixel by pixel. In between, rendering costs
+  twice as much; at 0 and 1 it costs the same as before.
+- **Tonescale Intensity**: doses the curve picked in the Tonescale menu against
+  the look's own curve by mixing the outputs of the two curves, so it is
+  linear too.
 
 ---
 
@@ -95,6 +117,8 @@ this, and it ships inside the bundle.
 - **Film look presets** fitted against [spektrafilm](https://github.com/andreavolpato/spektrafilm)
   references by Andrea Volpato, CC BY-SA 4.0. **No LUT data is embedded**: what
   remains are fitted parameter values belonging to this transform.
+- **Oklab** (Bjorn Ottosson, public domain / MIT) — the colour space Skin Line
+  turns hue in, written here from the published formulas.
 - **Subtractive saturation** — Nikita Petrovich, MIT.
 - **OpenFX support library** — Academy Software Foundation, BSD 3-Clause.
 - **Film stock names** are trademarks of their owners, used descriptively. See

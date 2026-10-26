@@ -309,6 +309,10 @@ DEFINE_UI_PARAMS(ts_intensity, 🎚 Tonescale_Intensity, DCTLUI_SLIDER_FLOAT, 1.
 DEFINE_UI_TOOLTIP(ts_intensity, "How much of the curve picked in the Tonescale menu replaces the look's own curve. 1.00 is the menu's curve in full, 0 is the look's own curve. Both curves are computed in full and their OUTPUT is mixed, in display code values, so the slider is linear: half the travel is half the change, at every exposure, and the picture never steps back while you push it. Measured on a neutral ramp across every curve and four looks: the midpoint lands at 50 to 54 percent of the change, zero reversals; it was 6 to 53 percent with up to 680 reversals when the curve PARAMETERS were interpolated instead. Does nothing on Use Look Preset, nor with Bypass Tone on.")
 // Credits
 DEFINE_UI_PARAMS(credits, ℹ Credits, DCTLUI_COMBO_BOX, 0, {cr0, cr1, cr2, cr3, cr4, cr5, cr6, cr7, cr8, cr9}, {NODE_DRT by Samuel Drouin, Modified OpenDRT v1.0.1 - licensed GPLv3, Rendering engine - OpenDRT by Jed Smith, github.com/jedypod/open-display-transform, Look presets fitted against spektrafilm LUTs, spektrafilm by Andrea Volpato - CC BY-SA 4.0, github.com/andreavolpato/spektrafilm, Film names are trademarks of their owners - see TRADEMARKS.txt, Redistribution must stay GPLv3 with source, See NOTICE.txt for full attribution})
+// Version d'essai : pose par le plugin (compile en mode essai) une fois les
+// 30 jours ecoules. Cache, jamais affiche ; a 0 dans la version complete, ou
+// il ne change rien au rendu.
+DEFINE_UI_PARAMS(trial_mark, Trial, DCTLUI_CHECK_BOX, 0)
 // Display Encoding
 DEFINE_UI_PARAMS(display_encoding_preset, 🖥 Output, DCTLUI_COMBO_BOX, 0, {rec1886, srgb, displayp3, rec2100pq, rec2100hlg, dolbypq}, {Rec.1886 - 2.4 Power / Rec.709, sRGB Display - 2.2 Power / Rec.709, Display P3 - 2.2 Power / P3-D65, Rec.2100 - PQ / Rec.2020 (P3 Limited), Rec.2100 - HLG / Rec.2020 (P3 Limited), Dolby - PQ / P3-D65})
 // Intensity
@@ -1607,6 +1611,25 @@ __DEVICE__ float txt_cov(float px, float py, float x0, float y0, float fp, int n
             + txt_bit(px-0.25f, py+0.25f, x0,y0,fp,n, c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10)
             + txt_bit(px+0.25f, py+0.25f, x0,y0,fp,n, c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10);
     return a * 0.25f;
+}
+
+// Filigrane de fin d'essai : image assombrie et "NODE DRT / TRIAL ENDED" en
+// mosaique sur toute l'image, en quinconce. Seulement si trial_mark vaut 1.
+__DEVICE__ float3 trial_wm(float3 rgb, float px, float py, float Hf) {
+    float fp = _fmaxf(Hf / 160.0f, 1.0f);
+    float u = px / fp, v = py / fp;
+    float row = _floorf(v / 26.0f);
+    float sh = (row - 2.0f*_floorf(row*0.5f)) * 42.0f;
+    float uu = u + sh;
+    float lx = (uu - 84.0f*_floorf(uu / 84.0f)) * fp;
+    float ly = (v - 26.0f*row) * fp;
+    float c1 = txt_cov(lx, ly, 18.0f*fp, 5.0f*fp, fp, 8,
+                       C_N, C_O, C_D, C_E, C_SP, C_D, C_R, C_T, C_SP, C_SP, C_SP);
+    float c2 = txt_cov(lx, ly, 9.5f*fp, 14.0f*fp, fp, 11,
+                       C_T, C_R, C_I, C_A, C_L, C_SP, C_E, C_N, C_D, C_E, C_D);
+    float c = _fmaxf(c1, c2);
+    float3 d = rgb * 0.3f;
+    return d + (make_float3(0.8f, 0.8f, 0.8f) - d) * c;
 }
 
 // Rec.709 display-lineaire -> AP1, pour donner a la sonde le meme genre de
@@ -3678,7 +3701,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     rgb = rgb*(1.0f - crv_a) + crv_lm*crv_rgb_dst;
   }
 
+  if (trial_mark == 1) rgb = trial_wm(rgb, (float)p_X, (float)p_Y, (float)p_Height);
   return rgb;
   }
+  if (trial_mark == 1) rgb = trial_wm(rgb, (float)p_X, (float)p_Y, (float)p_Height);
   return rgb;
 }

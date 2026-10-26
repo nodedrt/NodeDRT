@@ -11,6 +11,7 @@
 #include <mutex>
 #include "NodeOneLut.h"
 #include "NodeOneMetal.h"
+#include "NodeOneTrial.h"
 
 #include <algorithm>
 #include <cmath>
@@ -234,6 +235,17 @@ private:
 
         std::vector<uint32_t> block;
         fillParams(args.time, block);
+#ifdef NODEDRT_TRIAL
+        // Trial build: once the trial is over, the kernel's hidden switch
+        // covers the picture with the watermark.
+        if (trial::expired())
+            for (int i = 0; i < _def.nParams; ++i)
+                if (std::strcmp(_def.params[i].name, "trial_mark") == 0 && _def.params[i].offset != kNoOffset) {
+                    const int32_t v = 1;
+                    std::memcpy(&block[_def.params[i].offset / 4], &v, 4);
+                    break;
+                }
+#endif
 
         // A chosen LUT takes over the display rendering: the DCTL is switched to
         // its log output and the LUT finishes the picture.
@@ -371,7 +383,14 @@ void cpuRenderChain(const PluginDef* const* defs, const void* const* params, int
 // -----------------------------------------------------------------------------
 void describePlugin(const PluginDef& def, OFX::ImageEffectDescriptor& desc)
 {
+#ifdef NODEDRT_TRIAL
+    {
+        static const std::string trialLabel = std::string(def.label) + " Trial";
+        desc.setLabels(trialLabel.c_str(), trialLabel.c_str(), trialLabel.c_str());
+    }
+#else
     desc.setLabels(def.label, def.label, def.label);
+#endif
     desc.setPluginGrouping(def.grouping);
     desc.setPluginDescription(def.description);
     desc.addSupportedContext(OFX::eContextFilter);

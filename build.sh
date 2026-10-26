@@ -6,6 +6,7 @@
 #    ./build.sh install    ... then copy it to /Library/OFX/Plugins (asks for
 #                          your password) — restart Resolve afterwards
 #    ./build.sh clean      remove build/
+#    TRIAL=1 ./build.sh    build the 30-day trial instead of the full plugin
 #
 #  Needs the Xcode Command Line Tools:  xcode-select --install
 #  Python 3 is optional: the generated kernels are checked in, and are only
@@ -24,6 +25,9 @@ fi
 mkdir -p build
 LOG=build/build.log
 TAG="$(date +%Y.%m.%d.%H%M)"
+TRIAL="${TRIAL:-0}"
+# The trial flag rides on the compiler command, so the Makefile stays as is.
+TCXX="clang++"; [ "$TRIAL" = 1 ] && TCXX="clang++ -DNODEDRT_TRIAL=1"
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 {
   echo "== NODE_DRT build $TAG on $(sw_vers -productVersion) $(uname -m)"
@@ -51,15 +55,15 @@ stamp_objects() {
 }
 
 step "2/4  Compiling (universal arm64 + x86_64, $JOBS jobs)"
-stamp_objects "arm64+x86_64 $(clang++ --version | head -1)"
-if ! make -j"$JOBS" BUILD_TAG="$TAG" >> "$LOG" 2>&1; then
+stamp_objects "trial=$TRIAL arm64+x86_64 $(clang++ --version | head -1)"
+if ! make -j"$JOBS" CXX="$TCXX" BUILD_TAG="$TAG" >> "$LOG" 2>&1; then
   # A Mac without the second architecture's SDK slice cannot build universal.
   # That is not a code problem: rebuild for this Mac only.
   echo "  universal build failed — retrying for this Mac only ($(uname -m))"
   echo "== retry: native arch only" >> "$LOG"
   rm -rf build/NodeDRT.ofx.bundle
-  stamp_objects "$(uname -m) $(clang++ --version | head -1)"
-  if ! make -j"$JOBS" BUILD_TAG="$TAG" ARCHS="-arch $(uname -m)" >> "$LOG" 2>&1; then
+  stamp_objects "trial=$TRIAL $(uname -m) $(clang++ --version | head -1)"
+  if ! make -j"$JOBS" CXX="$TCXX" BUILD_TAG="$TAG" ARCHS="-arch $(uname -m)" >> "$LOG" 2>&1; then
     echo "BUILD FAILED — errors:"; grep -E "error" "$LOG" | head -30
     echo; echo "Full log: $LOG"; exit 1
   fi
