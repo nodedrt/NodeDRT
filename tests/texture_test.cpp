@@ -74,7 +74,7 @@ int main()
             double want[3]; for (int c = 0; c < 3; ++c) want[c] = tx_grainSig(c, dv);
             printf("gauge %s DI %.3f  std %.4f %.4f %.4f  (table %.4f %.4f %.4f)  rRG %.2f  mean %.1e\n", g ? "35" : "65", dv,
                    sd[0], sd[1], sd[2], want[0], want[1], want[2], crg / n / (sd[0] * sd[1]), m[1]);
-            for (int c = 0; c < 3; ++c) CHECK(std::fabs(sd[c] / want[c] - 1) < 0.08, "grain std ch%d DI %.3f", c, dv);
+            for (int c = 0; c < 3; ++c) CHECK(std::fabs(sd[c] / (0.75 * want[c]) - 1) < 0.08, "grain std ch%d DI %.3f", c, dv);
         }
     }
 

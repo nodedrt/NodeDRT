@@ -93,3 +93,7 @@ luminance - input decoded by its log curve, Y row of the input gamut - in
 stops from 18% grey, in fifteen one-stop zones from -7 to +7 centred on the
 whole stops, with a horizontal numbered legend. Colour palette designed for
 this plugin. Color Analyzer keeps the previous reading unchanged.
+
+Base grain made finer and quieter (28 October 2026): Amount 1 / Size 1 now
+give 75 % of the measured grain strength at 85 % of its size. The measured
+grain read too coarse and too present on real footage.

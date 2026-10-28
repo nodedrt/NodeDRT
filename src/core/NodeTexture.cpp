@@ -28,6 +28,12 @@ static const float HX_U[6][33] = {{-0.00069106f, -0.00869063f, -0.01574631f, -0.
 // grain: separable 1-D factors of the measured grain kernels at UHD (unit L2)
 static const float GX_U65[5] = {-0.0045802f, 0.1398532f, 0.9802245f, 0.1398532f, -0.0045802f};
 static const float GX_U35[7] = {-0.0026214f, 0.0226864f, 0.4085475f, 0.8155580f, 0.4085475f, 0.0226864f, -0.0026214f};
+// BASE GRAIN (Amount 1, Size 1). The measured grain read too coarse and too
+// present on real footage: the base is set a little finer and quieter than the
+// measurement - 85 % of its size, 75 % of its strength. The spectrum shape, the
+// per-layer balance and the density dependence are unchanged.
+static const float GX_BASE_SIZE = 0.85f;
+static const float GX_BASE_AMOUNT = 0.75f;
 // grain amplitude at HD (1080 lines) relative to UHD, measured
 static const float GX_AHD[2] = {0.76f, 1.41f};
 
@@ -145,7 +151,7 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
         const int g = s.gauge == 0 ? 0 : 1;
         const float* U = g == 0 ? GX_U65 : GX_U35;
         const int UR = g == 0 ? 2 : 3;
-        const float sc = std::min(std::max(s.size, 0.25f), 4.0f) * (float)H / 2160.0f;
+        const float sc = GX_BASE_SIZE * std::min(std::max(s.size, 0.25f), 4.0f) * (float)H / 2160.0f;
         auto u = [&](float t) {
             t += UR;
             const int k = (int)std::floor(t);
@@ -169,7 +175,7 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
         const float t = std::min(std::max(std::log2((float)H / 2160.0f), -1.0f), 0.0f);   // 0 at UHD, -1 at HD
         const float A = 1.0f + (GX_AHD[g] - 1.0f) * (-t);
         a.grR = R;
-        a.grScale = s.amount * A;
+        a.grScale = GX_BASE_AMOUNT * s.amount * A;
         a.grSat = std::min(std::max(s.colour, 0.0f), 2.0f);
         a.grSh = std::max(s.shadows, 0.0f);
         a.grMd = std::max(s.midtones, 0.0f);
