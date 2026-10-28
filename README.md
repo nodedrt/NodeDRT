@@ -74,11 +74,20 @@ simply does not exist here.
 
 ## The plugin
 
-76 controls in eight groups: Input / Output, White, Look / Toning / Tone,
+79 controls in eight groups: Input / Output, White, Look / Toning / Tone,
 Color, Trims, Skin, Texture, Scopes. Groups are
 split into collapsible sub-sections, each with its own bypass, and every
 creative group has a one-click Reset.
 
+- **Skin Mask** (version 1.2, 28 October 2026): a *Mask* sub-section in
+  Skin with three controls, all at 0 by default (mask identical to the bit):
+  *Mask Hue Range* widens the key towards yellow-orange and pink-magenta (skin
+  shifted by tungsten, LED, sunset light); *Mask Recovery* takes back altered
+  skin - pale or washed out, very saturated, or deep in shadow (two stops
+  further into the dark); *Mask Edge Softness* feathers the mask in the
+  picture, up to three times its radius, with two extra sample rings so a
+  sharp outline does not echo. All three feed Skin Line, Skin Saturation and
+  the Light zones, and Show Zones shows the result.
 - **False Color Stops** (version 1.2, 28 October 2026): exposure in stops
   from 18 % grey, on the true scene luminance - the input decoded by its Log
   Curve, Y of its Gamut - before white balance and the look, so it reads what

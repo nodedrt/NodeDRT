@@ -104,3 +104,10 @@ subtractive saturation (the Chroma model) weighted by the rendered level,
 from the upper midtones up: up to about twice the chroma to the right, a
 creamy shoulder to the left, white stays white. Checked on the 8 looks, 16
 hues over 15 stops: no luminance reversal.
+
+Skin Mask controls (version 1.2, 28 October 2026): Mask Hue Range, Mask
+Recovery and Mask Edge Softness, in a new Mask sub-section of Skin. At 0 the
+mask is identical to the bit. Checked on 8 looks, 16 hues, 15 stops with the
+skin controls at their extremes: no reversal, except 0.3 % on a saturated pink
+with Gold 200 / Supra Endura when Hue Range, Recovery and Skin Saturation are
+all at maximum - the same order as Chroma at 2.0 already gives.

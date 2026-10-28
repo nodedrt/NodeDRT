@@ -172,6 +172,12 @@ PLUGINS = [
                     P('skin_zones', 'Show Zones'),
                     P('skin_light_bypass', 'Bypass Light'),
                 ]),
+                # Masque elargi (1.2) : aussi pour Skin Line / Skin Saturation.
+                SUB('grp_skin_mask', 'Mask', [
+                    P('skin_mhue', 'Mask Hue Range'),
+                    P('skin_mrec', 'Mask Recovery'),
+                    P('skin_medge', 'Mask Edge Softness'),
+                ]),
                 P('skin_reset', 'Reset Skin', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
             # TEXTURE : grain et halation, calcules par le plugin lui-meme (ils
