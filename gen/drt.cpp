@@ -76,6 +76,7 @@ struct DctlParams {
     float skin_mhue;
     float skin_mrec;
     float skin_medge;
+    int skin_mask_bypass;
     int skin_zones;
     int skin_col_bypass;
     int skin_light_bypass;
@@ -93,6 +94,8 @@ struct DctlParams {
 };
 
 #line 1 "NODE_DRT.dctl"
+
+
 
 
 
@@ -2591,7 +2594,7 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(ws/gs, wl/gs);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; float skin_mhue = P_.skin_mhue; float skin_mrec = P_.skin_mrec; float skin_medge = P_.skin_medge; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; float skin_mhue = P_.skin_mhue; float skin_mrec = P_.skin_mrec; float skin_medge = P_.skin_medge; int skin_mask_bypass = P_.skin_mask_bypass; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
   
   
   
@@ -3176,6 +3179,13 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   
+  
+  
+  
+  const float sk_soft_e  = skin_mask_bypass ? 0.5f : skin_soft;
+  const float sk_mhue_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mhue, 0.0f, 1.0f);
+  const float sk_mrec_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mrec, 0.0f, 1.0f);
+  const float sk_medge_e = skin_mask_bypass ? 0.0f : _clampf(skin_medge, 0.0f, 1.0f);
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
   if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
@@ -3186,8 +3196,8 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     const dctl_float3x3 sk_pre = mat3_mul(matrix_xyz_to_p3d65, mat3_mul(in_to_xyz, wb_m));
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
-                                         rs_sa, rs_w, look_exp, skin_soft,
-                                         _clampf(skin_mhue, 0.0f, 1.0f), _clampf(skin_mrec, 0.0f, 1.0f), _clampf(skin_medge, 0.0f, 1.0f),
+                                         rs_sa, rs_w, look_exp, sk_soft_e,
+                                         sk_mhue_e, sk_mrec_e, sk_medge_e,
                                          (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0,
                                          (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0);
     sk_w_scene = skm.x;
@@ -3230,7 +3240,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   if (sk_wl_scene > 0.0f) {
     const float Ys = 0.2289746f*rgb.x + 0.6917385f*rgb.y + 0.0792869f*rgb.z;
     skz_x = _log2f(_fmaxf(Ys, 1.0e-10f)/0.18f) - skin_piv;
-    const float Tm = SKL_T*_powf(3.0f, (skin_soft - 0.5f)*2.0f);
+    const float Tm = SKL_T*_powf(3.0f, (sk_soft_e - 0.5f)*2.0f);
     const float T1 = _fmaxf(Tm, SKL_K*_fabs(skin_mid - skin_sh));
     const float T2 = _fmaxf(Tm, SKL_K*_fabs(skin_hi - skin_mid));
     skz_s1 = smootherstep(SKL_B1 - 0.5f*T1, SKL_B1 + 0.5f*T1, skz_x);
@@ -4186,7 +4196,7 @@ static void cpu_render(const void* pv, const float* src, ptrdiff_t srcRowFloats,
 }
 } // namespace nodeone_drt
 
-#line 4190 "gen/drt.cpp"
+#line 4200 "gen/drt.cpp"
 namespace nodeone_drt {
 static const char* const kMetalSource =
 R"NODEONE(// =============================================================================
@@ -4348,6 +4358,7 @@ struct DctlParams {
     float skin_mhue;
     float skin_mrec;
     float skin_medge;
+    int skin_mask_bypass;
     int skin_zones;
     int skin_col_bypass;
     int skin_light_bypass;
@@ -4364,6 +4375,8 @@ struct DctlParams {
     float tone_intensity;
 };
 #line 1 "NODE_DRT.dctl"
+
+
 
 
 
@@ -4750,8 +4763,8 @@ struct DctlParams {
 #define matrix_bmdwg_to_xyz make_float3x3(make_float3(0.606538414955f, 0.220412746072f, 0.123504832387f), make_float3(0.267992943525f, 0.832748472691f, -0.100741356611f), make_float3(-0.029442556202f, -0.086612440646, 1.205112814903f))
 #define matrix_egamut_to_xyz make_float3x3(make_float3(0.705396831036f, 0.164041340351f, 0.081017754972f), make_float3(0.280130714178f, 0.820206701756f, -0.100337378681f), make_float3(-0.103781513870f, -0.072907261550, 1.265746593475f))
 #define matrix_egamut2_to_xyz make_float3x3(make_float3(0.736477700184f, 0.130739651087f, 0.083238575781f), make_float3(0.275069984406f, 0.828017790216f, -0.103087774621f), make_float3(-0.124225154248f, -0.087159767391f, 1.3004426724f))
-#define matrix_davinciwg_to_xyz make_float3x3(make_float3(0.700622320175f, 0.148774802685f, 0.101058728993f), make_float3(0.274118483067f, 0.873631775379f, -0.147750422359f), make_float3(-0.098)NODEONE"
-R"NODEONE(962903023f, -0.137895315886, 1.325916051865f))
+#define matrix_davinciwg_to_xyz make_float3x3(make_float3(0.700622320175f, 0.148774802685f, 0.101058728993f), make_float3(0.274118483067f, 0.873631775379f, -0.147750)NODEONE"
+R"NODEONE(422359f), make_float3(-0.098962903023f, -0.137895315886, 1.325916051865f))
 
 
 #define matrix_p3_to_p3_d50 make_float3x3(make_float3(0.9287127388f, 0.06578032793f, 0.005506708345f), make_float3(-0.002887159176f, 0.8640709228f, 4.3593718e-05f), make_float3(-0.001009551548f, -0.01073503317f, 0.6672692039f))
@@ -5184,8 +5197,8 @@ __DEVICE__ float con_scene(float x, float f, float pv) {
 
 
 __DEVICE__ float f_overlay_self(float b) {
-  return b <= 0.5f ? 2.0f*b*b : 1.0f - 2.0f*(1.0f -)NODEONE"
-R"NODEONE( b)*(1.0f - b);
+  return b <= 0.5f ? 2.)NODEONE"
+R"NODEONE(0f*b*b : 1.0f - 2.0f*(1.0f - b)*(1.0f - b);
 }
 
 
@@ -5731,8 +5744,8 @@ __DEVICE__ float soft_sat(float x, float s) {
 
 
 __CONSTANT__ float PT_TOP[7][3][97] = {
-  {{0.072200f,0.076944f,0.081662f,0.086332f,0.090942f,0.095483f,0.099949f,0.104333f,0.108628f,0.112827f,0.116922f,0.120906f,0.124772f,0.128312f,0.131116f,0.132574f,0.132483f,0.131069f,0.128971f,0.126638f,0.124294f,0.121951f,0.119607f,0.117263f,0.114919f,0.112576f,0.110232f,0.107888f,0.105544f,0.103201f,0.100857f,0.098513f,0.096169f,0.093826f,0.091482f,0.089138f)NODEONE"
-R"NODEONE(,0.086794f,0.084451f,0.082107f,0.079763f,0.077419f,0.075076f,0.072732f,0.070388f,0.068044f,0.065701f,0.063357f,0.061013f,0.058669f,0.056326f,0.053982f,0.051638f,0.049294f,0.046951f,0.044607f,0.042263f,0.039919f,0.037576f,0.035232f,0.032888f,0.030544f,0.028201f,0.025857f,0.023513f,0.021169f,0.018826f,0.016482f,0.014138f,0.011794f,0.009451f,0.007107f,0.004763f,0.002419f,0.000076f,-0.002268f,-0.004612f,-0.006956f,-0.009299f,-0.011643f,-0.013987f,-0.016331f,-0.018674f,-0.021018f,-0.023362f,-0.025706f,-0.028049f,-0.030393f,-0.032737f,-0.035081f,-0.037424f,-0.039768f,-0.041867f,-0.042656f,-0.040139f,-0.032130f,-0.018086f,0.000000f},
+  {{0.072200f,0.076944f,0.081662f,0.086332f,0.090942f,0.095483f,0.099949f,0.104333f,0.108628f,0.112827f,0.116922f,0.120906f,0.124772f,0.128312f,0.131116f,0.132574f,0.132483f,0.131069f,0.128971f,0.126638f,0.124294f,0.121951f,0.119607f,0.117263f,0.114919f,0.112576f,0.110232f,0.107888f,0.105544f,0.103201f,0.100857f,0.098513f,0.096169f,0)NODEONE"
+R"NODEONE(.093826f,0.091482f,0.089138f,0.086794f,0.084451f,0.082107f,0.079763f,0.077419f,0.075076f,0.072732f,0.070388f,0.068044f,0.065701f,0.063357f,0.061013f,0.058669f,0.056326f,0.053982f,0.051638f,0.049294f,0.046951f,0.044607f,0.042263f,0.039919f,0.037576f,0.035232f,0.032888f,0.030544f,0.028201f,0.025857f,0.023513f,0.021169f,0.018826f,0.016482f,0.014138f,0.011794f,0.009451f,0.007107f,0.004763f,0.002419f,0.000076f,-0.002268f,-0.004612f,-0.006956f,-0.009299f,-0.011643f,-0.013987f,-0.016331f,-0.018674f,-0.021018f,-0.023362f,-0.025706f,-0.028049f,-0.030393f,-0.032737f,-0.035081f,-0.037424f,-0.039768f,-0.041867f,-0.042656f,-0.040139f,-0.032130f,-0.018086f,0.000000f},
    {0.008653f,0.013136f,0.017604f,0.022043f,0.026443f,0.030797f,0.035097f,0.039336f,0.043507f,0.047601f,0.051611f,0.055529f,0.059347f,0.063058f,0.066653f,0.070123f,0.073380f,0.076146f,0.077963f,0.078438f,0.077579f,0.075774f,0.073544f,0.071200f,0.068856f,0.066512f,0.064169f,0.061825f,0.059481f,0.057137f,0.054794f,0.052450f,0.050106f,0.047762f,0.045419f,0.043075f,0.040731f,0.038387f,0.036044f,0.033700f,0.031356f,0.029012f,0.026669f,0.024325f,0.021981f,0.019637f,0.017294f,0.014950f,0.012606f,0.010262f,0.007919f,0.005575f,0.003231f,0.000887f,-0.001456f,-0.003800f,-0.006144f,-0.008488f,-0.010831f,-0.013175f,-0.015519f,-0.017863f,-0.020206f,-0.022550f,-0.024894f,-0.027238f,-0.029581f,-0.031925f,-0.034269f,-0.036613f,-0.038956f,-0.041300f,-0.043644f,-0.045988f,-0.048331f,-0.050675f,-0.053019f,-0.055363f,-0.057706f,-0.060050f,-0.062394f,-0.064738f,-0.067081f,-0.069425f,-0.071769f,-0.074113f,-0.076456f,-0.078800f,-0.081144f,-0.083359f,-0.084578f,-0.083096f,-0.076655f,-0.064156f,-0.045958f,-0.023918f,0.000000f},
    {-0.071858f,-0.069239f,-0.066648f,-0.064107f,-0.061629f,-0.059223f,-0.056895f,-0.054652f,-0.052590f,-0.050955f,-0.050140f,-0.050411f,-0.051717f,-0.053704f,-0.055981f,-0.058325f,-0.060669f,-0.063013f,-0.065356f,-0.067700f,-0.070044f,-0.072388f,-0.074731f,-0.077075f,-0.079419f,-0.081763f,-0.084106f,-0.086450f,-0.088794f,-0.091138f,-0.093481f,-0.095825f,-0.098169f,-0.100513f,-0.102856f,-0.105200f,-0.107544f,-0.109888f,-0.112231f,-0.114575f,-0.116919f,-0.119263f,-0.121606f,-0.123950f,-0.126294f,-0.128638f,-0.130981f,-0.133325f,-0.135669f,-0.138013f,-0.140356f,-0.142700f,-0.145044f,-0.147388f,-0.149731f,-0.152075f,-0.154419f,-0.156763f,-0.159106f,-0.161450f,-0.163794f,-0.166138f,-0.168481f,-0.170825f,-0.173169f,-0.175513f,-0.177856f,-0.180200f,-0.182544f,-0.184888f,-0.187231f,-0.189575f,-0.191919f,-0.194263f,-0.196606f,-0.198950f,-0.201294f,-0.203638f,-0.205981f,-0.208325f,-0.210669f,-0.213013f,-0.215356f,-0.217700f,-0.220044f,-0.222336f,-0.223764f,-0.222660f,-0.216554f,-0.204194f,-0.185710f,-0.162643f,-0.136015f,-0.106247f,-0.073280f,-0.037493f,0.000000f}},
   {{0.042611f,0.047409f,0.052177f,0.056891f,0.061538f,0.066108f,0.070595f,0.074991f,0.079288f,0.083480f,0.087558f,0.091515f,0.095323f,0.098747f,0.101352f,0.102568f,0.102260f,0.100712f,0.098561f,0.096218f,0.093874f,0.091530f,0.089186f,0.086843f,0.084499f,0.082155f,0.079811f,0.077468f,0.075124f,0.072780f,0.070436f,0.068093f,0.065749f,0.063405f,0.061061f,0.058718f,0.056374f,0.054030f,0.051686f,0.049343f,0.046999f,0.044655f,0.042311f,0.039968f,0.037624f,0.035280f,0.032936f,0.030593f,0.028249f,0.025905f,0.023561f,0.021218f,0.018874f,0.016530f,0.014186f,0.011843f,0.009499f,0.007155f,0.004811f,0.002468f,0.000124f,-0.002220f,-0.004564f,-0.006907f,-0.009251f,-0.011595f,-0.013939f,-0.016282f,-0.018626f,-0.020970f,-0.023314f,-0.025657f,-0.028001f,-0.030345f,-0.032689f,-0.035032f,-0.037376f,-0.039720f,-0.042064f,-0.044407f,-0.046751f,-0.049095f,-0.051439f,-0.053782f,-0.056126f,-0.058470f,-0.060814f,-0.063157f,-0.065501f,-0.067845f,-0.069964f,-0.070780f,-0.068249f,-0.059926f,-0.044849f,-0.023983f,0.000000f},
@@ -5744,8 +5757,8 @@ R"NODEONE(,0.086794f,0.084451f,0.082107f,0.079763f,0.077419f,0.075076f,0.072732f
   {{0.010262f,0.015533f,0.020771f,0.025948f,0.031048f,0.036062f,0.040982f,0.045801f,0.050510f,0.055101f,0.059566f,0.063898f,0.068070f,0.071838f,0.074748f,0.076192f,0.076021f,0.074530f,0.072393f,0.070049f,0.067706f,0.065362f,0.063018f,0.060674f,0.058331f,0.055987f,0.053643f,0.051299f,0.048956f,0.046612f,0.044268f,0.041924f,0.039581f,0.037237f,0.034893f,0.032549f,0.030206f,0.027862f,0.025518f,0.023174f,0.020831f,0.018487f,0.016143f,0.013799f,0.011456f,0.009112f,0.006768f,0.004424f,0.002081f,-0.000263f,-0.002607f,-0.004951f,-0.007294f,-0.009638f,-0.011982f,-0.014326f,-0.016669f,-0.019013f,-0.021357f,-0.023701f,-0.026044f,-0.028388f,-0.030732f,-0.033076f,-0.035419f,-0.037763f,-0.040107f,-0.042451f,-0.044794f,-0.047138f,-0.049482f,-0.051826f,-0.054169f,-0.056513f,-0.058857f,-0.061201f,-0.063544f,-0.065888f,-0.068232f,-0.070576f,-0.072919f,-0.075263f,-0.077607f,-0.079951f,-0.082294f,-0.084638f,-0.086982f,-0.089326f,-0.091669f,-0.093992f,-0.095426f,-0.094149f,-0.087331f,-0.073483f,-0.052788f,-0.027509f,0.000000f},
    {0.064446f,0.069128f,0.073771f,0.078345f,0.082832f,0.087222f,0.091508f,0.095682f,0.099736f,0.103562f,0.106843f,0.109058f,0.109782f,0.109036f,0.107267f,0.105040f,0.102696f,0.100353f,0.098009f,0.095665f,0.093321f,0.090978f,0.088634f,0.086290f,0.083946f,0.081603f,0.079259f,0.076915f,0.074571f,0.072228f,0.069884f,0.067540f,0.065196f,0.062853f,0.060509f,0.058165f,0.055821f,0.053478f,0.051134f,0.048790f,0.046446f,0.044103f,0.041759f,0.039415f,0.037071f,0.034728f,0.032384f,0.030040f,0.027696f,0.025353f,0.023009f,0.020665f,0.018321f,0.015978f,0.013634f,0.011290f,0.008946f,0.006603f,0.004259f,0.001915f,-0.000429f,-0.002772f,-0.005116f,-0.007460f,-0.009804f,-0.012147f,-0.014491f,-0.016835f,-0.019179f,-0.021522f,-0.023866f,-0.026210f,-0.028554f,-0.030897f,-0.033241f,-0.035585f,-0.037929f,-0.040272f,-0.042616f,-0.044960f,-0.047304f,-0.049647f,-0.051991f,-0.054335f,-0.056679f,-0.059022f,-0.061366f,-0.063710f,-0.066054f,-0.068397f,-0.070741f,-0.072287f,-0.071130f,-0.064129f,-0.049302f,-0.026878f,0.000000f},
    {0.085165f,0.089694f,0.094172f,0.098562f,0.102843f,0.107003f,0.111036f,0.114816f,0.118011f,0.120086f,0.120662f,0.119794f,0.117966f,0.115720f,0.113376f,0.111032f,0.108689f,0.106345f,0.104001f,0.101657f,0.099314f,0.096970f,0.094626f,0.092282f,0.089939f,0.087595f,0.085251f,0.082907f,0.080564f,0.078220f,0.075876f,0.073532f,0.071189f,0.068845f,0.066501f,0.064157f,0.061814f,0.059470f,0.057126f,0.054782f,0.052439f,0.050095f,0.047751f,0.045407f,0.043064f,0.040720f,0.038376f,0.036032f,0.033689f,0.031345f,0.029001f,0.026657f,0.024314f,0.021970f,0.019626f,0.017282f,0.014939f,0.012595f,0.010251f,0.007907f,0.005564f,0.003220f,0.000876f,-0.001468f,-0.003811f,-0.006155f,-0.008499f,-0.010843f,-0.013186f,-0.015530f,-0.017874f,-0.020218f,-0.022561f,-0.024905f,-0.027249f,-0.029593f,-0.031936f,-0.034280f,-0.036624f,-0.038968f,-0.041311f,-0.043655f,-0.045999f,-0.048343f,-0.050686f,-0.053030f,-0.055374f,-0.057718f,-0.060061f,-0.062405f,-0.064749f,-0.066712f,-0.066713f,-0.061832f,-0.048956f,-0.027372f,0.000000f}},
-  {{0.247712f,0.245368f,0.243025f,0.240681f,0.238337f)NODEONE"
-R"NODEONE(,0.235993f,0.233650f,0.231306f,0.228962f,0.226618f,0.224275f,0.221931f,0.219587f,0.217243f,0.214900f,0.212556f,0.210212f,0.207868f,0.205525f,0.203181f,0.200837f,0.198493f,0.196150f,0.193806f,0.191462f,0.189118f,0.186775f,0.184431f,0.182087f,0.179743f,0.177400f,0.175056f,0.172712f,0.170368f,0.168025f,0.165681f,0.163337f,0.160993f,0.158650f,0.156306f,0.153962f,0.151618f,0.149275f,0.146931f,0.144587f,0.142243f,0.139900f,0.137556f,0.135212f,0.132868f,0.130525f,0.128181f,0.125837f,0.123493f,0.121150f,0.118806f,0.116462f,0.114118f,0.111775f,0.109431f,0.107087f,0.104743f,0.102400f,0.100056f,0.097712f,0.095368f,0.093025f,0.090681f,0.088337f,0.085993f,0.083650f,0.081306f,0.078962f,0.076618f,0.074275f,0.071931f,0.069587f,0.067243f,0.064900f,0.062556f,0.060212f,0.057868f,0.055525f,0.053181f,0.050837f,0.048493f,0.046150f,0.043806f,0.041462f,0.039118f,0.036775f,0.034431f,0.032087f,0.029743f,0.027400f,0.025056f,0.000000f},
+  {{0.247712f,0.245368f,0)NODEONE"
+R"NODEONE(.243025f,0.240681f,0.238337f,0.235993f,0.233650f,0.231306f,0.228962f,0.226618f,0.224275f,0.221931f,0.219587f,0.217243f,0.214900f,0.212556f,0.210212f,0.207868f,0.205525f,0.203181f,0.200837f,0.198493f,0.196150f,0.193806f,0.191462f,0.189118f,0.186775f,0.184431f,0.182087f,0.179743f,0.177400f,0.175056f,0.172712f,0.170368f,0.168025f,0.165681f,0.163337f,0.160993f,0.158650f,0.156306f,0.153962f,0.151618f,0.149275f,0.146931f,0.144587f,0.142243f,0.139900f,0.137556f,0.135212f,0.132868f,0.130525f,0.128181f,0.125837f,0.123493f,0.121150f,0.118806f,0.116462f,0.114118f,0.111775f,0.109431f,0.107087f,0.104743f,0.102400f,0.100056f,0.097712f,0.095368f,0.093025f,0.090681f,0.088337f,0.085993f,0.083650f,0.081306f,0.078962f,0.076618f,0.074275f,0.071931f,0.069587f,0.067243f,0.064900f,0.062556f,0.060212f,0.057868f,0.055525f,0.053181f,0.050837f,0.048493f,0.046150f,0.043806f,0.041462f,0.039118f,0.036775f,0.034431f,0.032087f,0.029743f,0.027400f,0.025056f,0.000000f},
    {0.302263f,0.299919f,0.297576f,0.295232f,0.292888f,0.290544f,0.288201f,0.285857f,0.283513f,0.281169f,0.278826f,0.276482f,0.274138f,0.271794f,0.269451f,0.267107f,0.264763f,0.262419f,0.260076f,0.257732f,0.255388f,0.253044f,0.250701f,0.248357f,0.246013f,0.243669f,0.241326f,0.238982f,0.236638f,0.234294f,0.231951f,0.229607f,0.227263f,0.224919f,0.222576f,0.220232f,0.217888f,0.215544f,0.213201f,0.210857f,0.208513f,0.206169f,0.203826f,0.201482f,0.199138f,0.196794f,0.194451f,0.192107f,0.189763f,0.187419f,0.185076f,0.182732f,0.180388f,0.178044f,0.175701f,0.173357f,0.171013f,0.168669f,0.166326f,0.163982f,0.161638f,0.159294f,0.156951f,0.154607f,0.152263f,0.149919f,0.147576f,0.145232f,0.142888f,0.140544f,0.138201f,0.135857f,0.133513f,0.131169f,0.128826f,0.126482f,0.124138f,0.121794f,0.119451f,0.117107f,0.114763f,0.112419f,0.110076f,0.107732f,0.105388f,0.103044f,0.100701f,0.098357f,0.096013f,0.093669f,0.091326f,0.088982f,0.086638f,0.084294f,0.081951f,0.079607f,0.000000f},
    {0.396322f,0.393978f,0.391634f,0.389291f,0.386947f,0.384603f,0.382259f,0.379916f,0.377572f,0.375228f,0.372884f,0.370541f,0.368197f,0.365853f,0.363509f,0.361166f,0.358822f,0.356478f,0.354134f,0.351791f,0.349447f,0.347103f,0.344759f,0.342416f,0.340072f,0.337728f,0.335384f,0.333041f,0.330697f,0.328353f,0.326009f,0.323666f,0.321322f,0.318978f,0.316634f,0.314291f,0.311947f,0.309603f,0.307259f,0.304916f,0.302572f,0.300228f,0.297884f,0.295541f,0.293197f,0.290853f,0.288509f,0.286166f,0.283822f,0.281478f,0.279134f,0.276791f,0.274447f,0.272103f,0.269759f,0.267416f,0.265072f,0.262728f,0.260384f,0.258041f,0.255697f,0.253353f,0.251009f,0.248666f,0.246322f,0.243978f,0.241634f,0.239291f,0.236947f,0.234603f,0.232259f,0.229916f,0.227572f,0.225228f,0.222884f,0.220541f,0.218197f,0.215853f,0.213509f,0.211166f,0.208822f,0.206478f,0.204134f,0.201791f,0.199447f,0.197103f,0.194759f,0.192416f,0.190072f,0.187728f,0.185384f,0.183041f,0.180697f,0.178353f,0.176009f,0.173666f,0.000000f}},
   {{0.008483f,0.010040f,0.011597f,0.013152f,0.014704f,0.016249f,0.017786f,0.019311f,0.020820f,0.022311f,0.023781f,0.025226f,0.026643f,0.028030f,0.029382f,0.030696f,0.031968f,0.033197f,0.034377f,0.035506f,0.036580f,0.037595f,0.038549f,0.039438f,0.040258f,0.041007f,0.041679f,0.042274f,0.042786f,0.043214f,0.043553f,0.043801f,0.043956f,0.044013f,0.043970f,0.043826f,0.043576f,0.043220f,0.042755f,0.042179f,0.041489f,0.040686f,0.039751f,0.038630f,0.037241f,0.035522f,0.033499f,0.031269f,0.028948f,0.026604f,0.024261f,0.021917f,0.019573f,0.017229f,0.014886f,0.012542f,0.010198f,0.007854f,0.005511f,0.003167f,0.000823f,-0.001521f,-0.003864f,-0.006208f,-0.008552f,-0.010896f,-0.013239f,-0.015583f,-0.017927f,-0.020271f,-0.022614f,-0.024958f,-0.027302f,-0.029646f,-0.031989f,-0.034333f,-0.036677f,-0.039021f,-0.041364f,-0.043708f,-0.046005f,-0.048117f,-0.049802f,-0.050831f,-0.051100f,-0.050654f,-0.049581f,-0.047922f,-0.045655f,-0.042727f,-0.039084f,-0.034671f,-0.029426f,-0.023286f,-0.016230f,-0.008361f,0.000000f},
@@ -5787,8 +5800,8 @@ __DEVICE__ float3 print_tone(float tsn, int id, float amt, float lim) {
   }
   else if (id==6) { 
     lg.x = env*(-17.036161f + u*(75.0012782f + u*(-66.2380399f + u*(-75.000634f + u*(55.547801f + u*(75.0007173f + u*(24.4933467f + u*(-75.0032348f))))))));
-    lg.y = env*(2.00638068f + u*(-19.9364656f + u*(68.5388444f + u*(-75.0043493f + u*(-40.4129738f + u*(75.004962)NODEONE"
-R"NODEONE(f + u*(62.3137434f + u*(-75.0205765f))))))));
+    lg.y = env*(2.00638068f + u*(-19.9364656f + u*(68.5388444f + u*(-75.0043493f + u*)NODEONE"
+R"NODEONE((-40.4129738f + u*(75.004962f + u*(62.3137434f + u*(-75.0205765f))))))));
     lg.z = env*(2.95869853f + u*(-25.6098124f + u*(75.0008824f + u*(-63.5196209f + u*(-61.3893484f + u*(75.0004029f + u*(70.2066583f + u*(-75.0020002f))))))));
   }
   else if (id==7) { 
@@ -6107,9 +6120,9 @@ __DEVICE__ float3 draw_check_legend(float3 base, float px, float py, float Wf, f
 
     
     col = over_di(col, make_float3(0.0f, 0.0f, 0.0f),
-                  (1.0f - smootherstep(0.0f, 28.0f*s, _fmaxf(d, 0.0f))) * 0.42f);
-    col = ov)NODEONE"
-R"NODEONE(er_di(col, make_float3(0.075f, 0.085f, 0.125f), cov_sdf(d, aa) * 0.88f);
+                  (1.0f - smootherstep(0.0f, 28.0f*s, _fmaxf(d, 0.)NODEONE"
+R"NODEONE(0f))) * 0.42f);
+    col = over_di(col, make_float3(0.075f, 0.085f, 0.125f), cov_sdf(d, aa) * 0.88f);
     col = over_di(col, make_float3(0.560f, 0.480f, 0.320f),
                   cov_sdf(_fabs(d) - _fmaxf(1.15f*s, 0.9f), aa) * 0.80f);
 
@@ -6398,8 +6411,8 @@ __DEVICE__ float3 fc_zone_color(int z) {
 #define ok_p3_to_lms make_float3x3(make_float3(0.4813799217f, 0.4621183052f, 0.0565017731f), make_float3(0.2288319819f, 0.6532167902f, 0.1179512279f), make_float3(0.0839457719f, 0.2241652676f, 0.6918889605f))
 #define ok_lms_to_p3 make_float3x3(make_float3(3.1277684194f, -2.2571351293f, 0.1293667099f), make_float3(-1.0910090639f, 2.4133317298f, -0.3223226660f), make_float3(-0.0260108145f, -0.5080413513f, 1.5340521659f))
 #define ok_rec709_to_lms make_float3x3(make_float3(0.4122215303f, 0.5363324835f, 0.0514459862f), make_float3(0.2119035465f, 0.6806995152f, 0.1073969383f), make_float3(0.0883024866f, 0.2817188412f, 0.6299786721f))
-#define ok_lms_to_rec709 make_float3x3(make_float3(4.07674115)NODEONE"
-R"NODEONE(27f, -3.3077109761f, 0.2309698234f), make_float3(-1.2684381910f, 2.6097575508f, -0.3413193598f), make_float3(-0.0041960844f, -0.7034186848f, 1.7076147691f))
+#define ok_lms_to_rec709 make_flo)NODEONE"
+R"NODEONE(at3x3(make_float3(4.0767411527f, -3.3077109761f, 0.2309698234f), make_float3(-1.2684381910f, 2.6097575508f, -0.3413193598f), make_float3(-0.0041960844f, -0.7034186848f, 1.7076147691f))
 
 __DEVICE__ float3 ok_rgb_to_lab(float3 c, dctl_float3x3 to_lms) {
   float3 l = vdot(to_lms, c);
@@ -6803,8 +6816,8 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
       const float cx = j == 0 ? 0.92387953f : j == 1 ? 0.38268343f : j == 2 ? -0.38268343f : j == 3 ? -0.92387953f
                      : j == 4 ? -0.92387953f : j == 5 ? -0.38268343f : j == 6 ? 0.38268343f : 0.92387953f;
       const float cy = j == 0 ? 0.38268343f : j == 1 ? 0.92387953f : j == 2 ? 0.92387953f : j == 3 ? 0.38268343f
-                     : j == 4 ? -0.38268343f : j == 5 ? -0.92387953f : j == 6)NODEONE"
-R"NODEONE( ? -0.92387953f : -0.38268343f;
+                     : j == 4 ? -0.38268343f : j )NODEONE"
+R"NODEONE(== 5 ? -0.92387953f : j == 6 ? -0.92387953f : -0.38268343f;
       ox = R*cx; oy = R*cy; gsp = 0.40f;
     }
     const int xx = X + (int)_floorf(ox + 0.5f);
@@ -6870,7 +6883,7 @@ R"NODEONE( ? -0.92387953f : -0.38268343f;
   return make_float2(ws/gs, wl/gs);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; float skin_mhue = P_.skin_mhue; float skin_mrec = P_.skin_mrec; float skin_medge = P_.skin_medge; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; float skin_mhue = P_.skin_mhue; float skin_mrec = P_.skin_mrec; float skin_medge = P_.skin_medge; int skin_mask_bypass = P_.skin_mask_bypass; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
   
   
   
@@ -6945,10 +6958,10 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     tn_Lg = 12.7219f, tn_con = 1.2137f, tn_sh = 0.0005f, tn_toe = 0.0222f, tn_off = 0.02f, tn_hcon_enable = 1, tn_hcon = -0.5094f, tn_hcon_pv = 3.7592f, tn_hcon_st = 3.8482f, tn_lcon_enable = 1, tn_lcon = 2.2614f, tn_lcon_w = 1.5425f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2681f, rs_rw = 0.0001f, rs_bw = 0.8f, pt_r = 0.2429f, pt_g = 3.7646f, pt_b = 0.0005f, pt_rng_low = 0.1724f, pt_rng_high = 0.3997f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.5889f, ptm_low_st = 0.1995f, ptm_high = -0.0001f, ptm_high_st = 0.2889f, brl_enable = 1, brl_r = -0.7098f, brl_g = -0.6936f, brl_b = -0.8106f, brl_c = -0.0644f, brl_m = -0.5f, brl_y = -0.0827f, brl_rng = 1.0f, hs_rgb_enable = 1, hs_r = 0.0622f, hs_g = 1.0f, hs_b = 0.4495f, hs_rgb_rng = 0.9893f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2457f, hs_y = 1.0f, hc_enable = 1, hc_r = 1.0f, tone_id = 3, look_exp = 0.94893f;
   }
   else if (lk_sel==4) { 
-    tn_Lg = 24.9919f, tn_con = 1.3699f, tn_sh = 0.0001f, tn_toe = 0.0164f, tn_off = 0.0495f, tn_hcon_enable = 1, tn_hcon = 0.9994f, tn_hcon_pv = 1.1745f, tn_hcon_st = 0.7505f, tn_lcon_enable = 1, tn_lcon = 2.9999f, tn_lcon_w = 2.0f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1453f, rs_rw = 0.0013f, rs_bw = 0.3907f, pt_r = 0.0533f, pt_g = 0.1374f, pt_b = 1.7251f, pt_rng_low = 0.1591f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1916f, ptm_low_st = 0.5528f, ptm_high = 0.0f, ptm_high_st = 0.2364f, brl_enable = 1, brl_r = -0.5927f, brl_g = -0.612f, brl_b = -0.3952f, brl_c = -0.249f, brl_m = -0.4958f, brl_y = -0.0275f, brl_rng = 0.9291f, hs_rgb_enable = 1, hs_r = 0.0f, hs_g = 1.0f, hs_b = 0.6186f, hs_rgb_rng = 0.747f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2956f, hs_y = 0.9997f, hc_enable = 1, hc_r = 1.0f, tone_id = 4, look_exp = 0.62644f;
+    tn_Lg = 24.9919f, tn_con = 1.3699f, tn_sh = 0.0001f, tn_toe = 0.0164f, tn_off = 0.0495f, tn_hcon_enable = 1, tn_hcon = 0.9994f, tn_hcon_pv = 1.1745f, tn_hcon_st = 0.7505f, tn_lcon_enable = 1, tn_lcon = 2.9999f, tn_lcon_w = 2.0f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1453f, rs_rw = 0.0013f, rs_bw = 0.3907f, pt_r = 0.0533f, pt_g = 0.1374f, pt_b = 1.7251f, pt_rng_low = 0.1591f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1916f, ptm_low_st = 0.5528f, ptm_high = 0.0f, ptm_high_st = 0.2364f, brl_enable = 1, brl_r = -0.5927f, brl_g = -0.612f, brl_b = -0.3952f, brl_c = -0.249f, brl_m = -0.4958f, brl_y = -0.0275f, brl_rng = 0.9291f, hs_rgb_enable = 1, hs_r = 0.0f, hs_g = 1.0f, hs_b = 0.6186f, hs_rgb_rng = 0.747f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2956f, hs_y = 0.9997f, hc_enabl)NODEONE"
+R"NODEONE(e = 1, hc_r = 1.0f, tone_id = 4, look_exp = 0.62644f;
   }
-  else if (lk_)NODEONE"
-R"NODEONE(sel==5) { 
+  else if (lk_sel==5) { 
     tn_Lg = 25.0f, tn_con = 1.5164f, tn_sh = 1.0f, tn_toe = 0.0f, tn_off = 0.0012f, tn_hcon_enable = 1, tn_hcon = -0.9945f, tn_hcon_pv = 4.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 2.2505f, tn_lcon_w = 2.0f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.125f, rs_rw = 0.0f, rs_bw = 0.5458f, pt_r = 0.0095f, pt_g = 0.0097f, pt_b = 2.0243f, pt_rng_low = 0.2384f, pt_rng_high = 0.2702f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.3887f, ptm_low_st = 0.9385f, ptm_high = -0.0598f, ptm_high_st = 0.2382f, brl_enable = 1, brl_r = -0.7634f, brl_g = -0.7468f, brl_b = -0.3492f, brl_c = -0.2396f, brl_m = -0.4972f, brl_y = -0.1009f, brl_rng = 0.9867f, hs_rgb_enable = 1, hs_r = 0.0143f, hs_g = 1.0f, hs_b = 0.7485f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.8949f, hs_y = 1.0f, hc_enable = 1, hc_r = 1.0f, tone_id = 5, look_exp = 0.64703f;
   }
   else if (lk_sel==6) { 
@@ -7272,10 +7285,10 @@ R"NODEONE(sel==5) {
                         _fabs(wb_kelvin - 6504.0f) > 0.5f;
     const int wb_on = !wb_bypass && (wb_preset > 0 || wb_k_on ||
                                      _fabs(wb_temp) > 1.0e-6f ||
-                                     _fabs(wb_tint) > 1.0e-6f);
+            )NODEONE"
+R"NODEONE(                         _fabs(wb_tint) > 1.0e-6f);
     if (wb_on) {
-   )NODEONE"
-R"NODEONE(   
+      
       const float T_base = wb_preset > 0 ? wb_preset_kelvin(wb_preset)
                                          : (wb_k_on ? wb_kelvin : 6504.0f);
       
@@ -7457,6 +7470,13 @@ R"NODEONE(
   
   
   
+  
+  
+  
+  const float sk_soft_e  = skin_mask_bypass ? 0.5f : skin_soft;
+  const float sk_mhue_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mhue, 0.0f, 1.0f);
+  const float sk_mrec_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mrec, 0.0f, 1.0f);
+  const float sk_medge_e = skin_mask_bypass ? 0.0f : _clampf(skin_medge, 0.0f, 1.0f);
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
   if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
@@ -7467,8 +7487,8 @@ R"NODEONE(
     
     const dctl_float3x3 sk_pre = mat3_mul(matrix_xyz_to_p3d65, mat3_mul(in_to_xyz, wb_m));
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
-                                         rs_sa, rs_w, look_exp, skin_soft,
-                                         _clampf(skin_mhue, 0.0f, 1.0f), _clampf(skin_mrec, 0.0f, 1.0f), _clampf(skin_medge, 0.0f, 1.0f),
+                                         rs_sa, rs_w, look_exp, sk_soft_e,
+                                         sk_mhue_e, sk_mrec_e, sk_medge_e,
                                          (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0,
                                          (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0);
     sk_w_scene = skm.x;
@@ -7511,7 +7531,7 @@ R"NODEONE(
   if (sk_wl_scene > 0.0f) {
     const float Ys = 0.2289746f*rgb.x + 0.6917385f*rgb.y + 0.0792869f*rgb.z;
     skz_x = _log2f(_fmaxf(Ys, 1.0e-10f)/0.18f) - skin_piv;
-    const float Tm = SKL_T*_powf(3.0f, (skin_soft - 0.5f)*2.0f);
+    const float Tm = SKL_T*_powf(3.0f, (sk_soft_e - 0.5f)*2.0f);
     const float T1 = _fmaxf(Tm, SKL_K*_fabs(skin_mid - skin_sh));
     const float T2 = _fmaxf(Tm, SKL_K*_fabs(skin_hi - skin_mid));
     skz_s1 = smootherstep(SKL_B1 - 0.5f*T1, SKL_B1 + 0.5f*T1, skz_x);
@@ -7770,7 +7790,8 @@ R"NODEONE(
     
     
     
-    float hp_t = trim_hp >= 0.0f ? _powf(trim_hp, 2.5f) : -_powf(-trim_hp, 2.5f);
+    float hp_t = trim_hp >= 0.0f ? _powf(tri)NODEONE"
+R"NODEONE(m_hp, 2.5f) : -_powf(-trim_hp, 2.5f);
     const float hp_k = _exp2f(-5.6f*hp_t);
     
     
@@ -7798,8 +7819,7 @@ R"NODEONE(
       
       
       const float hp_x0 = 0.05f + 0.25f*(1.0f - hp_k)*(1.0f - hp_k);
-      const float hp_x = _fmaxf(ts_pt_cmp)NODEONE"
-R"NODEONE(, 0.0f);
+      const float hp_x = _fmaxf(ts_pt_cmp, 0.0f);
       if (hp_x >= hp_x0) ts_pt_cmp = _powf(hp_x, hp_k);
       else {
         const float hp_v0 = _powf(hp_x0, hp_k), hp_s0 = hp_k*hp_v0/hp_x0;
@@ -8335,14 +8355,14 @@ R"NODEONE(, 0.0f);
   
   
   
-  if (skin_zones == 1) {
+  i)NODEONE"
+R"NODEONE(f (skin_zones == 1) {
     float3 zcs = make_float3(0.20f, 0.45f, 1.00f);
     float3 zcm = make_float3(0.25f, 0.85f, 0.35f);
     float3 zch = make_float3(1.00f, 0.85f, 0.15f);
     float3 zcn = make_float3(0.30f, 0.30f, 0.30f);
     zcs = spowf3(zcs, 2.4f); zcm = spowf3(zcm, 2.4f); zch = spowf3(zch, 2.4f); zcn = spowf3(zcn, 2.4f);
-    if ()NODEONE"
-R"NODEONE((eotf > 0) && (eotf < 4)) {
+    if ((eotf > 0) && (eotf < 4)) {
       zcs = spowf3(zcs, 1.0f/eotf_p); zcm = spowf3(zcm, 1.0f/eotf_p);
       zch = spowf3(zch, 1.0f/eotf_p); zcn = spowf3(zcn, 1.0f/eotf_p);
     } else if (eotf == 4) {                       
@@ -8510,7 +8530,7 @@ static const nodeone::GroupSpec kGroups[] = {
 static const nodeone::ParamSpec kParams[] = {
     {"in_gamut", "Gamut", "The colour space the picture arrives in. On a DaVinci YRGB timeline set to DaVinci Wide Gamut this is DaVinci WG, which is the default. Get this wrong and every hue is wrong, so it is the first thing to check if the image looks off before you touch anything else.", nodeone::kParamChoice, 15.0, 0.0, 15.0, 1.0, kOpt_in_gamut, 16, 1, 0},
     {"in_oetf", "Log Curve", "The transfer curve the picture arrives in, paired with Gamut above. DaVinci Intermediate for a DaVinci WG timeline, Linear if the node is fed scene-linear. Wrong here shows up as crushed or washed contrast rather than wrong colour.", nodeone::kParamChoice, 1.0, 0.0, 9.0, 1.0, kOpt_in_oetf, 10, 1, 4},
-    {"display_encoding_preset", "Output", "Choose the target display standard.", nodeone::kParamChoice, 0.0, 0.0, 5.0, 1.0, kOpt_display_encoding_preset, 6, 2, 240},
+    {"display_encoding_preset", "Output", "Choose the target display standard.", nodeone::kParamChoice, 0.0, 0.0, 5.0, 1.0, kOpt_display_encoding_preset, 6, 2, 244},
     {"tn_Lp", "Peak Nits", "Peak display luminance in nits. In SDR, the max value stays pinned at 1.0. In HDR, the max value is adjusted to match peak luminance in the HDR container.", nodeone::kParamFloat, 100.0, 100.0, 1000.0, 1.0, nullptr, 0, 2, 8},
     {"tn_gb", "HDR Grey Boost", "How much middle grey is lifted as the display peak rises above 100 nits. It does nothing at 100 nits, which is why it only matters on an HDR display: there, holding grey where SDR puts it leaves the picture looking dim against the headroom above it. 0.13 is OpenDRT's own value.", nodeone::kParamFloat, 0.13, 0.0, 1.0, 0.001, nullptr, 0, 2, 12},
     {"pt_hdr", "HDR Purity", "How much of the extra headroom on an HDR display is spent holding colour rather than lightness. Like HDR Grey Boost it does nothing at 100 nits. Higher keeps saturated highlights coloured further up; lower lets them give way to white as they do in SDR.", nodeone::kParamFloat, 0.5, 0.0, 1.0, 0.001, nullptr, 0, 2, 16},
@@ -8525,14 +8545,14 @@ static const nodeone::ParamSpec kParams[] = {
     {"cw_bypass", "Bypass Creative White", "Switch the creative white point off and return to D65, the calibrated neutral of the display.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 5, 80},
     {"white_reset", "Reset White", "Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.", nodeone::kParamPush, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 3, nodeone::kNoOffset},
     {"look_preset", "Look", "Each preset fits OpenDRT to a spectral simulation of one negative printed on one print stock. Stock names are trademarks of their owners, used descriptively - this is an emulation, not the stock. See TRADEMARKS.txt.", nodeone::kParamChoice, 0.0, 0.0, 7.0, 1.0, kOpt_look_preset, 8, 7, 44},
-    {"look_intensity", "Look Intensity", "Dials the look in. 1 is the full preset, 0 is exactly Default. In between it interpolates every parameter, which is cleaner than a dissolve.", nodeone::kParamFloat, 1.0, 0.0, 1.0, 0.001, nullptr, 0, 7, 244},
+    {"look_intensity", "Look Intensity", "Dials the look in. 1 is the full preset, 0 is exactly Default. In between it interpolates every parameter, which is cleaner than a dissolve.", nodeone::kParamFloat, 1.0, 0.0, 1.0, 0.001, nullptr, 0, 7, 248},
     {"look_bypass", "Bypass Look", "Drops the look. Same as Intensity at 0: exactly the Default render, toning included.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 7, 48},
     {"print_tone_sel", "Toning", "Which per-level RGB tint to apply. The first entry, Use Look Preset, takes the one that belongs to the selected look.", nodeone::kParamChoice, 0.0, 0.0, 8.0, 1.0, kOpt_print_tone_sel, 9, 8, 52},
-    {"tone_intensity", "Toning Intensity", "Dials the tint alone, on top of Look Intensity. Past 1 it pushes beyond the reference. If Look Intensity is 0, so is this.", nodeone::kParamFloat, 1.0, 0.0, 2.0, 0.001, nullptr, 0, 8, 248},
+    {"tone_intensity", "Toning Intensity", "Dials the tint alone, on top of Look Intensity. Past 1 it pushes beyond the reference. If Look Intensity is 0, so is this.", nodeone::kParamFloat, 1.0, 0.0, 2.0, 0.001, nullptr, 0, 8, 252},
     {"tone_bypass", "Bypass Toning", "Kills the tint only. Contrast and saturation stay put; the neutral axis goes perfectly grey.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 8, 56},
-    {"tonescale_preset", "Tonescale", "Replaces the tone curve the selected look carries. Use Look Preset leaves the look's own curve alone, which is what you want unless you are deliberately putting a different response under a look's colour. The others are named for what they measurably do, from the steepest to the softest: Punchy has the hardest foot and places grey low, Cinema places grey low with a long shoulder, Medium and Gentle ease off in that order, Soft has the longest foot and the deepest black, Low Contrast is the flattest. ACES 1.x and ACES 2.0 are the published standards, there to match a delivery that asks for them. CONTRAST is the odd one out and the only one you can leave on: instead of replacing the look's curve it tilts it, giving the look's own slope multiplied by 1.15, with 18 percent grey solved back to exactly where the look had it so your camera exposure does not move. Every other entry in this menu does move grey - Cinema and Punchy by more than half a stop, the two ACES by about a tenth - because placing grey somewhere else is part of what those curves are.", nodeone::kParamChoice, 0.0, 0.0, 9.0, 1.0, kOpt_tonescale_preset, 10, 9, 224},
-    {"ts_intensity", "Tonescale Intensity", "How much of the curve picked in the Tonescale menu replaces the look's own curve. 1.00 is the menu's curve in full, 0 is the look's own curve. Both curves are computed in full and their OUTPUT is mixed, in display code values, so the slider is linear: half the travel is half the change, at every exposure, and the picture never steps back while you push it. Measured on a neutral ramp across every curve and four looks: the midpoint lands at 50 to 54 percent of the change, zero reversals; it was 6 to 53 percent with up to 680 reversals when the curve PARAMETERS were interpolated instead. Does nothing on Use Look Preset, nor with Bypass Tone on.", nodeone::kParamFloat, 1.0, 0.0, 1.0, 0.001, nullptr, 0, 9, 228},
-    {"tone_curve_bypass", "Bypass Tone", "Return the tonescale to the one the selected look carries, ignoring the Tonescale menu above.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 9, 220},
+    {"tonescale_preset", "Tonescale", "Replaces the tone curve the selected look carries. Use Look Preset leaves the look's own curve alone, which is what you want unless you are deliberately putting a different response under a look's colour. The others are named for what they measurably do, from the steepest to the softest: Punchy has the hardest foot and places grey low, Cinema places grey low with a long shoulder, Medium and Gentle ease off in that order, Soft has the longest foot and the deepest black, Low Contrast is the flattest. ACES 1.x and ACES 2.0 are the published standards, there to match a delivery that asks for them. CONTRAST is the odd one out and the only one you can leave on: instead of replacing the look's curve it tilts it, giving the look's own slope multiplied by 1.15, with 18 percent grey solved back to exactly where the look had it so your camera exposure does not move. Every other entry in this menu does move grey - Cinema and Punchy by more than half a stop, the two ACES by about a tenth - because placing grey somewhere else is part of what those curves are.", nodeone::kParamChoice, 0.0, 0.0, 9.0, 1.0, kOpt_tonescale_preset, 10, 9, 228},
+    {"ts_intensity", "Tonescale Intensity", "How much of the curve picked in the Tonescale menu replaces the look's own curve. 1.00 is the menu's curve in full, 0 is the look's own curve. Both curves are computed in full and their OUTPUT is mixed, in display code values, so the slider is linear: half the travel is half the change, at every exposure, and the picture never steps back while you push it. Measured on a neutral ramp across every curve and four looks: the midpoint lands at 50 to 54 percent of the change, zero reversals; it was 6 to 53 percent with up to 680 reversals when the curve PARAMETERS were interpolated instead. Does nothing on Use Look Preset, nor with Bypass Tone on.", nodeone::kParamFloat, 1.0, 0.0, 1.0, 0.001, nullptr, 0, 9, 232},
+    {"tone_curve_bypass", "Bypass Tone", "Return the tonescale to the one the selected look carries, ignoring the Tonescale menu above.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 9, 224},
     {"look_reset", "Reset Look", "Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.", nodeone::kParamPush, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 6, nodeone::kNoOffset},
     {"col_chroma", "Chroma", "Overall colour intensity, applied at the very end of the render on the distance from the achromatic axis. At 1.00 the render is untouched. At 0 the picture is monochrome. It scales what the transform has already decided rather than feeding more saturation into it, so pushing it up cannot drive a colour back outside the display. The travel runs 0 to 2 so that 1.00 - no change - sits in the MIDDLE of the slider rather than at three quarters: the same drag distance now buys the same amount of change in either direction, and there is as much room to push as to pull.", nodeone::kParamFloat, 1.0, 0.0, 2.0, 0.001, nullptr, 0, 10, 104},
     {"col_ptw", "Path To White", "How completely colour gives way as a pixel approaches peak output. 1.00 keeps the amount the selected look asks for, which is what a real medium does: no film holds saturation at peak, because peak IS white. Lower it and bright saturated light stops giving way, which clips into flat slabs of primary - useful deliberately, rarely by accident. It now works in BOTH directions: 1.00 is the look untouched, below it holds colour back from going white, above it bleaches further than the look ever would. Before, the default sat at the very end of the travel and the control could only subtract. Measured on a red at +5 stops, saturation runs 0.90 at 0.00, 0.56 at 1.00 and 0.25 at 2.00. It is an exponent rather than a mix, so 1.00 is the exact identity and there is no clip anywhere on the travel - the clipped form is what cost Highlight Purity a 241x break on blue before it was rebuilt the same way.", nodeone::kParamFloat, 1.0, 0.0, 2.0, 0.001, nullptr, 0, 10, 108},
@@ -8557,17 +8577,18 @@ static const nodeone::ParamSpec kParams[] = {
     {"trim_reset", "Reset Trims", "Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.", nodeone::kParamPush, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 11, nodeone::kNoOffset},
     {"trim_skin", "Skin Line", "Brings skin tones back onto the vectorscope's skin tone line - the line Skin Check reads, measured by the very same probe, so what this slider corrects is exactly what Skin Check paints. 0 does nothing; 1.00 puts skin on the line; in between it goes part of the way. Only the HUE turns: the distance from white that the scope reads is kept, and the photometric luminance is put back exactly at the end - measured to 3e-5, float rounding - so a face neither brightens nor darkens. It works on the finished picture, after the look and the toning, so it corrects the drift whatever caused it: the camera, the white balance or the look. What counts as skin is decided per pixel: chroma relative to lightness between that of a pale and a deeply tanned face (measured on a real face through five looks), and a hue window that is full up to 15 degrees from the line on the magenta side and 12 on the yellow side, closed at 45 and 30. Measured weights: skin of every depth 1.00, a lip 0.63, a tomato 0.43; a red dress, yellow leaves, sand, grass, sky and every neutral 0. Surfaces that really are skin-coloured - brick, wood, an orange (0.80) - move with it, as they do with any skin tool that works without a mask. Not drawn on the Curve View: a neutral cannot move.", nodeone::kParamFloat, 0.0, 0.0, 1.0, 0.001, nullptr, 0, 16, 168},
     {"trim_skin_sat", "Skin Saturation", "Saturation of skin tones only, with the subtractive saturation model by Nikita Petrovich - the same model as Chroma in the Color group, so the two handle alike. It anchors on the strongest channel and lowers the weaker ones, the way a dye layer adds density: more saturation makes skin slightly DENSER rather than pushing its red channel towards the clip, which is what keeps a face from turning orange and fluorescent. 0 does nothing, -1.00 takes skin to neutral, +1.00 doubles its distance from neutral. Skin is recognised by the same test as Skin Line, read on the scene colour so that a face keeps the same weight from its shadows to its highlights; nothing outside skin moves. Use Skin Line first to fix the hue, then this to set how much colour the face carries.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 16, 172},
-    {"skin_col_bypass", "Bypass Color", "Switches Skin Line and Skin Saturation off in one click, without touching their values - to compare the skin colour with and without.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 16, 200},
-    {"skin_hi", "Highlights", "Light on the brightest parts of the skin - forehead, cheekbones, the bridge of the nose, specular sheen - everything above about +1.25 stops over 18 percent grey. An exposure in stops on the scene, 1 stop at full travel either way, applied before the curve like a light on set: a brightened highlight rolls into the look's shoulder instead of clipping, hue and saturation stay as they are. Inside its zone the gain is exactly the slider value. Only skin is touched.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 17, 208},
-    {"skin_mid", "Midtones", "Light on the body of the skin - roughly -0.75 to +1.25 stops around 18 percent grey, where most of a well exposed face sits. An exposure in stops on the scene, 1 stop at full travel either way, before the curve. With Highlights and Shadows it reshapes the key-to-fill ratio after the fact: lift the midtones and drop the shadows for more modelling, the other way round for a flatter, softer face. Only skin is touched.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 17, 212},
-    {"skin_sh", "Shadows", "Light on the shadow side of the skin - under the jaw, the eye sockets, the side away from the key - everything below about -0.75 stop under 18 percent grey. An exposure in stops on the scene, 1 stop at full travel either way: a gain, not a lift, so the black of the skin stays black and nothing turns milky. Right opens the shadow side as a fill light would; left deepens it. Whatever the three Light sliders are set to, the transition between zones widens just enough that a gradient across a face can never step backwards. Only skin is touched.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 17, 216},
+    {"skin_col_bypass", "Bypass Color", "Switches Skin Line and Skin Saturation off in one click, without touching their values - to compare the skin colour with and without.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 16, 204},
+    {"skin_hi", "Highlights", "Light on the brightest parts of the skin - forehead, cheekbones, the bridge of the nose, specular sheen - everything above about +1.25 stops over 18 percent grey. An exposure in stops on the scene, 1 stop at full travel either way, applied before the curve like a light on set: a brightened highlight rolls into the look's shoulder instead of clipping, hue and saturation stay as they are. Inside its zone the gain is exactly the slider value. Only skin is touched.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 17, 212},
+    {"skin_mid", "Midtones", "Light on the body of the skin - roughly -0.75 to +1.25 stops around 18 percent grey, where most of a well exposed face sits. An exposure in stops on the scene, 1 stop at full travel either way, before the curve. With Highlights and Shadows it reshapes the key-to-fill ratio after the fact: lift the midtones and drop the shadows for more modelling, the other way round for a flatter, softer face. Only skin is touched.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 17, 216},
+    {"skin_sh", "Shadows", "Light on the shadow side of the skin - under the jaw, the eye sockets, the side away from the key - everything below about -0.75 stop under 18 percent grey. An exposure in stops on the scene, 1 stop at full travel either way: a gain, not a lift, so the black of the skin stays black and nothing turns milky. Right opens the shadow side as a fill light would; left deepens it. Whatever the three Light sliders are set to, the transition between zones widens just enough that a gradient across a face can never step backwards. Only skin is touched.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 17, 220},
     {"skin_piv", "Zone Pivot", "Places the three light zones on the face you are grading, in stops. At zero they assume a face exposed the standard way - the body of the skin from about -0.75 to +1.25 stops around 18 percent grey. A face shot darker, or darker skin, sits lower: move the pivot left until Show Zones paints the lit cheek green and the shadow side blue; move it right for a face exposed hot or for very fair skin. It moves all three zones together and changes nothing on its own.", nodeone::kParamFloat, 0.0, -3.0, 3.0, 0.01, nullptr, 0, 17, 176},
-    {"skin_zones", "Show Zones", "Shows exactly where and how much each Light slider acts. Every skin pixel is painted with BLUE (Shadows), GREEN (Midtones) and YELLOW (Highlights) in the very proportion the three sliders apply there - a pure colour means one slider alone, a blend means a transition where two share the pixel - laid over the picture's own detail so the face stays readable. How strongly a pixel is coloured is the skin mask itself. Mask Softness widens both the blends and the edge of the mask, and Show Zones shows it. What is not skin is dark grey. With Legend on, a panel gives the middle of each transition in stops from 18 percent grey, Zone Pivot included. Set Zone Pivot until the lit cheek is green and the shadow side blue, then turn it OFF before you render.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 17, 196},
-    {"skin_light_bypass", "Bypass Light", "Switches Highlights, Midtones and Shadows of the skin off in one click, without touching their values - to compare the light on the face with and without. Show Zones keeps working, so you can still place the zones while the light is off.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 17, 204},
+    {"skin_light_bypass", "Bypass Light", "Switches Highlights, Midtones and Shadows of the skin off in one click, without touching their values - to compare the light on the face with and without. Show Zones keeps working, so you can still place the zones while the light is off.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 17, 208},
     {"skin_soft", "Mask Softness", "How softly the Light correction blends - everywhere it can show an edge. Between the zones: how gradually Shadows hands over to Midtones and Midtones to Highlights, from a narrow half-stop at 0 to a wide four and a half stops at 1 (one and a half at 0.50, the default). At the edge of the skin: how gradually the mask ends - left makes it tight and clean against a background close to skin, right feathers it strongly while the core of the face stays at full strength, so the correction melts into lips, freckles, beards and mixed light. Show Zones paints exactly this: soft blends between the zone colours and a soft edge to the skin. The light can never step backwards, whatever the setting.", nodeone::kParamFloat, 0.5, 0.0, 1.0, 0.001, nullptr, 0, 18, 180},
     {"skin_mhue", "Mask Hue Range", "Widens the skin mask in HUE, on both sides: towards yellow-orange (tungsten, sunset, a warm grade on set) and towards pink-magenta (LED, lips, flushed cheeks, cold daylight). For skin that the mask misses because the light shifted its colour. 0 = the mask measured on real faces. Watch Show Zones while you push it: everything painted is what the skin controls will touch.", nodeone::kParamFloat, 0.0, 0.0, 1.0, 0.001, nullptr, 0, 18, 184},
     {"skin_mrec", "Mask Recovery", "Recovers skin the mask lets go of because it is ALTERED - pale or washed out (overexposed, flat light, makeup, very fair skin), very saturated (sunburn, red light, a strong practical), or deep in shadow. It opens the mask to lower and higher chroma and lets it reach two stops further into the dark. Hue is untouched: that is Mask Hue Range. 0 = the mask measured on real faces.", nodeone::kParamFloat, 0.0, 0.0, 1.0, 0.001, nullptr, 0, 18, 188},
     {"skin_medge", "Mask Edge Softness", "Softens the EDGES of the skin mask in the picture, like the blur of a pro qualifier: the mask is averaged over a wider area (up to three times the radius) and follows the image contours less strictly, so the correction fades out over a wider band around the face instead of stopping on its outline. Mask Softness, above, is the softness between the light zones and of the colour key; this one is the softness in space. 0 = the measured mask.", nodeone::kParamFloat, 0.0, 0.0, 1.0, 0.001, nullptr, 0, 18, 192},
+    {"skin_zones", "Show Zones", "Shows exactly where and how much each Light slider acts. Every skin pixel is painted with BLUE (Shadows), GREEN (Midtones) and YELLOW (Highlights) in the very proportion the three sliders apply there - a pure colour means one slider alone, a blend means a transition where two share the pixel - laid over the picture's own detail so the face stays readable. How strongly a pixel is coloured is the skin mask itself. Mask Softness widens both the blends and the edge of the mask, and Show Zones shows it. What is not skin is dark grey. With Legend on, a panel gives the middle of each transition in stops from 18 percent grey, Zone Pivot included. Set Zone Pivot until the lit cheek is green and the shadow side blue, then turn it OFF before you render.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 18, 200},
+    {"skin_mask_bypass", "Bypass Mask", "Returns the skin mask to the one measured on real faces in one click, without touching the slider values: Mask Softness back to its default, Mask Hue Range, Mask Recovery and Mask Edge Softness to zero. The skin corrections stay on - only the mask they use changes - so you can compare the widened mask with the measured one. Show Zones shows whichever mask is in use.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 18, 196},
     {"skin_reset", "Reset Skin", "Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.", nodeone::kParamPush, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 15, nodeone::kNoOffset},
     {"tx_gr_on", "Enable Grain", "Film grain, modelled by measurement on film renders: strength per channel against density, grain size per gauge, the correlation between the colour layers. Added to the log image before the display rendering, so it rolls off with the picture like real grain.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 20, nodeone::kPluginOnly},
     {"tx_gr_gauge", "Format", "Film gauge. 65mm: fine, tight grain. 35mm: the classic cinema grain, larger and more visible.", nodeone::kParamChoice, 1.0, 0.0, 1.0, 1.0, kOpt_tx_gr_gauge, 2, 20, nodeone::kPluginOnly},
@@ -8591,11 +8612,11 @@ static const nodeone::ParamSpec kParams[] = {
     {"fc_overlay", "False Color Stops", "Exposure in STOPS from 18 percent grey, measured on the true scene luminance: the input is decoded by its Log Curve and the luminance Y of its Gamut is read, before white balance and before the look - what the camera recorded, the same on every look and on every colour. Fifteen zones of exactly one stop, -7 to +7, each centred on its whole stop (boundaries at the half stops): 0 is mid grey to within half a stop, +1 one stop over, -2 two stops under, and so on; below -7 and above +7 the last zone holds. The legend along the bottom shows every zone with its number, painted by the same function as the picture. Turn it OFF before you render.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 22, 32},
     {"skin_check", "Skin Check", "Paints skin by how far it sits off the vectorscope's skin tone line, and reads exactly like the scope: YELLOW means on the line, GREEN that the tone has gone too green or too cool, MAGENTA too magenta or too warm, and the stronger the paint the further off it is. The face keeps its modelling under the paint, so you can see WHICH part of it is drifting instead of a flat sticker. Only colours that could plausibly be skin are painted - too little chroma, too much chroma or too little light and the pixel is left alone, so a red dress or a bowl of fruit does not come up as a face. The bar along the bottom is the same scale as the paint, with a white tick on the line. Turn it OFF before you render.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 22, 36},
     {"legend", "Legend", "Draws the legend of whichever scope is on - the exposure zones for False Color, the four steps of the scale for Skin Check, the three light zones and their limits for Show Zones. One switch for both: they are never both on, and having to remember which checkbox belonged to which scope was the sort of thing you only discover while hunting for it. Turn it off once you know the scale and want the whole frame back.", nodeone::kParamBool, 1.0, 0.0, 1.0, 1.0, nullptr, 0, 22, 40},
-    {"credits", "Credits", "MODIFIED version of OpenDRT v1.0.1 by Jed Smith, licensed GPLv3. All credit for the image rendering is his. The seven looks are OpenDRT parameter values fitted against reference LUTs generated with spektrafilm by Andrea Volpato, CC BY-SA 4.0. No LUT data is embedded. Selling this is allowed; closing it is not - any redistribution must stay GPLv3 with source. Full attribution in NOTICE.txt.", nodeone::kParamChoice, 0.0, 0.0, 9.0, 1.0, kOpt_credits, 10, -2, 232},
-    {"trial_mark", "Trial", nullptr, nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, -2, 236},
+    {"credits", "Credits", "MODIFIED version of OpenDRT v1.0.1 by Jed Smith, licensed GPLv3. All credit for the image rendering is his. The seven looks are OpenDRT parameter values fitted against reference LUTs generated with spektrafilm by Andrea Volpato, CC BY-SA 4.0. No LUT data is embedded. Selling this is allowed; closing it is not - any redistribution must stay GPLv3 with source. Full attribution in NOTICE.txt.", nodeone::kParamChoice, 0.0, 0.0, 9.0, 1.0, kOpt_credits, 10, -2, 236},
+    {"trial_mark", "Trial", nullptr, nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, -2, 240},
 };
 static const char* const kAbout[] = {"NODE_DRT by Samuel Drouin.", "Modified OpenDRT v1.0.1 by Jed Smith, licensed GPLv3 — github.com/jedypod/open-display-transform. The rendering engine is his work; this plugin is a modified version and is distributed under the same licence, source included.", "Look presets fitted against spektrafilm references by Andrea Volpato, CC BY-SA 4.0 — github.com/andreavolpato/spektrafilm. No LUT data is embedded; what remains are fitted parameter values.", "Subtractive saturation model by Nikita Petrovich, MIT licence — the Chroma control in the Color group. See MIT-SubtractiveSaturation.txt.", "Skin Line turns hue in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.", "Texture (Grain, Halation): computed by the plugin on the log image before the display rendering. Grain and halation are models fitted by measurement on film-emulation renders - curves, kernels and weights only; no code or data of another product is included.", "OpenFX support library: Academy Software Foundation, BSD 3-Clause.",  nullptr};
-static_assert(sizeof(DctlParams) == 252, "parameter block size");
+static_assert(sizeof(DctlParams) == 256, "parameter block size");
 static_assert(offsetof(DctlParams, in_gamut) == 0, "offset of in_gamut");
 static_assert(sizeof(DctlParams::in_gamut) == 4 && ::dctl::is_same<decltype(DctlParams::in_gamut), int>::value, "type of in_gamut");
 static_assert(offsetof(DctlParams, in_oetf) == 4, "offset of in_oetf");
@@ -8694,33 +8715,35 @@ static_assert(offsetof(DctlParams, skin_mrec) == 188, "offset of skin_mrec");
 static_assert(sizeof(DctlParams::skin_mrec) == 4 && ::dctl::is_same<decltype(DctlParams::skin_mrec), float>::value, "type of skin_mrec");
 static_assert(offsetof(DctlParams, skin_medge) == 192, "offset of skin_medge");
 static_assert(sizeof(DctlParams::skin_medge) == 4 && ::dctl::is_same<decltype(DctlParams::skin_medge), float>::value, "type of skin_medge");
-static_assert(offsetof(DctlParams, skin_zones) == 196, "offset of skin_zones");
+static_assert(offsetof(DctlParams, skin_mask_bypass) == 196, "offset of skin_mask_bypass");
+static_assert(sizeof(DctlParams::skin_mask_bypass) == 4 && ::dctl::is_same<decltype(DctlParams::skin_mask_bypass), int>::value, "type of skin_mask_bypass");
+static_assert(offsetof(DctlParams, skin_zones) == 200, "offset of skin_zones");
 static_assert(sizeof(DctlParams::skin_zones) == 4 && ::dctl::is_same<decltype(DctlParams::skin_zones), int>::value, "type of skin_zones");
-static_assert(offsetof(DctlParams, skin_col_bypass) == 200, "offset of skin_col_bypass");
+static_assert(offsetof(DctlParams, skin_col_bypass) == 204, "offset of skin_col_bypass");
 static_assert(sizeof(DctlParams::skin_col_bypass) == 4 && ::dctl::is_same<decltype(DctlParams::skin_col_bypass), int>::value, "type of skin_col_bypass");
-static_assert(offsetof(DctlParams, skin_light_bypass) == 204, "offset of skin_light_bypass");
+static_assert(offsetof(DctlParams, skin_light_bypass) == 208, "offset of skin_light_bypass");
 static_assert(sizeof(DctlParams::skin_light_bypass) == 4 && ::dctl::is_same<decltype(DctlParams::skin_light_bypass), int>::value, "type of skin_light_bypass");
-static_assert(offsetof(DctlParams, skin_hi) == 208, "offset of skin_hi");
+static_assert(offsetof(DctlParams, skin_hi) == 212, "offset of skin_hi");
 static_assert(sizeof(DctlParams::skin_hi) == 4 && ::dctl::is_same<decltype(DctlParams::skin_hi), float>::value, "type of skin_hi");
-static_assert(offsetof(DctlParams, skin_mid) == 212, "offset of skin_mid");
+static_assert(offsetof(DctlParams, skin_mid) == 216, "offset of skin_mid");
 static_assert(sizeof(DctlParams::skin_mid) == 4 && ::dctl::is_same<decltype(DctlParams::skin_mid), float>::value, "type of skin_mid");
-static_assert(offsetof(DctlParams, skin_sh) == 216, "offset of skin_sh");
+static_assert(offsetof(DctlParams, skin_sh) == 220, "offset of skin_sh");
 static_assert(sizeof(DctlParams::skin_sh) == 4 && ::dctl::is_same<decltype(DctlParams::skin_sh), float>::value, "type of skin_sh");
-static_assert(offsetof(DctlParams, tone_curve_bypass) == 220, "offset of tone_curve_bypass");
+static_assert(offsetof(DctlParams, tone_curve_bypass) == 224, "offset of tone_curve_bypass");
 static_assert(sizeof(DctlParams::tone_curve_bypass) == 4 && ::dctl::is_same<decltype(DctlParams::tone_curve_bypass), int>::value, "type of tone_curve_bypass");
-static_assert(offsetof(DctlParams, tonescale_preset) == 224, "offset of tonescale_preset");
+static_assert(offsetof(DctlParams, tonescale_preset) == 228, "offset of tonescale_preset");
 static_assert(sizeof(DctlParams::tonescale_preset) == 4 && ::dctl::is_same<decltype(DctlParams::tonescale_preset), int>::value, "type of tonescale_preset");
-static_assert(offsetof(DctlParams, ts_intensity) == 228, "offset of ts_intensity");
+static_assert(offsetof(DctlParams, ts_intensity) == 232, "offset of ts_intensity");
 static_assert(sizeof(DctlParams::ts_intensity) == 4 && ::dctl::is_same<decltype(DctlParams::ts_intensity), float>::value, "type of ts_intensity");
-static_assert(offsetof(DctlParams, credits) == 232, "offset of credits");
+static_assert(offsetof(DctlParams, credits) == 236, "offset of credits");
 static_assert(sizeof(DctlParams::credits) == 4 && ::dctl::is_same<decltype(DctlParams::credits), int>::value, "type of credits");
-static_assert(offsetof(DctlParams, trial_mark) == 236, "offset of trial_mark");
+static_assert(offsetof(DctlParams, trial_mark) == 240, "offset of trial_mark");
 static_assert(sizeof(DctlParams::trial_mark) == 4 && ::dctl::is_same<decltype(DctlParams::trial_mark), int>::value, "type of trial_mark");
-static_assert(offsetof(DctlParams, display_encoding_preset) == 240, "offset of display_encoding_preset");
+static_assert(offsetof(DctlParams, display_encoding_preset) == 244, "offset of display_encoding_preset");
 static_assert(sizeof(DctlParams::display_encoding_preset) == 4 && ::dctl::is_same<decltype(DctlParams::display_encoding_preset), int>::value, "type of display_encoding_preset");
-static_assert(offsetof(DctlParams, look_intensity) == 244, "offset of look_intensity");
+static_assert(offsetof(DctlParams, look_intensity) == 248, "offset of look_intensity");
 static_assert(sizeof(DctlParams::look_intensity) == 4 && ::dctl::is_same<decltype(DctlParams::look_intensity), float>::value, "type of look_intensity");
-static_assert(offsetof(DctlParams, tone_intensity) == 248, "offset of tone_intensity");
+static_assert(offsetof(DctlParams, tone_intensity) == 252, "offset of tone_intensity");
 static_assert(sizeof(DctlParams::tone_intensity) == 4 && ::dctl::is_same<decltype(DctlParams::tone_intensity), float>::value, "type of tone_intensity");
 } // namespace nodeone_drt
 namespace nodeone {
@@ -8730,7 +8753,7 @@ const PluginDef kPlugin_drt = {
     "NODE_DRT — display rendering transform. Modified OpenDRT v1.0.1 by Jed Smith, GPLv3, with film look presets fitted against spektrafilm references. Workflow: DaVinci YRGB (not Color Managed), timeline DaVinci Wide Gamut / Intermediate.",
     1, 2,
     nodeone_drt::kGroups, 23,
-    nodeone_drt::kParams, 85,
+    nodeone_drt::kParams, 86,
     sizeof(nodeone_drt::DctlParams),
     nodeone_drt::kMetalSource, "node_one_main",
     &nodeone_drt::cpu_render,

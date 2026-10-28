@@ -294,6 +294,8 @@ DEFINE_UI_PARAMS(skin_mrec, 🧑 Mask_Recovery, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1
 DEFINE_UI_TOOLTIP(skin_mrec, "Recovers skin the mask lets go of because it is ALTERED - pale or washed out (overexposed, flat light, makeup, very fair skin), very saturated (sunburn, red light, a strong practical), or deep in shadow. It opens the mask to lower and higher chroma and lets it reach two stops further into the dark. Hue is untouched: that is Mask Hue Range. 0 = the mask measured on real faces.")
 DEFINE_UI_PARAMS(skin_medge, 🧑 Mask_Edge_Softness, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(skin_medge, "Softens the EDGES of the skin mask in the picture, like the blur of a pro qualifier: the mask is averaged over a wider area (up to three times the radius) and follows the image contours less strictly, so the correction fades out over a wider band around the face instead of stopping on its outline. Mask Softness, above, is the softness between the light zones and of the colour key; this one is the softness in space. 0 = the measured mask.")
+DEFINE_UI_PARAMS(skin_mask_bypass, ↩ Bypass_Skin_Mask, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(skin_mask_bypass, "Returns the skin mask to the one measured on real faces in one click, without touching the slider values: Mask Softness back to its default, Mask Hue Range, Mask Recovery and Mask Edge Softness to zero. The skin corrections stay on - only the mask they use changes - so you can compare the widened mask with the measured one. Show Zones shows whichever mask is in use.")
 DEFINE_UI_PARAMS(skin_zones, 🧑 Show_Zones, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_TOOLTIP(skin_zones, "Shows exactly where and how much each Light slider acts. Every skin pixel is painted with BLUE (Shadows), GREEN (Midtones) and YELLOW (Highlights) in the very proportion the three sliders apply there - a pure colour means one slider alone, a blend means a transition where two share the pixel - laid over the picture's own detail so the face stays readable. How strongly a pixel is coloured is the skin mask itself. Mask Softness widens both the blends and the edge of the mask, and Show Zones shows it. What is not skin is dark grey. With Legend on, a panel gives the middle of each transition in stops from 18 percent grey, Zone Pivot included. Set Zone Pivot until the lit cheek is green and the shadow side blue, then turn it OFF before you render.")
 DEFINE_UI_PARAMS(skin_col_bypass, ↩ Bypass_Skin_Colour, DCTLUI_CHECK_BOX, 0)
@@ -3082,6 +3084,13 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // d'une peau ne change pas avec l'exposition : le poids est constant le long
   // d'une rampe. La couleur est normalisee par son canal fort, donc seule la
   // teinte et la chroma comptent ; une porte de niveau garde le bruit du noir.
+  // Bypass Skin Mask : le masque revient a celui mesure sur les visages -
+  // Mask Softness a son defaut 0.5, les trois reglages d'elargissement a 0 -
+  // sans toucher aux valeurs des sliders.
+  const float sk_soft_e  = skin_mask_bypass ? 0.5f : skin_soft;
+  const float sk_mhue_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mhue, 0.0f, 1.0f);
+  const float sk_mrec_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mrec, 0.0f, 1.0f);
+  const float sk_medge_e = skin_mask_bypass ? 0.0f : _clampf(skin_medge, 0.0f, 1.0f);
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
   if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
@@ -3092,8 +3101,8 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // Masque ADOUCI DANS L'IMAGE, voir skin_mask_spatial.
     const float3x3 sk_pre = mat3_mul(matrix_xyz_to_p3d65, mat3_mul(in_to_xyz, wb_m));
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
-                                         rs_sa, rs_w, look_exp, skin_soft,
-                                         _clampf(skin_mhue, 0.0f, 1.0f), _clampf(skin_mrec, 0.0f, 1.0f), _clampf(skin_medge, 0.0f, 1.0f),
+                                         rs_sa, rs_w, look_exp, sk_soft_e,
+                                         sk_mhue_e, sk_mrec_e, sk_medge_e,
                                          (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0,
                                          (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0);
     sk_w_scene = skm.x;
@@ -3136,7 +3145,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   if (sk_wl_scene > 0.0f) {
     const float Ys = 0.2289746f*rgb.x + 0.6917385f*rgb.y + 0.0792869f*rgb.z;
     skz_x = _log2f(_fmaxf(Ys, 1.0e-10f)/0.18f) - skin_piv;
-    const float Tm = SKL_T*_powf(3.0f, (skin_soft - 0.5f)*2.0f);
+    const float Tm = SKL_T*_powf(3.0f, (sk_soft_e - 0.5f)*2.0f);
     const float T1 = _fmaxf(Tm, SKL_K*_fabs(skin_mid - skin_sh));
     const float T2 = _fmaxf(Tm, SKL_K*_fabs(skin_hi - skin_mid));
     skz_s1 = smootherstep(SKL_B1 - 0.5f*T1, SKL_B1 + 0.5f*T1, skz_x);

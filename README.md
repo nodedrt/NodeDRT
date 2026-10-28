@@ -74,7 +74,7 @@ simply does not exist here.
 
 ## The plugin
 
-79 controls in eight groups: Input / Output, White, Look / Toning / Tone,
+80 controls in eight groups: Input / Output, White, Look / Toning / Tone,
 Color, Trims, Skin, Texture, Scopes. Groups are
 split into collapsible sub-sections, each with its own bypass, and every
 creative group has a one-click Reset.
@@ -87,7 +87,8 @@ creative group has a one-click Reset.
   further into the dark); *Mask Edge Softness* feathers the mask in the
   picture, up to three times its radius, with two extra sample rings so a
   sharp outline does not echo. All three feed Skin Line, Skin Saturation and
-  the Light zones, and Show Zones shows the result.
+  the Light zones. Mask Softness, Show Zones and a Bypass Mask (back to the
+  measured mask without touching the sliders) sit in the same sub-section.
 - **False Color Stops** (version 1.2, 28 October 2026): exposure in stops
   from 18 % grey, on the true scene luminance - the input decoded by its Log
   Curve, Y of its Gamut - before white balance and the look, so it reads what
