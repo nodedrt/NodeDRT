@@ -228,8 +228,7 @@ PLUGINS = [
             ]},
             {'name': 'grp_view', 'label': 'Scopes', 'open': False, 'params': [
                 P('crv_enable', 'Curve View'), P('crv_size', 'Curve Size'),
-                P('fc_overlay', 'False Color'),
-                P('fc_mode', 'False Color Mode'),
+                P('fc_overlay', 'False Color Stops'),
                 P('skin_check', 'Skin Check'),
                 P('legend', 'Legend'),
             ]},

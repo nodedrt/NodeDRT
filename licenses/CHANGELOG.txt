@@ -86,13 +86,13 @@ These constants were fitted by measuring film-emulation renders. Only the
 numbers are used.
 
 
-False Color: Stop Zones (version 1.2, 28 October 2026)
-------------------------------------------------------
-New False Color Mode menu. Stop Zones (default) reads the true scene
-luminance - input decoded by its log curve, Y row of the input gamut - in
-stops from 18% grey, in fifteen one-stop zones from -7 to +7 centred on the
-whole stops, with a horizontal numbered legend. Colour palette designed for
-this plugin. Color Analyzer keeps the previous reading unchanged.
+False Color Stops (version 1.2, 28 October 2026)
+------------------------------------------------
+The False Color overlay now reads the true scene luminance - input decoded by
+its log curve, Y row of the input gamut - in stops from 18% grey, in fifteen
+one-stop zones from -7 to +7 centred on the whole stops, with a horizontal
+numbered legend. Colour palette designed for this plugin. The former reading
+(luma of the log code values) is gone.
 
 Base grain made finer and quieter (28 October 2026): Amount 1 / Size 1 now
 give 75 % of the measured grain strength at 85 % of its size. The measured

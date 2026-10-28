@@ -100,7 +100,6 @@ inline float _tex2D(DctlTex t, int x, int y) {
 #line 1 "node_one_params"
 enum { i_xyz, i_ap0, i_ap1, i_p3d65, i_rec2020, i_rec709, i_awg3, i_awg4, i_rwg, i_sgamut3, i_sgamut3cine, i_vgamut, i_bmdwg, i_egamut, i_egamut2, i_davinciwg };
 enum { ioetf_linear, ioetf_davinci_intermediate, ioetf_filmlight_tlog, ioetf_acescct, ioetf_arri_logc3, ioetf_arri_logc4, ioetf_redlog3g10, ioetf_panasonic_vlog, ioetf_sony_slog3, ioetf_fuji_flog };
-enum { fcm_zones, fcm_analyzer };
 enum { look0, look1, look2, look3, look4, look5, look6, look7 };
 enum { ptn0, ptn1, ptn2, ptn3, ptn4, ptn5, ptn6, ptn7, ptn8 };
 enum { wb0, wb1, wb2, wb3, wb4, wb5, wb6, wb7, wb8, wb9, wb10, wb11, wb12, wb13, wb14, wb15, wb16, wb17 };
@@ -118,7 +117,6 @@ struct DctlParams {
     int crv_enable;
     float crv_size;
     int fc_overlay;
-    int fc_mode;
     int skin_check;
     int legend;
     int look_preset;
@@ -172,8 +170,6 @@ struct DctlParams {
     float tone_intensity;
 };
 #line 1 "NODE_DRT.dctl"
-
-
 
 
 
@@ -2162,36 +2158,6 @@ __DEVICE__ float ovl_ss(float e0, float e1, float x) {
 
 
 
-
-
-
-
-
-__DEVICE__ float3 fc_color(float s) {
-    int n = 0;
-    for (int i = 0; i < 12; ++i) if (s >= -5.5f + (float)i) ++n;   
-    float3 c;
-    if      (n == 12) c = make_float3(1.00f, 1.00f, 1.00f);   
-    else if (n == 11) c = make_float3(1.00f, 0.65f, 0.85f);   
-    else if (n == 10) c = make_float3(0.95f, 0.35f, 0.20f);   
-    else if (n ==  9) c = make_float3(1.00f, 0.60f, 0.10f);   
-    else if (n ==  8) c = make_float3(1.00f, 0.90f, 0.20f);   
-    else if (n ==  7) c = make_float3(0.60f, 0.90f, 0.30f);   
-    else if (n ==  6) c = make_float3(0.50f, 0.50f, 0.50f);   
-    else if (n ==  5) c = make_float3(0.15f, 0.55f, 0.30f);   
-    else if (n ==  4) c = make_float3(0.10f, 0.75f, 0.90f);   
-    else if (n ==  3) c = make_float3(0.10f, 0.45f, 1.00f);   
-    else if (n ==  2) c = make_float3(0.15f, 0.15f, 0.75f);   
-    else if (n ==  1) c = make_float3(0.50f, 0.20f, 0.80f);   
-    else              c = make_float3(0.30f, 0.00f, 0.40f);   
-    return make_float3(spowf(c.x, 2.4f), spowf(c.y, 2.4f), spowf(c.z, 2.4f));
-}
-
-
-
-
-
-
 __DEVICE__ int fc_zone_of(float s) {
     return (int)clampf(_floorf(s + 0.5f), -7.0f, 7.0f);
 }
@@ -2639,7 +2605,7 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(ws/gs, wl/gs);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int fc_mode = P_.fc_mode; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
   
   
   
@@ -3005,8 +2971,6 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   }
 
   
-  const float fc_code = 0.2126f*rgb.x + 0.7152f*rgb.y + 0.0722f*rgb.z;
-  
   rgb = linearize(rgb, in_oetf);
   
   
@@ -3015,7 +2979,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   float fc_Y = 0.0f;
-  if (fc_overlay == 1 && fc_mode == 0) {
+  if (fc_overlay == 1) {
     fc_Y = vdot(in_to_xyz, rgb).y;
     if (fc_Y <= 0.0f) fc_Y = 0.2126f*_fmaxf(rgb.x, 0.0f) + 0.7152f*_fmaxf(rgb.y, 0.0f) + 0.0722f*_fmaxf(rgb.z, 0.0f);
   }
@@ -3100,16 +3064,9 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   
-  
-  
   float fc_stops = 0.0f;
   if (fc_overlay == 1) {
-    if (fc_mode == 0) {
-      fc_stops = _log2f(_fmaxf(fc_Y, 1.0e-9f)/0.18f);
-    } else {
-      const float fc_lin = linearize(make_float3(fc_code, fc_code, fc_code), in_oetf).x;
-      fc_stops = _log2f(_fmaxf(fc_lin, 1.0e-6f)/0.18f);
-    }
+    fc_stops = _log2f(_fmaxf(fc_Y, 1.0e-9f)/0.18f);
   }
 
   
@@ -4017,7 +3974,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   
-  if (fc_overlay == 1 && fc_mode == 0) {
+  if (fc_overlay == 1) {
     
     float3 fz = fc_zone_color(fc_zone_of(fc_stops));   
     if ((eotf > 0) && (eotf < 4)) fz = spowf3(fz, 1.0f/eotf_p);
@@ -4071,78 +4028,6 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
         else            tc = ovl_glyph_cov(zpx, zpy, ccx - 1.5f*zsf, ly, zsf, 0);
         const float lum_sw = 0.2126f*sw.x + 0.7152f*sw.y + 0.0722f*sw.z;
         const float tcol = (lum_sw > 0.5000f) ? 0.0f : 0.9000f;
-        rgb.x = ovl_mix(rgb.x, tcol, tc);
-        rgb.y = ovl_mix(rgb.y, tcol, tc);
-        rgb.z = ovl_mix(rgb.z, tcol, tc);
-      }
-    }
-  }
-  else if (fc_overlay == 1) {
-    float3 fc = fc_color(fc_stops);                 
-    if ((eotf > 0) && (eotf < 4)) fc = spowf3(fc, 1.0f/eotf_p);
-    else if (eotf == 4) fc = eotf_pq(fc, 1);
-    else if (eotf == 5) fc = eotf_hlg(fc, 1);
-    rgb = fc;
-
-    
-    
-    
-    
-    const float fhf = res.y;
-    const float pxf = pos.x + 0.5f;
-    const float pyf = pos.y + 0.5f;
-    const float chf = 0.052f*fhf, gpf = 0.006f*fhf, cwf = 0.085f*fhf;
-    const float x0f = 0.030f*fhf, pdf = 0.012f*fhf;
-    const float bwf = _fmaxf(1.0f, 0.0020f*fhf);
-    const float blkf = 13.0f*chf + 12.0f*gpf;
-    const float y0f = 0.5f*(fhf - blkf);
-    const float ccxf = x0f + 0.5f*cwf;
-    const float sfg = _fmaxf(1.0f, _floorf(0.006f*fhf + 0.5f));
-    if (legend == 1 &&
-        pxf < x0f + cwf + pdf + 2.0f &&
-        pyf > y0f - pdf - 2.0f && pyf < y0f + blkf + pdf + 2.0f) {
-      float dpanf = ovl_rrect_sdf(pxf, pyf, ccxf, 0.5f*fhf,
-                                  0.5f*cwf + pdf, 0.5f*blkf + pdf, 0.25f*chf);
-      float apanf = ovl_cov(dpanf);
-      rgb.x = ovl_mix(rgb.x, 0.0800f, apanf);
-      rgb.y = ovl_mix(rgb.y, 0.0800f, apanf);
-      rgb.z = ovl_mix(rgb.z, 0.0800f, apanf);
-      for (int i = 0; i < 13; ++i) {
-        float cyf = y0f + (float)i*(chf + gpf) + 0.5f*chf;
-        
-        
-        
-        
-        float aout = ovl_cov(ovl_rrect_sdf(pxf, pyf, ccxf, cyf,
-                                           0.5f*cwf + bwf, 0.5f*chf + bwf,
-                                           0.12f*chf + bwf));
-        if (aout <= 0.0f) continue;
-        rgb.x = ovl_mix(rgb.x, 0.3200f, aout);
-        rgb.y = ovl_mix(rgb.y, 0.3200f, aout);
-        rgb.z = ovl_mix(rgb.z, 0.3200f, aout);
-        float a = ovl_cov(ovl_rrect_sdf(pxf, pyf, ccxf, cyf,
-                                        0.5f*cwf, 0.5f*chf, 0.12f*chf));
-        if (a <= 0.0f) continue;
-        int z = 12 - i;                               
-        float3 sw = fc_color((float)(z - 6));
-        if ((eotf > 0) && (eotf < 4)) sw = spowf3(sw, 1.0f/eotf_p);
-        else if (eotf == 4) sw = eotf_pq(sw, 1);
-        else if (eotf == 5) sw = eotf_hlg(sw, 1);
-        rgb.x = ovl_mix(rgb.x, sw.x, a);
-        rgb.y = ovl_mix(rgb.y, sw.y, a);
-        rgb.z = ovl_mix(rgb.z, sw.z, a);
-        
-        
-        
-        float lyf = cyf - 2.5f*sfg;
-        float tc;
-        if (z > 6)      tc = _fmaxf(ovl_glyph_cov(pxf, pyf, ccxf - 3.5f*sfg, lyf, sfg, 10),
-                                    ovl_glyph_cov(pxf, pyf, ccxf + 0.5f*sfg, lyf, sfg, z - 6));
-        else if (z < 6) tc = _fmaxf(ovl_glyph_cov(pxf, pyf, ccxf - 3.5f*sfg, lyf, sfg, 11),
-                                    ovl_glyph_cov(pxf, pyf, ccxf + 0.5f*sfg, lyf, sfg, 6 - z));
-        else            tc = ovl_glyph_cov(pxf, pyf, ccxf - 1.5f*sfg, lyf, sfg, 0);
-        float lum_sw = 0.2126f*sw.x + 0.7152f*sw.y + 0.0722f*sw.z;
-        float tcol = (lum_sw > 0.5000f) ? 0.0f : 0.9000f;
         rgb.x = ovl_mix(rgb.x, tcol, tc);
         rgb.y = ovl_mix(rgb.y, tcol, tc);
         rgb.z = ovl_mix(rgb.z, tcol, tc);
