@@ -92,6 +92,35 @@ int main()
     // falloff
     for (int r = 38; r < 52; ++r) printf("  r=%d dR %.5f\n", r, at(out, 700 + r, 270, 0) - at(img, 700 + r, 270, 0));
 
+    // 5. halation softness: same total halo light, smoother (no ripple), flat areas untouched
+    {
+        auto haloSum = [&](float soft, std::vector<float>& o, float& peak) {
+            TextureSettings hs; hs.halOn = true; hs.gamut = 15; hs.oetf = 1; hs.halSoftness = soft;
+            TexturePlan hp; texturePlan(hs, W, H, hp);
+            textureCPU(hp, img.data(), W * 4, o.data(), W * 4);
+            double sum = 0; peak = 0;
+            for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) {
+                const float d = tx_decode(1, o[((size_t)y * W + x) * 4]) - tx_decode(1, img[((size_t)y * W + x) * 4]);
+                const float dx = x - 700.f, dy = y - 270.f;
+                sum += tx_halT(tx_decode(1, o[((size_t)y * W + x) * 4])) - tx_halT(tx_decode(1, img[((size_t)y * W + x) * 4]));
+                if (dx * dx + dy * dy >= 40.f * 40.f) peak = std::max(peak, d);
+            }
+            return sum;
+        };
+        std::vector<float> o0(img.size()), o1(img.size());
+        float p0, p1;
+        const double s0 = haloSum(0.0f, o0, p0), s1 = haloSum(1.0f, o1, p1);
+        printf("halation softness: halo (T domain) %.1f -> %.1f, peak %.4f -> %.4f\n", s0, s1, p0, p1);
+        CHECK(p1 < p0, "softness lowers the rim peak");
+        CHECK(std::fabs(s1 / s0 - 1.0) < 0.05, "softness keeps the halo's light (%.2f)", s1 / s0);
+        CHECK(o1[((size_t)270 * W + 700) * 4] == img[((size_t)270 * W + 700) * 4], "softness: disc centre untouched");
+        CHECK(o1[((size_t)50 * W + 50) * 4] == img[((size_t)50 * W + 50) * 4], "softness: far pixel untouched");
+        float prev = 1e9f; bool mono = true;
+        for (int r = 41; r < 75; ++r) { float d = o1[((size_t)270 * W + 700 + r) * 4] - img[((size_t)270 * W + 700 + r) * 4]; if (d > prev + 1e-6f) mono = false; prev = d; }
+        CHECK(mono, "soft halo falls off monotonically");
+        for (int r = 38; r < 60; r += 3) printf("  soft r=%d dR %.5f\n", r, o1[((size_t)270 * W + 700 + r) * 4] - img[((size_t)270 * W + 700 + r) * 4]);
+    }
+
     printf(fails ? "\n%d FAILURES\n" : "\nALL OK\n", fails);
     return fails ? 1 : 0;
 }

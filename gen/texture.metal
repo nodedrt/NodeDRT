@@ -64,7 +64,8 @@ struct TexArgs {
     int halOn, grOn;
     unsigned int seed;   // grain pattern (per frame when animated)
     int srcRow, dstRow;  // row strides in floats
-    int pad0, pad1;
+    int halSoftR;        // radius of the halo softening (0 = none)
+    int pad1;
     float halS, halThr, kw0, kw1, kw2;   // halation strength, threshold, per-channel weights
     float halNorm[6];                    // weight of each separable term
     float grScale, grSat, grSh, grMd, grHi;
@@ -282,7 +283,7 @@ kernel void tx_hh(constant TexArgs& A [[buffer(0)]], const device float* G [[buf
 // 4. vertical pass, terms summed with their weights -> B
 kernel void tx_hv(constant TexArgs& A [[buffer(0)]], const device float* tmp6 [[buffer(1)]],
                   const device float* K [[buffer(2)]], device float* Bg [[buffer(3)]],
-                  uint2 gid [[thread_position_in_grid]])
+                  const device float* G [[buffer(4)]], uint2 gid [[thread_position_in_grid]])
 {
     const int x = (int)gid.x, y = (int)gid.y;
     if (x >= A.W2 || y >= A.H2) return;
@@ -294,7 +295,31 @@ kernel void tx_hv(constant TexArgs& A [[buffer(0)]], const device float* tmp6 [[
         for (int j = -R; j <= R; ++j) a += k[j + R] * tmp6[(r * A.H2 + tx_ci(y + j, 0, A.H2 - 1)) * A.W2 + x];
         b += a * A.halNorm[r];
     }
-    Bg[y * A.W2 + x] = b;
+    Bg[y * A.W2 + x] = A.halSoftR > 0 ? metal::fmax(b - G[y * A.W2 + x], 0.0f) : b;
+}
+
+// 4b. halo softness: normalised gaussian, horizontal then vertical
+kernel void tx_sh(constant TexArgs& A [[buffer(0)]], const device float* Bg [[buffer(1)]],
+                  const device float* K [[buffer(2)]], device float* tmp [[buffer(3)]],
+                  uint2 gid [[thread_position_in_grid]])
+{
+    const int x = (int)gid.x, y = (int)gid.y;
+    if (x >= A.W2 || y >= A.H2) return;
+    const int SR = A.halSoftR;
+    float a = 0.0f;
+    for (int i = -SR; i <= SR; ++i) a += K[i + SR] * Bg[y * A.W2 + tx_ci(x + i, 0, A.W2 - 1)];
+    tmp[y * A.W2 + x] = a;
+}
+kernel void tx_sv(constant TexArgs& A [[buffer(0)]], const device float* tmp [[buffer(1)]],
+                  const device float* K [[buffer(2)]], device float* Bg [[buffer(3)]],
+                  uint2 gid [[thread_position_in_grid]])
+{
+    const int x = (int)gid.x, y = (int)gid.y;
+    if (x >= A.W2 || y >= A.H2) return;
+    const int SR = A.halSoftR;
+    float a = 0.0f;
+    for (int j = -SR; j <= SR; ++j) a += K[j + SR] * tmp[tx_ci(y + j, 0, A.H2 - 1) * A.W2 + x];
+    Bg[y * A.W2 + x] = a;
 }
 
 // 5. grain noise, horizontal pass over the padded band (3 channels)
@@ -352,6 +377,7 @@ kernel void tx_final(constant TexArgs& A [[buffer(0)]], const device float* src 
             z2 += k * T[(2 * Hp + y + j) * A.W + x];
         }
     }
+    if (A.halSoftR > 0) S0 = 0.0f;   // B already is the (diffused) halo
     c = tx_pixel(A.halOn, A.halS, A.kw0, A.kw1, A.kw2, A.grOn, A.grScale, A.grSat, A.grSh, A.grMd, A.grHi,
                  A.Yr, A.Yg, A.Yb, c, S0, B, z0, z1, z2);
     d[0] = c.r == c0.r ? p[0] : p[0] + (tx_encode(A.oetf, c.r) - tx_encode(A.oetf, c0.r));

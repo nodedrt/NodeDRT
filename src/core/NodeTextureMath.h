@@ -61,7 +61,8 @@ struct TexArgs {
     int halOn, grOn;
     unsigned int seed;   // grain pattern (per frame when animated)
     int srcRow, dstRow;  // row strides in floats
-    int pad0, pad1;
+    int halSoftR;        // radius of the halo softening (0 = none)
+    int pad1;
     float halS, halThr, kw0, kw1, kw2;   // halation strength, threshold, per-channel weights
     float halNorm[6];                    // weight of each separable term
     float grScale, grSat, grSh, grMd, grHi;

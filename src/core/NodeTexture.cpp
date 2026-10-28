@@ -113,6 +113,23 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
         }
         if (tot > 1e-6)
             for (int r = 0; r < 6; ++r) a.halNorm[r] = (float)(a.halNorm[r] / tot);
+        // SOFTNESS: a normalised gaussian diffusion of the halo on its own
+        // grid. The total light of the halo is kept (unit sum), only its
+        // profile changes: the tight measured rim opens into a smooth glow,
+        // its edge loses every trace of the kernel's ripples, and a flat
+        // highlight still blurs to itself, so it stays untouched.
+        plan.halSoftK.clear();
+        a.halSoftR = 0;
+        const float soft = std::min(std::max(s.halSoftness, 0.0f), 1.0f);
+        const float sig = soft * 1.5f * HX_R * scale;   // up to 1.5 x the kernel radius
+        if (sig > 0.35f) {
+            const int SR = (int)std::ceil(3.0f * sig);
+            a.halSoftR = SR;
+            plan.halSoftK.resize(2 * SR + 1);
+            double sum = 0.0;
+            for (int i = -SR; i <= SR; ++i) sum += plan.halSoftK[i + SR] = std::exp(-0.5f * i * i / (sig * sig));
+            for (float& v : plan.halSoftK) v = (float)(v / sum);
+        }
         a.halS = s.halStrength;
         a.halThr = s.halThreshold;
         const float w = std::min(std::max(s.halWarmth, -1.0f), 1.0f);
@@ -220,9 +237,30 @@ void textureCPU(const TexturePlan& plan, const float* src, ptrdiff_t srcRow, flo
                     for (int j = -R; j <= R; ++j) a += k[j + R] * tmp6[((size_t)r * H2 + clampi(y + j, 0, H2 - 1)) * W2 + x];
                     b += a * A.halNorm[r];
                 }
-                Bg[(size_t)y * W2 + x] = b;
+                // with Softness, the HALO itself (the excess over the pixel's own
+                // source) is what gets diffused: its total light is then kept.
+                Bg[(size_t)y * W2 + x] = A.halSoftR > 0 ? std::max(b - G[(size_t)y * W2 + x], 0.0f) : b;
             }
         });
+        if (A.halSoftR > 0) {
+            const int SR = A.halSoftR;
+            const float* k = plan.halSoftK.data();
+            float* tmp = tmp6.data();   // the first plane is free again
+            parallelRows(H2, [&](int y) {
+                for (int x = 0; x < W2; ++x) {
+                    float a = 0.0f;
+                    for (int i = -SR; i <= SR; ++i) a += k[i + SR] * Bg[(size_t)y * W2 + clampi(x + i, 0, W2 - 1)];
+                    tmp[(size_t)y * W2 + x] = a;
+                }
+            });
+            parallelRows(H2, [&](int y) {
+                for (int x = 0; x < W2; ++x) {
+                    float a = 0.0f;
+                    for (int j = -SR; j <= SR; ++j) a += k[j + SR] * tmp[(size_t)clampi(y + j, 0, H2 - 1) * W2 + x];
+                    Bg[(size_t)y * W2 + x] = a;
+                }
+            });
+        }
     }
 
     // ---- grain: horizontal pass over a band padded by R rows top and bottom
@@ -282,6 +320,7 @@ void textureCPU(const TexturePlan& plan, const float* src, ptrdiff_t srcRow, flo
                     for (int j = 0; j <= 2 * GR; ++j) a += plan.grK[j] * T[((size_t)ch * Hp + y + j) * W + x];
                     z[ch] = a;
                 }
+            if (A.halSoftR > 0) S0 = 0.0f;   // B already is the (diffused) halo
             c = tx_pixel(A.halOn, A.halS, A.kw0, A.kw1, A.kw2, A.grOn, A.grScale, A.grSat, A.grSh, A.grMd, A.grHi,
                          A.Yr, A.Yg, A.Yb, c, S0, B, z[0], z[1], z[2]);
             d[0] = c.r == c0.r ? p[0] : p[0] + (tx_encode(A.oetf, c.r) - tx_encode(A.oetf, c0.r));

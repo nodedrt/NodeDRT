@@ -74,7 +74,7 @@ simply does not exist here.
 
 ## The plugin
 
-75 controls in eight groups: Input / Output, White, Look / Toning / Tone,
+76 controls in eight groups: Input / Output, White, Look / Toning / Tone,
 Color, Trims, Skin, Texture, Scopes. Groups are
 split into collapsible sub-sections, each with its own bypass, and every
 creative group has a one-click Reset.
@@ -89,7 +89,8 @@ creative group has a one-click Reset.
     proxy or HD render looks like the UHD one.
   - *Halation*: the red-orange glow around bright lights. Source threshold,
     radial spread and layer weights are measured; Strength, Size, Threshold,
-    Warmth. Only light from brighter surroundings is added, so a flat
+    Softness, Warmth. Softness diffuses the halo with a normalised gaussian:
+    the halo's total light is kept, only its profile opens into a smooth glow. Only light from brighter surroundings is added, so a flat
     highlight keeps its colour and the halo spreads out of it.
   - Both run in a native stage (`src/core/NodeTexture*`, CPU and Metal, the
     same formulas compiled twice) on the log image before the DCTL: decode the

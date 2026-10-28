@@ -79,7 +79,8 @@ spread = a radial kernel stored as six separable terms (4K UHD, scaled with
 the frame width, evaluated at half resolution on large frames); added in the
 domain T(l) = (l + 0.0482)^0.3635 with layer weights R 1.074, G 0.282,
 B 0.100. Only the excess of the surroundings over the pixel's own source is
-added.
+added. Softness (0 to 1) then diffuses the halo with a gaussian of unit sum
+(sigma up to 1.5 x the kernel radius): same total light, smoother profile.
 
 These constants were fitted by measuring film-emulation renders. Only the
 numbers are used.

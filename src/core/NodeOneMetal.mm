@@ -288,7 +288,7 @@ void blitCopy(id<MTLCommandBuffer> cb, id<MTLBuffer> src, int srcRowFloats, id<M
 // =============================================================================
 //  Texture stage (grain + halation) on the GPU: the passes of textureCPU().
 // =============================================================================
-enum { TX_SRC, TX_DOWN, TX_HH, TX_HV, TX_GH, TX_FINAL, TX_N };
+enum { TX_SRC, TX_DOWN, TX_HH, TX_HV, TX_SH, TX_SV, TX_GH, TX_FINAL, TX_N };
 
 struct TexturePsos { id<MTLComputePipelineState> p[TX_N]; };
 
@@ -309,7 +309,7 @@ bool texturePipelines(id<MTLDevice> dev, TexturePsos& out, std::string& error)
                                              error:&err];
     std::string msg;
     TexturePsos ps;
-    static const char* const names[TX_N] = {"tx_src", "tx_down", "tx_hh", "tx_hv", "tx_gh", "tx_final"};
+    static const char* const names[TX_N] = {"tx_src", "tx_down", "tx_hh", "tx_hv", "tx_sh", "tx_sv", "tx_gh", "tx_final"};
     if (!lib) msg = err ? err.localizedDescription.UTF8String : "texture kernels compile failed";
     for (int i = 0; i < TX_N && msg.empty(); ++i) {
         id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:names[i]]];
@@ -401,7 +401,24 @@ id<MTLBuffer> encodeTexture(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const Te
         [enc setBuffer:tmp6 offset:0 atIndex:1];
         setTable(enc, dev, plan.halK, 2);
         [enc setBuffer:Bg offset:0 atIndex:3];
+        [enc setBuffer:Sd offset:0 atIndex:4];
         dispatch2D(enc, ps.p[TX_HV], A.W2, A.H2);
+        if (A.halSoftR > 0) {   // tmp6's first plane is free again
+            [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+            [enc setComputePipelineState:ps.p[TX_SH]];
+            [enc setBytes:&A length:sizeof(A) atIndex:0];
+            [enc setBuffer:Bg offset:0 atIndex:1];
+            setTable(enc, dev, plan.halSoftK, 2);
+            [enc setBuffer:tmp6 offset:0 atIndex:3];
+            dispatch2D(enc, ps.p[TX_SH], A.W2, A.H2);
+            [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+            [enc setComputePipelineState:ps.p[TX_SV]];
+            [enc setBytes:&A length:sizeof(A) atIndex:0];
+            [enc setBuffer:tmp6 offset:0 atIndex:1];
+            setTable(enc, dev, plan.halSoftK, 2);
+            [enc setBuffer:Bg offset:0 atIndex:3];
+            dispatch2D(enc, ps.p[TX_SV], A.W2, A.H2);
+        }
     }
     if (A.grOn) {
         [enc setComputePipelineState:ps.p[TX_GH]];

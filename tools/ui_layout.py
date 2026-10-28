@@ -219,6 +219,10 @@ PLUGINS = [
                     TP('tx_hal_thr', 'Threshold', 'float', 0.0, -0.2, 0.2, 0.001,
                        hint='Moves the brightness at which lights start to glow. Negative = more of the picture glows, '
                             'positive = only the brightest lights.'),
+                    TP('tx_hal_soft', 'Softness', 'float', 0.0, 0.0, 1.0, 0.01,
+                       hint='Softens the halo: the tight rim of the film opens into a smooth, diffuse glow. The total '
+                            'light of the halo is kept - only its shape changes - so Strength still means the same, '
+                            'and a flat highlight is never touched. 0 = the measured film halo.'),
                     TP('tx_hal_warm', 'Warmth', 'float', 0.0, -1.0, 1.0, 0.01,
                        hint='Colour of the halo. Positive = redder, negative = more orange-yellow.'),
                 ]),

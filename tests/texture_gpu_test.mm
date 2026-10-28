@@ -43,7 +43,7 @@ int main()
             for (int mode = 0; mode < 4; ++mode) {
                 TextureSettings s;
                 s.grainOn = mode == 1 || mode == 3; s.gauge = si ? 0 : 1; s.soft = mode == 3 ? 0.6f : 0.0f;
-                s.halOn = mode >= 2; s.halSize = mode == 3 ? 2.0f : 1.0f; s.seed = 1234;
+                s.halOn = mode >= 2; s.halSize = mode == 3 ? 2.0f : 1.0f; s.halSoftness = mode == 3 ? 0.6f : 0.0f; s.seed = 1234;
                 TexturePlan plan;
                 if (s.active()) texturePlan(s, W, H, plan);
                 id<MTLBuffer> src = [dev newBufferWithBytes:img.data() length:img.size() * 4 options:MTLResourceStorageModeShared];

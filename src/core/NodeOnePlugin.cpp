@@ -246,6 +246,7 @@ private:
         s.halSize = (float)dbl("tx_hal_size", t, 1.0);
         s.halThreshold = (float)dbl("tx_hal_thr", t, 0.0);
         s.halWarmth = (float)dbl("tx_hal_warm", t, 0.0);
+        s.halSoftness = (float)dbl("tx_hal_soft", t, 0.0);
         s.gamut = blockInt(block, "in_gamut", 15);
         s.oetf = blockInt(block, "in_oetf", 1);
         return s;
