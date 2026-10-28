@@ -27,10 +27,17 @@ int main(int argc, const char** argv)
             double s = -[t0 timeIntervalSinceNow];
             id<MTLComputePipelineState> pso = nil;
             if (lib) {
-                id<MTLFunction> fn = [lib newFunctionWithName:@"node_one_main"];
-                NSError* perr = nil;
-                if (fn) pso = [dev newComputePipelineStateWithFunction:fn error:&perr];
-                if (!pso && perr) err = perr;
+                // Every kernel of the library must build a pipeline: the DCTL
+                // and LUT sources have one (node_one_main), the texture stage
+                // has several.
+                NSArray<NSString*>* names = lib.functionNames;
+                for (NSString* name in names) {
+                    id<MTLFunction> fn = [lib newFunctionWithName:name];
+                    if (fn.functionType != MTLFunctionTypeKernel) continue;
+                    NSError* perr = nil;
+                    pso = [dev newComputePipelineStateWithFunction:fn error:&perr];
+                    if (!pso) { if (perr) err = perr; break; }
+                }
             }
             if (pso) {
                 printf("  %-28s OK   %.2fs  (threads/group %lu)\n", argv[i], s, (unsigned long)pso.maxTotalThreadsPerThreadgroup);

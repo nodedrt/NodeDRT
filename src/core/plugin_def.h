@@ -13,6 +13,11 @@ enum ParamKind { kParamFloat = 0, kParamBool = 1, kParamChoice = 2, kParamPush =
 // runs the white balance analysis and the read-only field that reports its
 // confidence are both of this kind. fillParams skips them by this offset.
 static const unsigned kNoOffset = 0xFFFFFFFFu;
+// A PLUGIN-ONLY parameter is a real control (value, animation, reset) that the
+// plugin computes itself, outside the DCTL: the Texture stage (grain and
+// halation) needs neighbouring pixels across several passes. It has no slot
+// in the kernel parameter block either.
+static const unsigned kPluginOnly = 0xFFFFFFFEu;
 
 struct ParamSpec {
     const char* name;          // OFX parameter name == DCTL identifier (stable, never rename)

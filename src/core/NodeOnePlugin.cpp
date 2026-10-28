@@ -12,6 +12,7 @@
 #include "NodeOneLut.h"
 #include "NodeOneMetal.h"
 #include "NodeOneTrial.h"
+#include "NodeTexture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -192,14 +193,73 @@ private:
         _lutName->setValue(idx > 0 && idx <= (int)cat.size() ? cat[idx - 1].name : std::string());
     }
 
+    // ---- TEXTURE (grain + halation) ----------------------------------------
+    // Ses reglages sont propres au plugin : lus ici par nom. Un effet sans
+    // etage Texture n'a pas ces parametres et rend une config inactive.
+    double dbl(const char* n, double t, double def) const
+    {
+        OFX::Param* p = paramByName(n);
+        return p ? static_cast<OFX::DoubleParam*>(p)->getValueAtTime(t) : def;
+    }
+    bool bln(const char* n, double t, bool def) const
+    {
+        OFX::Param* p = paramByName(n);
+        return p ? static_cast<OFX::BooleanParam*>(p)->getValueAtTime(t) : def;
+    }
+    int chc(const char* n, double t, int def) const
+    {
+        OFX::Param* p = paramByName(n);
+        int v = def;
+        if (p) static_cast<OFX::ChoiceParam*>(p)->getValueAtTime(t, v);
+        return v;
+    }
+    int blockInt(const std::vector<uint32_t>& block, const char* n, int def) const
+    {
+        for (int i = 0; i < _def.nParams; ++i)
+            if (std::strcmp(_def.params[i].name, n) == 0 && _def.params[i].offset < kPluginOnly) {
+                int32_t v = 0;
+                std::memcpy(&v, &block[_def.params[i].offset / 4], 4);
+                return v;
+            }
+        return def;
+    }
+    TextureSettings textureSettings(double t, const std::vector<uint32_t>& block) const
+    {
+        TextureSettings s;
+        if (!paramByName("tx_gr_on")) return s;
+        s.grainOn = bln("tx_gr_on", t, false);
+        s.gauge = chc("tx_gr_gauge", t, 1);
+        s.amount = (float)dbl("tx_gr_amt", t, 1.0);
+        s.size = (float)dbl("tx_gr_size", t, 1.0);
+        s.colour = (float)dbl("tx_gr_col", t, 1.0);
+        s.soft = (float)dbl("tx_gr_soft", t, 0.0);
+        s.shadows = (float)dbl("tx_gr_sh", t, 1.0);
+        s.midtones = (float)dbl("tx_gr_md", t, 1.0);
+        s.highlights = (float)dbl("tx_gr_hi", t, 1.0);
+        // Anime : un tirage par image (le numero d'image, pas le temps
+        // fractionnaire d'un rendu sous-image). La graine change le tirage.
+        const unsigned int frame = bln("tx_gr_anim", t, true) ? (unsigned int)(int64_t)std::floor(t + 0.5) * 5u : 0u;
+        const unsigned int user = (unsigned int)std::lround(std::max(0.0, dbl("tx_gr_seed", t, 0.0)));
+        s.seed = frame + user * 0x9E3779B1u + 0x1B873593u;
+        s.halOn = bln("tx_hal_on", t, false);
+        s.halStrength = (float)dbl("tx_hal_str", t, 1.0);
+        s.halSize = (float)dbl("tx_hal_size", t, 1.0);
+        s.halThreshold = (float)dbl("tx_hal_thr", t, 0.0);
+        s.halWarmth = (float)dbl("tx_hal_warm", t, 0.0);
+        s.gamut = blockInt(block, "in_gamut", 15);
+        s.oetf = blockInt(block, "in_oetf", 1);
+        return s;
+    }
+
     void fillParams(double t, std::vector<uint32_t>& block)
     {
         block.assign(_def.paramsSize / 4, 0u);
         for (int i = 0; i < _def.nParams; ++i) {
             const ParamSpec& p = _def.params[i];
             // Un parametre SYNTHETIQUE n'existe que dans le plugin : il n'a pas
-            // de place dans le bloc du kernel, donc rien a y ecrire.
-            if (p.offset == kNoOffset) continue;
+            // de place dans le bloc du kernel, donc rien a y ecrire. Pareil pour
+            // un reglage PROPRE AU PLUGIN (l'etage Texture), lu a part.
+            if (p.offset == kNoOffset || p.offset == kPluginOnly) continue;
             uint32_t* slot = &block[p.offset / 4];
             if (p.kind == kParamFloat) {
                 float v = (float)p.def;
@@ -268,8 +328,15 @@ private:
             }
         }
 
+        // Texture : calcule sur l'image d'entree, avant le DCTL.
+        const TextureSettings tex = textureSettings(args.time, block);
+        TexturePlan texPlan;
+        const bool texOn = tex.active();
+        if (texOn) texturePlan(tex, W, H, texPlan);
+
         if (args.isEnabledMetalRender && args.pMetalCmdQ) {
             MetalJob job;
+            job.texture = texOn ? &texPlan : nullptr;
             job.def = &_def;
             job.params = block.data();
             job.commandQueue = args.pMetalCmdQ;
@@ -297,14 +364,23 @@ private:
         const ptrdiff_t drf = dst->getRowBytes() / (ptrdiff_t)sizeof(float);
         const OfxRectI rw = args.renderWindow;
         const int r0 = std::max(0, rw.y1 - sb.y1), r1 = std::min(H, rw.y2 - sb.y1);
+        std::vector<float> texBuf;
+        const float* in = sp;
+        ptrdiff_t inRow = srf;
+        if (texOn) {
+            texBuf.resize((size_t)W * 4 * H);
+            textureCPU(texPlan, sp, srf, texBuf.data(), (ptrdiff_t)W * 4);
+            in = texBuf.data();
+            inRow = (ptrdiff_t)W * 4;
+        }
         if (lut) {
             // DCTL into scratch, then the LUT into the output.
             _lutTmp.resize((size_t)W * 4 * H);
-            cpuRender(_def, block.data(), sp, srf, _lutTmp.data(), (ptrdiff_t)W * 4, W, H, 0, H, NODEONE_FLIP_Y_CPU);
+            cpuRender(_def, block.data(), in, inRow, _lutTmp.data(), (ptrdiff_t)W * 4, W, H, 0, H, NODEONE_FLIP_Y_CPU);
             lutApplyCPUThreaded(*lut, _lutTmp.data(), (ptrdiff_t)W * 4, dp, drf, W, H);
             return;
         }
-        cpuRender(_def, block.data(), sp, srf, dp, drf, W, H, r0, r1, NODEONE_FLIP_Y_CPU);
+        cpuRender(_def, block.data(), in, inRow, dp, drf, W, H, r0, r1, NODEONE_FLIP_Y_CPU);
     }
 
     bool isIdentity(const OFX::IsIdentityArguments&, OFX::Clip*&, double&) override { return false; }

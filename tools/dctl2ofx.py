@@ -410,7 +410,15 @@ def build_plugin(spec, prelude):
         if item.get('synth'):
             sp = UIParam()
             sp.name, sp.rawlabel = name, item.get('label', name)
+            # 'push' / 'float' : bouton, afficheur grise (kNoOffset).
+            # 'param' : un VRAI reglage qui n'appartient qu'au plugin - les
+            # controles de l'etage Texture (grain, halation), calcule hors du
+            # DCTL. kind = item['kind'] : 'float', 'bool' ou 'choice'.
             sp.kind = {'push': 'push'}.get(item['synth'], 'float')
+            sp.plugin_only = item['synth'] == 'param'
+            if sp.plugin_only:
+                sp.kind = item.get('kind', 'float')
+                sp.options = item.get('options', [])
             sp.default = float(item.get('default', 0.0))
             sp.min = float(item.get('min', 0.0))
             sp.max = float(item.get('max', 100.0))
@@ -446,7 +454,12 @@ def build_plugin(spec, prelude):
         hint = item.get('hint', p.tooltip)
         kind = 'nodeone::' + {'float': 'kParamFloat', 'bool': 'kParamBool',
                               'choice': 'kParamChoice', 'push': 'kParamPush'}[p.kind]
-        poff = 'nodeone::kNoOffset' if getattr(p, 'synthetic', False) else str(offset[p.name])
+        if getattr(p, 'plugin_only', False):
+            poff = 'nodeone::kPluginOnly'
+        elif getattr(p, 'synthetic', False):
+            poff = 'nodeone::kNoOffset'
+        else:
+            poff = str(offset[p.name])
         opts, nopts = 'nullptr', 0
         if p.kind == 'choice':
             options = item.get('options', p.options)
@@ -536,10 +549,27 @@ def bake_lut_kernel():
               '#pragma once\nstatic const char* const kLutMetalSource =\n%s;\n' % raw_string(src, 'NODEONELUT'))
     write_if_changed(os.path.join(ROOT, 'gen', 'lut_metal_src.h'), header)
     return len(src)
+def bake_texture_kernel():
+    """The texture stage (Grain + Halation): the shared maths header followed by
+    the kernels, baked into one Metal source for the plugin and copied to gen/
+    for the build's kernel check."""
+    core = os.path.join(ROOT, 'src', 'core')
+    math = open(os.path.join(core, 'NodeTextureMath.h'), encoding='utf-8').read().replace('#pragma once', '', 1)
+    kern = open(os.path.join(core, 'NodeTexture.metal'), encoding='utf-8').read()
+    src = ('#include <metal_stdlib>\nusing namespace metal;\n#line 1 "NodeTextureMath.h"\n' + math +
+           '\n#line 1 "NodeTexture.metal"\n' + kern)
+    write_if_changed(os.path.join(ROOT, 'gen', 'texture.metal'), src)
+    header = ('// GENERATED from src/core/NodeTextureMath.h + NodeTexture.metal by tools/dctl2ofx.py — do not edit.\n'
+              '#pragma once\nstatic const char* const kTextureMetalSource =\n%s;\n' % raw_string(src, 'NODETEX'))
+    write_if_changed(os.path.join(ROOT, 'gen', 'texture_metal_src.h'), header)
+    return len(src)
+
+
 def main():
     prelude = open(os.path.join(ROOT, 'src', 'core', 'dctl_metal_prelude.metal'), encoding='utf-8').read()
     os.makedirs(os.path.join(ROOT, 'gen'), exist_ok=True)
     bake_lut_kernel()
+    bake_texture_kernel()
     only = sys.argv[1:]
     for spec in ui_layout.PLUGINS:
         if only and spec['key'] not in only:

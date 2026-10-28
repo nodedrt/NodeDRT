@@ -36,6 +36,20 @@ def SUB(name, label, params, open=True):
     return {'sub': True, 'name': name, 'label': label, 'open': open, 'params': params}
 
 
+# Reglage PROPRE AU PLUGIN (pas de contrepartie dans le DCTL) : l'etage Texture.
+def TP(name, label, kind, default, min=0.0, max=1.0, step=0.01, hint=None, options=None):
+    d = {'name': name, 'label': label, 'synth': 'param', 'kind': kind, 'default': default,
+         'min': min, 'max': max, 'step': step}
+    if kind == 'bool':
+        d.update(min=0.0, max=1.0, step=1.0)
+    if kind == 'choice':
+        d['options'] = options
+        d.update(min=0.0, max=float(len(options) - 1), step=1.0)
+    if hint:
+        d['hint'] = hint
+    return d
+
+
 def vector(color, key, dens, sat, hs, ht):
     return {
         'name': 'vec_' + key, 'label': color, 'open': False,
@@ -50,7 +64,7 @@ def vector(color, key, dens, sat, hs, ht):
 PLUGINS = [
     dict(
         key='drt', file='NODE_DRT.dctl',
-        id='com.nodeone.ofx.NodeDRT', label='Node DRT', version=(1, 0),
+        id='com.nodeone.ofx.NodeDRT', label='Node DRT', version=(1, 1),
         description='NODE_DRT — display rendering transform. Modified OpenDRT v1.0.1 '
                     'by Jed Smith, GPLv3, with film look presets fitted against '
                     'spektrafilm references. ' + WORKFLOW,
@@ -160,6 +174,56 @@ PLUGINS = [
                 ]),
                 P('skin_reset', 'Reset Skin', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
+            # TEXTURE : grain et halation, calcules par le plugin lui-meme (ils
+            # lisent les pixels voisins sur plusieurs passes) sur l'image log
+            # d'entree, AVANT le rendu - la ou la pellicule les cree. Les deux
+            # sont eteints par defaut : le plugin rend exactement comme avant
+            # tant qu'on ne les active pas.
+            {'name': 'grp_texture', 'label': 'Texture', 'open': False, 'params': [
+                SUB('grp_tex_grain', 'Grain', [
+                    TP('tx_gr_on', 'Enable Grain', 'bool', 0,
+                       hint='Film grain, modelled by measurement on film renders: strength per channel against density, '
+                            'grain size per gauge, the correlation between the colour layers. Added to the log image '
+                            'before the display rendering, so it rolls off with the picture like real grain.'),
+                    TP('tx_gr_gauge', 'Format', 'choice', 1, options=['65mm', '35mm'],
+                       hint='Film gauge. 65mm: fine, tight grain. 35mm: the classic cinema grain, larger and more visible.'),
+                    TP('tx_gr_amt', 'Amount', 'float', 1.0, 0.0, 3.0, 0.01,
+                       hint='Grain strength. 1 = the measured film grain for the chosen format.'),
+                    TP('tx_gr_size', 'Size', 'float', 1.0, 0.5, 2.0, 0.01,
+                       hint='Grain scale. 1 = the measured grain size for the chosen format, at any resolution.'),
+                    TP('tx_gr_col', 'Color', 'float', 1.0, 0.0, 2.0, 0.01,
+                       hint='0 = monochrome grain, 1 = the measured colour grain of the film, 2 = more colourful.'),
+                    TP('tx_gr_soft', 'Softness', 'float', 0.0, 0.0, 1.0, 0.01,
+                       hint='Softens the grain (up to 2 px at UHD) for a gentler, rounder texture.'),
+                    TP('tx_gr_sh', 'Shadows', 'float', 1.0, 0.0, 2.0, 0.01,
+                       hint='Grain amount in the shadows (below about 1 stop under middle grey).'),
+                    TP('tx_gr_md', 'Midtones', 'float', 1.0, 0.0, 2.0, 0.01,
+                       hint='Grain amount in the midtones.'),
+                    TP('tx_gr_hi', 'Highlights', 'float', 1.0, 0.0, 2.0, 0.01,
+                       hint='Grain amount in the highlights (above about 1 stop over middle grey).'),
+                    TP('tx_gr_anim', 'Animated', 'bool', 1,
+                       hint='A new grain pattern every frame, like film. Off: one still pattern.'),
+                    TP('tx_gr_seed', 'Seed', 'float', 0.0, 0.0, 999.0, 1.0,
+                       hint='Changes the random pattern of the grain.'),
+                ]),
+                SUB('grp_tex_hal', 'Halation', [
+                    TP('tx_hal_on', 'Enable Halation', 'bool', 0,
+                       hint='The red-orange glow film gives around bright lights: light crossing the emulsion is '
+                            'reflected by the film base back into the red layer. Modelled by measurement: source '
+                            'threshold, radial spread and the weight of each colour layer. A flat highlight keeps '
+                            'its own colour; the halo spreads out of it.'),
+                    TP('tx_hal_str', 'Strength', 'float', 1.0, 0.0, 3.0, 0.01,
+                       hint='Halation strength. 1 = the measured film halation.'),
+                    TP('tx_hal_size', 'Size', 'float', 1.0, 0.25, 4.0, 0.01,
+                       hint='Spread of the halo. 1 = the measured spread, scaled to the frame width.'),
+                    TP('tx_hal_thr', 'Threshold', 'float', 0.0, -0.2, 0.2, 0.001,
+                       hint='Moves the brightness at which lights start to glow. Negative = more of the picture glows, '
+                            'positive = only the brightest lights.'),
+                    TP('tx_hal_warm', 'Warmth', 'float', 0.0, -1.0, 1.0, 0.01,
+                       hint='Colour of the halo. Positive = redder, negative = more orange-yellow.'),
+                ]),
+                P('texture_reset', 'Reset Texture', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
+            ]},
             {'name': 'grp_view', 'label': 'Scopes', 'open': False, 'params': [
                 P('crv_enable', 'Curve View'), P('crv_size', 'Curve Size'),
                 P('fc_overlay', 'False Color'),
@@ -173,6 +237,7 @@ PLUGINS = [
                'Look presets fitted against spektrafilm references by Andrea Volpato, CC BY-SA 4.0 — github.com/andreavolpato/spektrafilm. No LUT data is embedded; what remains are fitted parameter values.',
                'Subtractive saturation model by Nikita Petrovich, MIT licence — the Chroma control in the Color group. See MIT-SubtractiveSaturation.txt.',
                'Skin Line turns hue in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.',
+               'Texture (Grain, Halation): computed by the plugin on the log image before the display rendering. Grain and halation are models fitted by measurement on film-emulation renders - curves, kernels and weights only; no code or data of another product is included.',
                'OpenFX support library: Academy Software Foundation, BSD 3-Clause.'],
     ),
 ]

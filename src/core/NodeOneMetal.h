@@ -7,6 +7,7 @@ namespace nodeone {
 
 struct Lut3D;
 struct MetalScratch;
+struct TexturePlan;
 
 struct MetalJob {
     const PluginDef* def;
@@ -19,6 +20,7 @@ struct MetalJob {
     int width, height;
     int srcRowFloats, dstRowFloats;
     int flipY;
+    const TexturePlan* texture = nullptr;  // grain / halation stage before the DCTL, or null
 };
 
 // Encodes the effect on the host queue. Returns false (with a message) if the

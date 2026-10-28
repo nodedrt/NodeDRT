@@ -55,6 +55,13 @@ not affiliated with him.
       does, and why a colour that saturates also darkens.
       Full text: MIT-SubtractiveSaturation.txt
 
+  Grain and halation (the Texture group)
+      Models written for this plugin. Their constants - grain strength per
+      colour layer against density, layer correlation, grain kernels per
+      gauge, halation source curve, radial kernel and layer weights - were
+      fitted by measuring film-emulation renders. Only measured numbers are
+      used: no code, LUT or data file of any other product is included.
+
   Oklab
       Colour space by Bjorn Ottosson (public domain / MIT), used by Skin Line
       to turn hue. Written here from the published formulas; no code copied.

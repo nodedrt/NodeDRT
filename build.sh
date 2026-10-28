@@ -71,11 +71,11 @@ if ! make -j"$JOBS" CXX="$TCXX" BUILD_TAG="$TAG" >> "$LOG" 2>&1; then
 fi
 
 step "3/4  Checking the Metal kernel on this GPU"
-if [ ! -x build/metal_check ]; then
+if [ ! -x build/metal_check ] || [ tools/metal_check.mm -nt build/metal_check ]; then
   clang++ -std=c++17 -O1 -fobjc-arc -mmacosx-version-min=11.0 tools/metal_check.mm \
           -o build/metal_check -framework Metal -framework Foundation >> "$LOG" 2>&1
 fi
-if ! build/metal_check gen/drt.metal 2>&1 | tee -a "$LOG"; then
+if ! build/metal_check gen/drt.metal gen/texture.metal 2>&1 | tee -a "$LOG"; then
   echo "METAL CHECK FAILED — see $LOG"; exit 1
 fi
 

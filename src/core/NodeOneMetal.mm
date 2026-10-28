@@ -21,6 +21,8 @@
 #include "NodeOneChain.h"
 #include "NodeOnePlugin.h"
 #include "lut_metal_src.h"
+#include "NodeTexture.h"
+#include "texture_metal_src.h"
 
 #if !__has_feature(objc_arc)
 #error "NodeOneMetal.mm must be compiled with -fobjc-arc"
@@ -135,6 +137,11 @@ struct MetalScratch {
     const Lut3D* lutHeld = nullptr;  // which LUT it holds, to avoid re-uploading
     id<MTLBuffer> input = nil;       // copy of the source for an in-place spatial render
     NSUInteger inputBytes = 0;
+    // Texture stage (grain + halation): its output, the halation source, its
+    // half-resolution copy, the six-term blur pass, the blurred source, and
+    // the horizontal grain pass. Grown as needed, kept between frames.
+    id<MTLBuffer> tex[6] = {nil, nil, nil, nil, nil, nil};
+    NSUInteger texBytes[6] = {0, 0, 0, 0, 0, 0};
 };
 
 MetalScratch* metalScratchCreate() { return new MetalScratch(); }
@@ -147,6 +154,7 @@ void metalScratchDestroy(MetalScratch* s)
         s->buf[1] = nil;
         s->lutBuf = nil;
         s->input = nil;
+        for (int i = 0; i < 6; ++i) s->tex[i] = nil;
     }
     delete s;
 }
@@ -277,6 +285,166 @@ void blitCopy(id<MTLCommandBuffer> cb, id<MTLBuffer> src, int srcRowFloats, id<M
     [blit endEncoding];
 }
 
+// =============================================================================
+//  Texture stage (grain + halation) on the GPU: the passes of textureCPU().
+// =============================================================================
+enum { TX_SRC, TX_DOWN, TX_HH, TX_HV, TX_GH, TX_FINAL, TX_N };
+
+struct TexturePsos { id<MTLComputePipelineState> p[TX_N]; };
+
+bool texturePipelines(id<MTLDevice> dev, TexturePsos& out, std::string& error)
+{
+    static std::mutex m;
+    static std::map<unsigned long long, TexturePsos> cache;
+    static std::map<unsigned long long, std::string> errors;
+    const unsigned long long key = dev.registryID;
+    std::lock_guard<std::mutex> lock(m);
+    auto it = cache.find(key);
+    if (it != cache.end()) { out = it->second; return true; }
+    auto e = errors.find(key);
+    if (e != errors.end()) { error = e->second; return false; }
+    NSError* err = nil;
+    id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:kTextureMetalSource]
+                                           options:compileOptions()
+                                             error:&err];
+    std::string msg;
+    TexturePsos ps;
+    static const char* const names[TX_N] = {"tx_src", "tx_down", "tx_hh", "tx_hv", "tx_gh", "tx_final"};
+    if (!lib) msg = err ? err.localizedDescription.UTF8String : "texture kernels compile failed";
+    for (int i = 0; i < TX_N && msg.empty(); ++i) {
+        id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:names[i]]];
+        if (!fn) { msg = std::string("texture kernel ") + names[i] + " not found"; break; }
+        NSError* perr = nil;
+        ps.p[i] = [dev newComputePipelineStateWithFunction:fn error:&perr];
+        if (!ps.p[i]) msg = perr ? perr.localizedDescription.UTF8String : "texture pipeline creation failed";
+    }
+    if (!msg.empty()) { errors[key] = msg; error = msg; return false; }
+    cache[key] = ps;
+    out = ps;
+    return true;
+}
+
+id<MTLBuffer> texBuffer(id<MTLDevice> dev, MetalScratch* s, int i, NSUInteger bytes)
+{
+    bytes = MAX(bytes, (NSUInteger)16);
+    if (s->texBytes[i] < bytes || !s->tex[i]) {
+        s->tex[i] = [dev newBufferWithLength:bytes options:MTLResourceStorageModePrivate];
+        s->texBytes[i] = s->tex[i] ? bytes : 0;
+    }
+    return s->tex[i];
+}
+
+void dispatch2D(id<MTLComputeCommandEncoder> enc, id<MTLComputePipelineState> pso, int w, int h)
+{
+    const NSUInteger tw = pso.threadExecutionWidth;
+    const NSUInteger th = MAX((NSUInteger)1, pso.maxTotalThreadsPerThreadgroup / tw);
+    const MTLSize tg = MTLSizeMake(tw, MIN(th, (NSUInteger)8), 1);
+    const MTLSize grid = MTLSizeMake(((NSUInteger)w + tg.width - 1) / tg.width, ((NSUInteger)h + tg.height - 1) / tg.height, 1);
+    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+}
+
+// small tables go inline, larger ones in a buffer
+void setTable(id<MTLComputeCommandEncoder> enc, id<MTLDevice> dev, const std::vector<float>& v, NSUInteger index)
+{
+    const NSUInteger bytes = MAX((NSUInteger)v.size() * sizeof(float), (NSUInteger)4);
+    static const float zero = 0.0f;
+    const void* data = v.empty() ? (const void*)&zero : (const void*)v.data();
+    if (bytes <= 4096) [enc setBytes:data length:bytes atIndex:index];
+    else [enc setBuffer:[dev newBufferWithBytes:data length:bytes options:MTLResourceStorageModeShared] offset:0 atIndex:index];
+}
+
+// Encodes the texture stage: src -> returned buffer (W x 4 floats per row).
+// nil when a buffer could not be allocated.
+id<MTLBuffer> encodeTexture(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const TexturePsos& ps, const TexturePlan& plan,
+                            id<MTLBuffer> src, int srcRowFloats, MetalScratch* s)
+{
+    TexArgs A = plan.a;
+    A.srcRow = srcRowFloats;
+    A.dstRow = A.W * 4;
+    const NSUInteger W = (NSUInteger)A.W, H = (NSUInteger)A.H;
+    id<MTLBuffer> out = texBuffer(dev, s, 0, W * H * 4 * sizeof(float));
+    id<MTLBuffer> S = src, Sd = src, tmp6 = src, Bg = src, T = src;
+    if (A.halOn) {
+        S = texBuffer(dev, s, 1, W * H * sizeof(float));
+        Sd = A.halfRes ? texBuffer(dev, s, 2, (NSUInteger)A.W2 * A.H2 * sizeof(float)) : S;
+        tmp6 = texBuffer(dev, s, 3, (NSUInteger)6 * A.W2 * A.H2 * sizeof(float));
+        Bg = texBuffer(dev, s, 4, (NSUInteger)A.W2 * A.H2 * sizeof(float));
+    }
+    if (A.grOn) T = texBuffer(dev, s, 5, (NSUInteger)3 * W * (H + 2 * A.grR) * sizeof(float));
+    if (!out || !S || !Sd || !tmp6 || !Bg || !T) return nil;
+
+    id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+    if (A.halOn) {
+        [enc setComputePipelineState:ps.p[TX_SRC]];
+        [enc setBytes:&A length:sizeof(A) atIndex:0];
+        [enc setBuffer:src offset:0 atIndex:1];
+        [enc setBuffer:S offset:0 atIndex:2];
+        dispatch2D(enc, ps.p[TX_SRC], A.W, A.H);
+        if (A.halfRes) {
+            [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+            [enc setComputePipelineState:ps.p[TX_DOWN]];
+            [enc setBytes:&A length:sizeof(A) atIndex:0];
+            [enc setBuffer:S offset:0 atIndex:1];
+            [enc setBuffer:Sd offset:0 atIndex:2];
+            dispatch2D(enc, ps.p[TX_DOWN], A.W2, A.H2);
+        }
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        [enc setComputePipelineState:ps.p[TX_HH]];
+        [enc setBytes:&A length:sizeof(A) atIndex:0];
+        [enc setBuffer:Sd offset:0 atIndex:1];
+        setTable(enc, dev, plan.halK, 2);
+        [enc setBuffer:tmp6 offset:0 atIndex:3];
+        dispatch2D(enc, ps.p[TX_HH], A.W2, A.H2);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        [enc setComputePipelineState:ps.p[TX_HV]];
+        [enc setBytes:&A length:sizeof(A) atIndex:0];
+        [enc setBuffer:tmp6 offset:0 atIndex:1];
+        setTable(enc, dev, plan.halK, 2);
+        [enc setBuffer:Bg offset:0 atIndex:3];
+        dispatch2D(enc, ps.p[TX_HV], A.W2, A.H2);
+    }
+    if (A.grOn) {
+        [enc setComputePipelineState:ps.p[TX_GH]];
+        [enc setBytes:&A length:sizeof(A) atIndex:0];
+        setTable(enc, dev, plan.grK, 1);
+        [enc setBuffer:T offset:0 atIndex:2];
+        dispatch2D(enc, ps.p[TX_GH], A.W, A.H + 2 * A.grR);
+    }
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    [enc setComputePipelineState:ps.p[TX_FINAL]];
+    [enc setBytes:&A length:sizeof(A) atIndex:0];
+    [enc setBuffer:src offset:0 atIndex:1];
+    [enc setBuffer:out offset:0 atIndex:2];
+    [enc setBuffer:S offset:0 atIndex:3];
+    [enc setBuffer:Bg offset:0 atIndex:4];
+    setTable(enc, dev, plan.grK, 5);
+    [enc setBuffer:T offset:0 atIndex:6];
+    dispatch2D(enc, ps.p[TX_FINAL], A.W, A.H);
+    [enc endEncoding];
+    return out;
+}
+
+// CPU render of the whole effect (texture stage included) on shared memory.
+void cpuFallback(const MetalJob& j, const float* src, float* dst)
+{
+    std::vector<float> tex;
+    const float* in = src;
+    ptrdiff_t inRow = j.srcRowFloats;
+    if (j.texture) {
+        tex.resize((size_t)j.width * 4 * j.height);
+        textureCPU(*j.texture, src, j.srcRowFloats, tex.data(), (ptrdiff_t)j.width * 4);
+        in = tex.data();
+        inRow = (ptrdiff_t)j.width * 4;
+    }
+    if (j.lut) {
+        std::vector<float> tmp((size_t)j.width * 4 * j.height);
+        cpuRender(*j.def, j.params, in, inRow, tmp.data(), (ptrdiff_t)j.width * 4, j.width, j.height, 0, j.height, j.flipY);
+        lutApplyCPUThreaded(*j.lut, tmp.data(), (ptrdiff_t)j.width * 4, dst, j.dstRowFloats, j.width, j.height);
+        return;
+    }
+    cpuRender(*j.def, j.params, in, inRow, dst, j.dstRowFloats, j.width, j.height, 0, j.height, j.flipY);
+}
+
 } // namespace
 
 void metalPrewarm(const PluginDef& def)
@@ -307,8 +475,7 @@ bool metalRender(const MetalJob& j, std::string& error)
                 id<MTLCommandBuffer> sync = [queue commandBuffer];
                 [sync commit];
                 [sync waitUntilCompleted];
-                cpuRender(*j.def, j.params, static_cast<const float*>(src.contents), j.srcRowFloats,
-                          static_cast<float*>(dst.contents), j.dstRowFloats, j.width, j.height, 0, j.height, j.flipY);
+                cpuFallback(j, static_cast<const float*>(src.contents), static_cast<float*>(dst.contents));
                 return true;
             }
             error = "Metal kernel unavailable (" + perr + "). See ~/Library/Logs/NodeOne/";
@@ -337,14 +504,28 @@ bool metalRender(const MetalJob& j, std::string& error)
                     id<MTLCommandBuffer> sync = [queue commandBuffer];
                     [sync commit];
                     [sync waitUntilCompleted];
-                    std::vector<float> tmp((size_t)j.width * 4 * j.height);
-                    cpuRender(*j.def, j.params, static_cast<const float*>(src.contents), j.srcRowFloats, tmp.data(),
-                              (ptrdiff_t)j.width * 4, j.width, j.height, 0, j.height, j.flipY);
-                    lutApplyCPUThreaded(*j.lut, tmp.data(), (ptrdiff_t)j.width * 4,
-                                        static_cast<float*>(dst.contents), j.dstRowFloats, j.width, j.height);
+                    cpuFallback(j, static_cast<const float*>(src.contents), static_cast<float*>(dst.contents));
                     return true;
                 }
                 error = "LUT stage unavailable on the GPU (" + lerr + "). See ~/Library/Logs/NodeOne/";
+                return false;
+            }
+        }
+
+        // The texture stage needs its own kernels; without them the whole
+        // effect goes to the CPU rather than render without grain / halation.
+        TexturePsos texPs;
+        if (j.texture) {
+            std::string terr;
+            if (!j.scratch || !texturePipelines(dev, texPs, terr)) {
+                if (src.storageMode == MTLStorageModeShared && dst.storageMode == MTLStorageModeShared) {
+                    id<MTLCommandBuffer> sync = [queue commandBuffer];
+                    [sync commit];
+                    [sync waitUntilCompleted];
+                    cpuFallback(j, static_cast<const float*>(src.contents), static_cast<float*>(dst.contents));
+                    return true;
+                }
+                error = "Texture stage unavailable on the GPU (" + terr + "). See ~/Library/Logs/NodeOne/";
                 return false;
             }
         }
@@ -360,7 +541,17 @@ bool metalRender(const MetalJob& j, std::string& error)
         // (130 Mo en 4K flottant) est une allocation lourde a chaque image. Un DCTL
         // per-pixel n'en a jamais besoin - il lit et ecrit le meme pixel.
         id<MTLBuffer> input = src;
-        if (src == dst && j.def->spatial && j.scratch) {
+        int inRow = j.srcRowFloats;
+        if (j.texture) {
+            // Grain and halation first, into the instance's own buffer: the
+            // DCTL then reads that buffer, never the one it writes.
+            input = encodeTexture(cb, dev, texPs, *j.texture, src, j.srcRowFloats, j.scratch);
+            if (!input) {
+                error = "could not allocate GPU buffers for the texture stage";
+                return false;
+            }
+            inRow = j.width * 4;
+        } else if (src == dst && j.def->spatial && j.scratch) {
             if (j.scratch->inputBytes < src.length) {
                 j.scratch->input = [dev newBufferWithLength:src.length options:MTLResourceStorageModePrivate];
                 j.scratch->inputBytes = j.scratch->input ? src.length : 0;
@@ -377,7 +568,7 @@ bool metalRender(const MetalJob& j, std::string& error)
         // the log image into scratch and the LUT kernel finishes the picture.
         id<MTLBuffer> stageOut = j.lut ? j.scratch->buf[0] : dst;
         const int stageOutRow = j.lut ? j.width * 4 : j.dstRowFloats;
-        encodeStage(cb, pso, j.params, j.def->paramsSize, input, j.srcRowFloats, stageOut, stageOutRow, j.width,
+        encodeStage(cb, pso, j.params, j.def->paramsSize, input, inRow, stageOut, stageOutRow, j.width,
                     j.height, j.flipY);
         if (j.lut)
             encodeLut(cb, lutPso, *j.lut, lutTable, stageOut, stageOutRow, dst, j.dstRowFloats, j.width, j.height);

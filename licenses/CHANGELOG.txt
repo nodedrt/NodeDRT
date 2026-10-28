@@ -59,3 +59,27 @@ gradient.
 
 The shipping kernel is checked against the design reference by drt2/parity.py
 over 2000+ colours spanning seven decades, and must agree to float32 precision.
+
+
+Texture: grain and halation (version 1.1, 28 October 2026)
+----------------------------------------------------------
+A new group, Texture, with two sub-sections, Grain and Halation, computed by
+the plugin itself (src/core/NodeTexture*) on the log image before the display
+transform. Both are off by default.
+
+Grain (65mm, 35mm). Per-channel grain strength as a function of the channel's
+DaVinci Intermediate value, measured on grey patches; channel correlation
+R-G 0.30, R-B 0.25, G-B 0.45; separable spatial kernels per gauge measured at
+UHD and scaled with the frame height (the field is point-sampled below UHD,
+as measured at HD). Hash noise with a valid convolution, so no tile seams and
+identical GPU and CPU results.
+
+Halation. Source = a piecewise-linear curve of the DI-encoded luminance;
+spread = a radial kernel stored as six separable terms (4K UHD, scaled with
+the frame width, evaluated at half resolution on large frames); added in the
+domain T(l) = (l + 0.0482)^0.3635 with layer weights R 1.074, G 0.282,
+B 0.100. Only the excess of the surroundings over the pixel's own source is
+added.
+
+These constants were fitted by measuring film-emulation renders. Only the
+numbers are used.

@@ -60,6 +60,8 @@ to this Mac's architecture if the other SDK slice is missing.
 | `tools/ui_layout.py` | the Inspector layout, group order and tooltips |
 | `gen/` | generated; derived from the DCTL, never edited by hand |
 | `src/core/` | the OFX plugin layer: parameters, render, Metal backend, LUT stage |
+| `src/core/NodeTexture*` | the Texture stage (grain, halation): shared maths, CPU path, Metal kernels |
+| `tests/` | texture checks: `texture_test.cpp` (CPU, any OS), `texture_gpu_test.mm` (GPU vs CPU on a Mac) |
 | `src/bundle_drt_main.cpp` | plugin registration |
 | `openfx/` | the OpenFX headers and support library (ASWF, BSD 3-Clause), vendored |
 | `licenses/` | every licence and attribution that applies |
@@ -72,11 +74,27 @@ simply does not exist here.
 
 ## The plugin
 
-59 controls in seven groups, in the order the picture is processed: Input /
-Output, White, Look / Toning / Tone, Color, Trims, Skin, Scopes. Groups are
+75 controls in eight groups: Input / Output, White, Look / Toning / Tone,
+Color, Trims, Skin, Texture, Scopes. Groups are
 split into collapsible sub-sections, each with its own bypass, and every
 creative group has a one-click Reset.
 
+- **Texture** (version 1.1, 28 October 2026): film **Grain** and
+  **Halation**, two sub-sections of one group, both off by default — with them
+  off the plugin renders bit for bit as before.
+  - *Grain*: 65mm or 35mm. Strength per colour layer against density,
+    correlation between the layers and grain size per gauge are measured;
+    Amount, Size, Color (mono to colourful), Softness, Shadows / Midtones /
+    Highlights, Animated, Seed. The size follows the frame height, so a
+    proxy or HD render looks like the UHD one.
+  - *Halation*: the red-orange glow around bright lights. Source threshold,
+    radial spread and layer weights are measured; Strength, Size, Threshold,
+    Warmth. Only light from brighter surroundings is added, so a flat
+    highlight keeps its colour and the halo spreads out of it.
+  - Both run in a native stage (`src/core/NodeTexture*`, CPU and Metal, the
+    same formulas compiled twice) on the log image before the DCTL: decode the
+    input log curve, add halation then grain, re-encode only the change.
+    GPU and CPU agree to 3e-6.
 - **Seven film looks**, each a set of parameter values fitted numerically
   against a spectral simulation of one negative stock printed on one print
   stock, measured over several thousand colours - refitted on 9 October 2026

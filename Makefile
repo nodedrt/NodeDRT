@@ -27,7 +27,7 @@ LDFLAGS   := -bundle $(ARCHS) $(MINOS) -framework Metal -framework Foundation
 O := build/obj
 SUPPORT := ofxsCore ofxsImageEffect ofxsInteract ofxsLog ofxsMultiThread ofxsParams ofxsProperty ofxsPropertyValidation
 OBJS := $(addprefix $(O)/,$(addsuffix .o,$(SUPPORT))) \
-        $(O)/NodeOnePlugin.o $(O)/NodeOneMetal.o $(O)/NodeOneLut.o \
+        $(O)/NodeOnePlugin.o $(O)/NodeOneMetal.o $(O)/NodeOneLut.o $(O)/NodeTexture.o \
         $(O)/bundle_drt_main.o $(O)/gen_drt.o
 
 BIN := build/NodeDRT.ofx.bundle/Contents/MacOS/NodeDRT.ofx
@@ -38,9 +38,10 @@ all: $(BIN)
 # gen/drt.cpp (CPU) and gen/drt.metal (GPU) are produced from dctl/NODE_DRT.dctl
 # by tools/dctl2ofx.py. They are checked in so the bundle builds without Python,
 # but they are DERIVED: edit the DCTL, never the generated files.
-GENSRC := dctl/NODE_DRT.dctl tools/dctl2ofx.py tools/ui_layout.py src/core/dctl_metal_prelude.metal
+GENSRC := dctl/NODE_DRT.dctl tools/dctl2ofx.py tools/ui_layout.py src/core/dctl_metal_prelude.metal \
+          src/core/NodeTextureMath.h src/core/NodeTexture.metal
 
-gen/drt.cpp gen/drt.metal: $(GENSRC)
+gen/drt.cpp gen/drt.metal gen/texture_metal_src.h: $(GENSRC)
 	python3 tools/dctl2ofx.py drt
 
 regen:
@@ -53,7 +54,9 @@ $(O)/NodeOnePlugin.o: src/core/NodeOnePlugin.cpp src/core/*.h | $(O)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 $(O)/NodeOneLut.o: src/core/NodeOneLut.cpp src/core/*.h | $(O)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-$(O)/NodeOneMetal.o: src/core/NodeOneMetal.mm src/core/*.h gen/lut_metal_src.h | $(O)
+$(O)/NodeTexture.o: src/core/NodeTexture.cpp src/core/*.h | $(O)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+$(O)/NodeOneMetal.o: src/core/NodeOneMetal.mm src/core/*.h gen/lut_metal_src.h gen/texture_metal_src.h | $(O)
 	$(CXX) $(OBJCFLAGS) -c $< -o $@
 $(O)/bundle_drt_main.o: src/bundle_drt_main.cpp src/core/*.h | $(O)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
