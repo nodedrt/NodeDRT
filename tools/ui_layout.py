@@ -64,7 +64,7 @@ def vector(color, key, dens, sat, hs, ht):
 PLUGINS = [
     dict(
         key='drt', file='NODE_DRT.dctl',
-        id='com.nodeone.ofx.NodeDRT', label='Node DRT', version=(1, 1),
+        id='com.nodeone.ofx.NodeDRT', label='Node DRT', version=(1, 2),
         description='NODE_DRT — display rendering transform. Modified OpenDRT v1.0.1 '
                     'by Jed Smith, GPLv3, with film look presets fitted against '
                     'spektrafilm references. ' + WORKFLOW,
@@ -193,8 +193,6 @@ PLUGINS = [
                        hint='Grain scale. 1 = the measured grain size for the chosen format, at any resolution.'),
                     TP('tx_gr_col', 'Color', 'float', 1.0, 0.0, 2.0, 0.01,
                        hint='0 = monochrome grain, 1 = the measured colour grain of the film, 2 = more colourful.'),
-                    TP('tx_gr_soft', 'Softness', 'float', 0.0, 0.0, 1.0, 0.01,
-                       hint='Softens the grain (up to 2 px at UHD) for a gentler, rounder texture.'),
                     TP('tx_gr_sh', 'Shadows', 'float', 1.0, 0.0, 2.0, 0.01,
                        hint='Grain amount in the shadows (below about 1 stop under middle grey).'),
                     TP('tx_gr_md', 'Midtones', 'float', 1.0, 0.0, 2.0, 0.01,
@@ -231,6 +229,7 @@ PLUGINS = [
             {'name': 'grp_view', 'label': 'Scopes', 'open': False, 'params': [
                 P('crv_enable', 'Curve View'), P('crv_size', 'Curve Size'),
                 P('fc_overlay', 'False Color'),
+                P('fc_mode', 'False Color Mode'),
                 P('skin_check', 'Skin Check'),
                 P('legend', 'Legend'),
             ]},

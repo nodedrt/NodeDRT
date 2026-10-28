@@ -15,7 +15,7 @@ namespace nodeone {
 struct TextureSettings {
     bool grainOn = false;
     int gauge = 1;            // 0 = 65mm, 1 = 35mm
-    float amount = 1.0f, size = 1.0f, colour = 1.0f, soft = 0.0f;
+    float amount = 1.0f, size = 1.0f, colour = 1.0f;
     float shadows = 1.0f, midtones = 1.0f, highlights = 1.0f;
     unsigned int seed = 0;
     bool halOn = false;

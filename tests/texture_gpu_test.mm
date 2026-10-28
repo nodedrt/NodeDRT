@@ -42,7 +42,7 @@ int main()
                 }
             for (int mode = 0; mode < 4; ++mode) {
                 TextureSettings s;
-                s.grainOn = mode == 1 || mode == 3; s.gauge = si ? 0 : 1; s.soft = mode == 3 ? 0.6f : 0.0f;
+                s.grainOn = mode == 1 || mode == 3; s.gauge = si ? 0 : 1;
                 s.halOn = mode >= 2; s.halSize = mode == 3 ? 2.0f : 1.0f; s.halSoftness = mode == 3 ? 0.6f : 0.0f; s.seed = 1234;
                 TexturePlan plan;
                 if (s.active()) texturePlan(s, W, H, plan);

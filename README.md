@@ -74,17 +74,32 @@ simply does not exist here.
 
 ## The plugin
 
-76 controls in eight groups: Input / Output, White, Look / Toning / Tone,
+77 controls in eight groups: Input / Output, White, Look / Toning / Tone,
 Color, Trims, Skin, Texture, Scopes. Groups are
 split into collapsible sub-sections, each with its own bypass, and every
 creative group has a one-click Reset.
 
+- **False Color in stops** (version 1.2, 28 October 2026). *False Color Mode*
+  chooses how exposure is read:
+  - **Stop Zones** (default): the input is decoded by its Log Curve and the
+    true scene luminance Y of its Gamut is measured, in stops from 18 % grey.
+    Fifteen zones of exactly one stop, -7 to +7, each centred on its whole
+    stop (boundaries at the half stops): zone 0 is mid grey ± 0.5 stop, +1 is
+    one stop over, and so on. Measured before white balance and the look, so
+    it reads what the camera recorded and the same on every look. The legend
+    along the bottom shows the fifteen zones with their numbers, painted by
+    the same function as the picture. Checked: a grey 0.49 stop from a whole
+    stop lands in that stop's zone, 0.51 in the next.
+  - **Color Analyzer**: identical to the Color Analyzer overlay (13 bands, -6
+    to +6, luma of the input code values). Exact on greys, but on saturated
+    colours the luma of log values is not the log of the luminance: a
+    saturated red reads about 0.7 stop low, a sky blue 0.3 stop high.
 - **Texture** (version 1.1, 28 October 2026): film **Grain** and
   **Halation**, two sub-sections of one group, both off by default — with them
   off the plugin renders bit for bit as before.
   - *Grain*: 65mm or 35mm. Strength per colour layer against density,
     correlation between the layers and grain size per gauge are measured;
-    Amount, Size, Color (mono to colourful), Softness, Shadows / Midtones /
+    Amount, Size, Color (mono to colourful), Shadows / Midtones /
     Highlights, Animated, Seed. The size follows the frame height, so a
     proxy or HD render looks like the UHD one.
   - *Halation*: the red-orange glow around bright lights. Source threshold,

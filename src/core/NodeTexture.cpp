@@ -160,17 +160,8 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
         const int R0 = std::max(0, (int)std::ceil((UR + 0.5f) * sc + 0.5f));
         std::vector<float> k0(2 * R0 + 1);
         for (int i = -R0; i <= R0; ++i) k0[i + R0] = u(i / sc);
-        const float sg = std::min(std::max(s.soft, 0.0f), 1.0f) * 2.0f * (float)H / 2160.0f;   // up to 2 px at UHD
-        int R = R0;
-        if (sg > 0.3f) {
-            const int gr = (int)std::ceil(3.0f * sg);
-            R = R0 + gr;
-            plan.grK.assign(2 * R + 1, 0.0f);
-            for (int i = -R0; i <= R0; ++i)
-                for (int j = -gr; j <= gr; ++j) plan.grK[i + j + R] += k0[i + R0] * std::exp(-0.5f * j * j / (sg * sg));
-        } else {
-            plan.grK = k0;
-        }
+        const int R = R0;
+        plan.grK = k0;
         double n2 = 0.0;
         for (float v : plan.grK) n2 += (double)v * v;
         const float nn = n2 > 0.0 ? (float)(1.0 / std::sqrt(n2)) : 1.0f;

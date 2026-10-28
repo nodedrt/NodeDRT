@@ -232,7 +232,6 @@ private:
         s.amount = (float)dbl("tx_gr_amt", t, 1.0);
         s.size = (float)dbl("tx_gr_size", t, 1.0);
         s.colour = (float)dbl("tx_gr_col", t, 1.0);
-        s.soft = (float)dbl("tx_gr_soft", t, 0.0);
         s.shadows = (float)dbl("tx_gr_sh", t, 1.0);
         s.midtones = (float)dbl("tx_gr_md", t, 1.0);
         s.highlights = (float)dbl("tx_gr_hi", t, 1.0);

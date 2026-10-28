@@ -84,3 +84,12 @@ added. Softness (0 to 1) then diffuses the halo with a gaussian of unit sum
 
 These constants were fitted by measuring film-emulation renders. Only the
 numbers are used.
+
+
+False Color: Stop Zones (version 1.2, 28 October 2026)
+------------------------------------------------------
+New False Color Mode menu. Stop Zones (default) reads the true scene
+luminance - input decoded by its log curve, Y row of the input gamut - in
+stops from 18% grey, in fifteen one-stop zones from -7 to +7 centred on the
+whole stops, with a horizontal numbered legend. Colour palette designed for
+this plugin. Color Analyzer keeps the previous reading unchanged.

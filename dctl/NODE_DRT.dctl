@@ -131,7 +131,9 @@ DEFINE_UI_TOOLTIP(out_clamp, "Clips the result into the range the display can ac
 DEFINE_UI_PARAMS(crv_enable, 📈 Curve View, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(crv_size, 📐 Curve Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.2, 1.0, 0.01)
 DEFINE_UI_PARAMS(fc_overlay, 🌈 False_Color, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_TOOLTIP(fc_overlay, "Exposure in stops from 18 percent grey - the Exposure (Stops) overlay of the Color Analyzer, identical: one colour per stop, thirteen bands from -6 and below to +6 and above, grey at mid grey. It is read the way the Color Analyzer reads it, on the luma of the INCOMING code values decoded by the Log Curve set in Input - so it tells you what the camera gave you, not what the look did with it, and on a DaVinci Intermediate timeline both tools paint the same picture identically. The legend down the left shows every band with its own colour, computed by the same function as the image. Turn it OFF before you render.")
+DEFINE_UI_TOOLTIP(fc_overlay, "Paints the picture by exposure, in stops from 18 percent grey, measured on what the camera recorded - before the look, so changing look never moves the zones. Two readings, chosen in False Color Mode: Stop Zones (fifteen one-stop zones on the true scene luminance, -7 to +7, legend along the bottom) or Color Analyzer (identical to the Color Analyzer overlay). Turn it OFF before you render.")
+DEFINE_UI_PARAMS(fc_mode, 🌈 False_Color_Mode, DCTLUI_COMBO_BOX, 0, {fcm_zones, fcm_analyzer}, {Stop Zones, Color Analyzer})
+DEFINE_UI_TOOLTIP(fc_mode, "STOP ZONES (default): exposure measured on the true scene luminance - the input decoded by its Log Curve, then Y of its Gamut - in stops from 18 percent grey. Fifteen zones of exactly one stop, -7 to +7, each centred on its whole stop: zone 0 is mid grey to within half a stop either side, +1 is one stop over, and so on, so a reading is right to the half stop by construction and the same on every camera and every look. Below -7 and above +7 the last zone holds. The legend along the bottom shows every zone with its number, painted by the same function as the picture. COLOR ANALYZER: the Exposure (Stops) overlay of the Color Analyzer, identical - thirteen bands from -6 to +6, read on the luma of the incoming CODE values. Exact on greys, but a saturated colour can read a stop off, because the luma of log values is not the log of the luminance.")
 DEFINE_UI_PARAMS(skin_check, 🧑 Skin_Check, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(legend, 📋 Legend, DCTLUI_CHECK_BOX, 1)
 DEFINE_UI_TOOLTIP(legend, "Draws the legend of whichever scope is on - the exposure zones for False Color, the four steps of the scale for Skin Check, the three light zones and their limits for Show Zones. One switch for both: they are never both on, and having to remember which checkbox belonged to which scope was the sort of thing you only discover while hunting for it. Turn it off once you know the scale and want the whole frame back.")
@@ -2011,6 +2013,34 @@ __DEVICE__ float3 fc_color(float s) {
     return make_float3(spowf(c.x, 2.4f), spowf(c.y, 2.4f), spowf(c.z, 2.4f));
 }
 
+// STOP ZONES : quinze zones d'un diaph, de -7 a +7, chacune CENTREE sur son
+// diaph entier (frontieres aux demi-diaphs). Palette propre a NODE_DRT,
+// ordonnee pour se lire sans legende : froid et de plus en plus sombre sous
+// le gris, chaud et de plus en plus clair au-dessus, blanc a +7. Couleurs en
+// valeurs de CODE, rendues en lineaire (puissance 2.4) comme fc_color.
+__DEVICE__ int fc_zone_of(float s) {
+    return (int)clampf(_floorf(s + 0.5f), -7.0f, 7.0f);
+}
+__DEVICE__ float3 fc_zone_color(int z) {
+    float3 c;
+    if      (z >=  7) c = make_float3(1.00f, 1.00f, 1.00f);   // +7 et plus : blanc
+    else if (z ==  6) c = make_float3(1.00f, 0.55f, 0.80f);   // +6 rose
+    else if (z ==  5) c = make_float3(0.92f, 0.18f, 0.14f);   // +5 rouge
+    else if (z ==  4) c = make_float3(1.00f, 0.45f, 0.08f);   // +4 orange
+    else if (z ==  3) c = make_float3(1.00f, 0.72f, 0.10f);   // +3 ambre
+    else if (z ==  2) c = make_float3(1.00f, 0.93f, 0.22f);   // +2 jaune
+    else if (z ==  1) c = make_float3(0.72f, 0.90f, 0.32f);   // +1 vert clair
+    else if (z ==  0) c = make_float3(0.50f, 0.50f, 0.50f);   //  0 gris 18%
+    else if (z == -1) c = make_float3(0.18f, 0.62f, 0.32f);   // -1 vert
+    else if (z == -2) c = make_float3(0.06f, 0.70f, 0.68f);   // -2 sarcelle
+    else if (z == -3) c = make_float3(0.08f, 0.60f, 0.95f);   // -3 ciel
+    else if (z == -4) c = make_float3(0.10f, 0.33f, 1.00f);   // -4 bleu
+    else if (z == -5) c = make_float3(0.26f, 0.16f, 0.82f);   // -5 indigo
+    else if (z == -6) c = make_float3(0.40f, 0.08f, 0.58f);   // -6 violet
+    else              c = make_float3(0.20f, 0.00f, 0.28f);   // -7 et moins : noir bouche
+    return make_float3(spowf(c.x, 2.4f), spowf(c.y, 2.4f), spowf(c.z, 2.4f));
+}
+
 // =============================================================================
 //  OKLAB - utilise par Skin Line
 // -----------------------------------------------------------------------------
@@ -2805,6 +2835,17 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   const float fc_code = 0.2126f*rgb.x + 0.7152f*rgb.y + 0.0722f*rgb.z;
   // Linearize if a non-linear input oetf / transfer function is selected
   rgb = linearize(rgb, in_oetf);
+  // STOP ZONES : la vraie luminance de scene, Y du gamut d'entree, prise ici -
+  // decodee, avant la balance des blancs et tout le rendu. C'est ce que la
+  // camera a enregistre, quel que soit le look.
+  // Une couleur hors du spectre (bleu neon d'un gamut large) peut avoir un Y
+  // negatif : on lit alors le luma de ses canaux positifs plutot que d'afficher
+  // un faux noir bouche.
+  float fc_Y = 0.0f;
+  if (fc_overlay == 1 && fc_mode == 0) {
+    fc_Y = vdot(in_to_xyz, rgb).y;
+    if (fc_Y <= 0.0f) fc_Y = 0.2126f*_fmaxf(rgb.x, 0.0f) + 0.7152f*_fmaxf(rgb.y, 0.0f) + 0.0722f*_fmaxf(rgb.z, 0.0f);
+  }
   // Matrice de balance des blancs, gardee pour le masque peau spatial.
   float3x3 wb_m = identity();
 
@@ -2890,8 +2931,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // son calcul, donc les deux outils colorient la meme image de la meme facon.
   float fc_stops = 0.0f;
   if (fc_overlay == 1) {
-    const float fc_lin = linearize(make_float3(fc_code, fc_code, fc_code), in_oetf).x;
-    fc_stops = _log2f(_fmaxf(fc_lin, 1.0e-6f)/0.18f);
+    if (fc_mode == 0) {
+      fc_stops = _log2f(_fmaxf(fc_Y, 1.0e-9f)/0.18f);
+    } else {
+      const float fc_lin = linearize(make_float3(fc_code, fc_code, fc_code), in_oetf).x;
+      fc_stops = _log2f(_fmaxf(fc_lin, 1.0e-6f)/0.18f);
+    }
   }
 
   /*----------- CONTRAST / PIVOT -----------------
@@ -3799,7 +3844,67 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // sont choisis en valeurs de CODE. Places avant l'encodage, chacune d'elles
   // se decalerait avec le reglage de sortie et la legende ne correspondrait
   // plus a ce qu'elle annonce.
-  if (fc_overlay == 1) {
+  if (fc_overlay == 1 && fc_mode == 0) {
+    // ---- STOP ZONES -----------------------------------------------------------
+    float3 fz = fc_zone_color(fc_zone_of(fc_stops));   // Rec.709 LINEAIRE
+    if ((eotf > 0) && (eotf < 4)) fz = spowf3(fz, 1.0f/eotf_p);
+    else if (eotf == 4) fz = eotf_pq(fz, 1);
+    else if (eotf == 5) fz = eotf_hlg(fz, 1);
+    rgb = fz;
+    // LEGENDE : une barre en bas, quinze pastilles de -7 a +7, chacune peinte
+    // par la meme fonction que l'image et marquee de son numero de zone. La
+    // largeur suit le cadre : elle tient aussi en vertical.
+    const float zh = res.y, zw = res.x;
+    const float zpx = pos.x + 0.5f, zpy = pos.y + 0.5f;
+    const float zgp = 0.004f*zh;
+    const float zcw = _fminf(0.060f*zh, (0.92f*zw - 14.0f*zgp)/15.0f);
+    const float zch = _fminf(0.042f*zh, 0.75f*zcw);
+    const float zpd = 0.012f*zh;
+    const float zbw = _fmaxf(1.0f, 0.0020f*zh);
+    const float zblk = 15.0f*zcw + 14.0f*zgp;
+    const float zx0 = 0.5f*(zw - zblk);
+    const float zcy = zh - 0.040f*zh - 0.5f*zch;
+    const float zsf = _fmaxf(1.0f, _floorf(_fminf(0.006f*zh, 0.11f*zcw) + 0.5f));
+    if (legend == 1 && zpy > zcy - 0.5f*zch - zpd - 2.0f && zpy < zcy + 0.5f*zch + zpd + 2.0f &&
+        zpx > zx0 - zpd - 2.0f && zpx < zx0 + zblk + zpd + 2.0f) {
+      float apz = ovl_cov(ovl_rrect_sdf(zpx, zpy, 0.5f*zw, zcy, 0.5f*zblk + zpd, 0.5f*zch + zpd, 0.30f*zch));
+      rgb.x = ovl_mix(rgb.x, 0.0800f, apz);
+      rgb.y = ovl_mix(rgb.y, 0.0800f, apz);
+      rgb.z = ovl_mix(rgb.z, 0.0800f, apz);
+      for (int i = 0; i < 15; ++i) {
+        const int z = i - 7;
+        const float ccx = zx0 + (float)i*(zcw + zgp) + 0.5f*zcw;
+        float aout = ovl_cov(ovl_rrect_sdf(zpx, zpy, ccx, zcy, 0.5f*zcw + zbw, 0.5f*zch + zbw, 0.12f*zch + zbw));
+        if (aout <= 0.0f) continue;
+        rgb.x = ovl_mix(rgb.x, 0.3200f, aout);
+        rgb.y = ovl_mix(rgb.y, 0.3200f, aout);
+        rgb.z = ovl_mix(rgb.z, 0.3200f, aout);
+        float a = ovl_cov(ovl_rrect_sdf(zpx, zpy, ccx, zcy, 0.5f*zcw, 0.5f*zch, 0.12f*zch));
+        if (a <= 0.0f) continue;
+        float3 sw = fc_zone_color(z);
+        if ((eotf > 0) && (eotf < 4)) sw = spowf3(sw, 1.0f/eotf_p);
+        else if (eotf == 4) sw = eotf_pq(sw, 1);
+        else if (eotf == 5) sw = eotf_hlg(sw, 1);
+        rgb.x = ovl_mix(rgb.x, sw.x, a);
+        rgb.y = ovl_mix(rgb.y, sw.y, a);
+        rgb.z = ovl_mix(rgb.z, sw.z, a);
+        // numero de zone : signe + chiffre, 0 seul au gris
+        const float ly = zcy - 2.5f*zsf;
+        float tc;
+        if (z > 0)      tc = _fmaxf(ovl_glyph_cov(zpx, zpy, ccx - 3.5f*zsf, ly, zsf, 10),
+                                    ovl_glyph_cov(zpx, zpy, ccx + 0.5f*zsf, ly, zsf, z));
+        else if (z < 0) tc = _fmaxf(ovl_glyph_cov(zpx, zpy, ccx - 3.5f*zsf, ly, zsf, 11),
+                                    ovl_glyph_cov(zpx, zpy, ccx + 0.5f*zsf, ly, zsf, -z));
+        else            tc = ovl_glyph_cov(zpx, zpy, ccx - 1.5f*zsf, ly, zsf, 0);
+        const float lum_sw = 0.2126f*sw.x + 0.7152f*sw.y + 0.0722f*sw.z;
+        const float tcol = (lum_sw > 0.5000f) ? 0.0f : 0.9000f;
+        rgb.x = ovl_mix(rgb.x, tcol, tc);
+        rgb.y = ovl_mix(rgb.y, tcol, tc);
+        rgb.z = ovl_mix(rgb.z, tcol, tc);
+      }
+    }
+  }
+  else if (fc_overlay == 1) {
     float3 fc = fc_color(fc_stops);                 // Rec.709 LINEAIRE
     if ((eotf > 0) && (eotf < 4)) fc = spowf3(fc, 1.0f/eotf_p);
     else if (eotf == 4) fc = eotf_pq(fc, 1);
