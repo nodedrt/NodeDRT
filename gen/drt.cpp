@@ -3528,11 +3528,9 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   
-  if (trim_hs != 0.0f && !trim_hl_bypass) {
-    ptm_high = trim_hs > 0.0f
-             ? ptm_high*(1.0f - trim_hs*0.78f)                  
-             : ptm_high*(1.0f - trim_hs*0.85f);                  
-  }
+  
+  
+  
 
   float ptm_sc = 1.0f;
   if (ptm_enable) {
@@ -3546,7 +3544,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     
-    ptm_sc = smooth_relu(ptm_sc, 0.02f + 0.15f*_fmaxf(-trim_hs, 0.0f)*(trim_hl_bypass ? 0.0f : 1.0f));
+    ptm_sc = smooth_relu(ptm_sc, 0.02f);
 
   }
 
@@ -3628,6 +3626,27 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     rgb = chroma_sub(rgb, col_chroma);
+  }
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  if (trim_hs != 0.0f && !trim_hl_bypass) {
+    const float hs_lv = spowf(_fmaxf(tsn*ts_m2_e, 0.0f), 1.0f/2.4f);
+    const float hs_w = smootherstep(0.40f, 0.92f, hs_lv);
+    const float hs_k = trim_hs > 0.0f ? 1.0f + 1.2f*trim_hs*hs_w
+                                      : 1.0f + 0.85f*trim_hs*hs_w;
+    rgb = chroma_sub(rgb, hs_k);
   }
 
   
@@ -4100,7 +4119,7 @@ static void cpu_render(const void* pv, const float* src, ptrdiff_t srcRowFloats,
 }
 } // namespace nodeone_drt
 
-#line 4104 "gen/drt.cpp"
+#line 4123 "gen/drt.cpp"
 namespace nodeone_drt {
 static const char* const kMetalSource =
 R"NODEONE(// =============================================================================
@@ -7723,11 +7742,9 @@ R"NODEONE(preset];
   
   
   
-  if (trim_hs != 0.0f && !trim_hl_bypass) {
-    ptm_high = trim_hs > 0.0f
-             ? ptm_high*(1.0f - trim_hs*0.78f)                  
-             : ptm_high*(1.0f - trim_hs*0.85f);                  
-  }
+  
+  
+  
 
   float ptm_sc = 1.0f;
   if (ptm_enable) {
@@ -7741,7 +7758,7 @@ R"NODEONE(preset];
     
     
     
-    ptm_sc = smooth_relu(ptm_sc, 0.02f + 0.15f*_fmaxf(-trim_hs, 0.0f)*(trim_hl_bypass ? 0.0f : 1.0f));
+    ptm_sc = smooth_relu(ptm_sc, 0.02f);
 
   }
 
@@ -7826,8 +7843,29 @@ R"NODEONE(preset];
   }
 
   
-  sat_L = rgb.x*rs_w.x + )NODEONE"
-R"NODEONE(rgb.y*rs_w.y + rgb.z*rs_w.z;
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  if (trim_hs != 0.0f && !trim_hl_bypass) {
+    const float hs_lv = spowf(_fmaxf(tsn*ts_m2_e, 0.0f), 1.0f/2.4f);
+    const float hs_w = smootherstep(0.40f, 0.92f, hs_lv);
+    const float hs_k = trim_hs > 0.0f ? 1.0f + 1.2f*trim_hs*hs_w
+               )NODEONE"
+R"NODEONE(                       : 1.0f + 0.85f*trim_hs*hs_w;
+    rgb = chroma_sub(rgb, hs_k);
+  }
+
+  
+  sat_L = rgb.x*rs_w.x + rgb.y*rs_w.y + rgb.z*rs_w.z;
   rgb = (sat_L*rs_sa - rgb)/(rs_sa - 1.0f);
 
   
@@ -8248,10 +8286,10 @@ R"NODEONE(rgb.y*rs_w.y + rgb.z*rs_w.z;
   if (crv_enable == 1) {
     
     
-    const float crv_h = res.y*crv_size;
+    cons)NODEONE"
+R"NODEONE(t float crv_h = res.y*crv_size;
     const float crv_my = res.y*(1.0f + crv_size)*0.5f;
-    const float crv_mx = res.x*)NODEONE"
-R"NODEONE((1.0f - crv_size)*0.5f;
+    const float crv_mx = res.x*(1.0f - crv_size)*0.5f;
     float3 crv_rgb_dst = make_float3(crv_my-pos.y-crv_rgb.x*crv_h, crv_my-pos.y-crv_rgb.y*crv_h, crv_my-pos.y-crv_rgb.z*crv_h);
     float crv_w0 = 1.1f; 
     crv_rgb_dst.x = _expf(-crv_rgb_dst.x*crv_rgb_dst.x*crv_w0);
@@ -8375,7 +8413,7 @@ static const nodeone::ParamSpec kParams[] = {
     {"trim_sh", "Shadows", "Reopens the bottom of the curve. A gain above the black floor, not an offset: black stays black, no milky veil, no hue drift. Grey and white do not move.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 13, 140},
     {"trim_hp", "Highlight Purity", "Path to white: how fast saturated highlights lose their hue. Up keeps neons, skies and fire coloured further. Hue bleached here cannot be recovered downstream. Not drawn on the Curve View, and that is measured rather than assumed: the plot traces a NEUTRAL ramp, and over 15 stops this control moves a neutral by at most 0.0005 - half a 10-bit code, thinner than the line itself. On saturated content it moves the picture by 0.31. It is a colour control, so the place to watch it is the picture, not the curve.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 13, 144},
     {"trim_hd", "Highlight Density", "The partner to Highlight Purity, and it works on the other half of the problem. Purity decides how much COLOUR a bright pixel keeps; this decides how much LIGHT it carries - and light is what the colour needs somewhere to live in. Hold a saturated sky at full purity and its strongest channel pins at 1.000: the colour is there, the gradation is gone, and the highlight reads as a flat slab. Adding density lowers that highlight, the pinned channel comes off the ceiling, and the shape inside it comes back. It is what a dye layer does - a saturated colour on film is DARKER than a neutral of the same luminance, which is exactly why film has room above a red. Scaled by how saturated the pixel is, so a neutral highlight is never touched, and confined to the top of the scale, so it cannot reach into the midtones. The slider only ADDS density, from nothing to a stop and a third. It does not go the other way on purpose: lifting a saturated highlight pushes it into the ceiling, and a gain that fades as it approaches that ceiling makes the picture go DARKER as the light rises - measured at 233 times the surrounding curvature, which is the very defect this control exists to repair. Use Brilliance if you want a saturated highlight to sit higher. Not drawn on the Curve View, and here the reason is exact rather than small: the gain is scaled by the scene saturation, which is identically zero on a neutral - measured at 1.8e-07 over 15 stops, pure float noise - while the same setting moves saturated content by 0.24. There is literally nothing to plot.", nodeone::kParamFloat, 0.0, 0.0, 1.0, 0.001, nullptr, 0, 13, 148},
-    {"trim_hs", "Highlight Saturation", "Colour in the upper midtones and the lower highlights - and it is not another Highlight Purity. Measured on a saturated orange climbing through the scale: this one peaks around four and a half stops over and then EASES, so the very top still goes to white, and it costs almost no lightness doing it. Highlight Purity instead climbs all the way and holds the top back from white, which is its job, and costs seven times more lightness. Right makes a bright colour stay a colour instead of turning pale as it brightens. Left is the same axis the other way: the colour gives way earlier and more gently on the way up, for a creamy shoulder, the way an older print behaves. The top reaches white either way. Not drawn on the Curve View: measured over 15 stops it moves a neutral by 0.0004, well under half a 10-bit code, against 0.22 on saturated content.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 13, 156},
+    {"trim_hs", "Highlight Saturation", "Saturation of the HIGHLIGHTS only, from the upper midtones up: it does nothing below mid grey and comes in gradually with brightness. Right: a bright colour stays a colour instead of going pale as it climbs - skies, practicals, sunlit skin, neon - up to about twice the chroma. It uses the same subtractive model as Chroma, so the colour gains density (the weaker channels come down) instead of pushing towards clipping, and white stays white. Left: highlights lose their colour earlier and more gently, for a creamy, older-print shoulder. Measured on every look over 15 stops and 16 hues: no gradient ever steps backwards.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 13, 156},
     {"trim_br", "Brilliance", "Lightness of saturated colour, neutrals untouched. Up stops saturated reds going black, down adds density. Mostly reds, oranges and magentas. Not drawn on the Curve View: measured over 15 stops it moves a neutral by 0.0007, half a 10-bit code, against 0.03 on saturated content.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 13, 152},
     {"trim_hl_bypass", "Bypass Shadows & Highlights", "Switches Shadows, Highlight Purity, Highlight Density, Highlight Saturation and Brilliance off in one click, without touching their values - to compare with and without.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 13, 120},
     {"trim_mp", "Mid Purity", "Colour density of the midtones, where skin, foliage and skies live - and the only trim that works in the scene, alongside Color Weight and Color Density. It scales chroma in the DENSITY domain, anchored on the channel carrying the LEAST dye: that channel stays where it is and the others gain density, which is what a purer set of dyes actually does. So a colour DARKENS slightly as it enriches, about nine ten-bit codes at full travel on skin - that is the behaviour, not a side effect, and it is the same thing Color Weight does on purpose. The anchor is not a detail: an earlier version preserved the mean level instead, which sounds cleaner but means lowering the weak channel RAISES the other two, and the render divides by a norm those two dominate, so the weak channel took the same correction twice. Measured at equal rendered chroma it broke ramps at 1.30 percent against 0.83 for the Chroma slider - worse than a control already shipping, for the same result. Anchored on the strongest channel there is only one effect, and it is the same model Chroma uses, so the two handle alike. On a neutral all three densities are equal, so there is nothing to scale: a grey cannot move at any setting - measured at 2e-08 over the whole range, which is float noise. Because it sits in the scene, the tonescale and the path to white then RESPOND to what it puts down - you get an emulsion that carried more dye through the midrange, not a saturation pasted onto a render that has already decided. Right enriches, left goes pastel and the midrange turns chalky in a way a faded print does. The band is read on exposure relative to 18 percent grey with the same anchor Color Density uses, so it falls in the same place on all eight looks, and it is exactly zero beyond three and a half stops from its pivot - it cannot reach where Highlight Purity and Highlight Density work, so it never argues with them. What it cannot do is make a badly behaved look behave: on saturated foliage, sky and cyan the print looks break a ramp on their own, measured at 3.3 percent with every control at zero, and any control that adds chroma shows that up - this one at 4.8 percent worst case against 4.1 for Chroma. The limit there is the look, not the slider. Not drawn on the Curve View: a neutral has no chroma to scale, so there is nothing to plot.", nodeone::kParamFloat, 0.0, -1.0, 1.0, 0.001, nullptr, 0, 14, 160},

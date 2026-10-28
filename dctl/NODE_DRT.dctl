@@ -275,7 +275,7 @@ DEFINE_UI_PARAMS(trim_hd, 🌚 Highlight_Density, DCTLUI_SLIDER_FLOAT, 0.0, 0.0,
 DEFINE_UI_TOOLTIP(trim_hd, "The partner to Highlight Purity, and it works on the other half of the problem. Purity decides how much COLOUR a bright pixel keeps; this decides how much LIGHT it carries - and light is what the colour needs somewhere to live in. Hold a saturated sky at full purity and its strongest channel pins at 1.000: the colour is there, the gradation is gone, and the highlight reads as a flat slab. Adding density lowers that highlight, the pinned channel comes off the ceiling, and the shape inside it comes back. It is what a dye layer does - a saturated colour on film is DARKER than a neutral of the same luminance, which is exactly why film has room above a red. Scaled by how saturated the pixel is, so a neutral highlight is never touched, and confined to the top of the scale, so it cannot reach into the midtones. The slider only ADDS density, from nothing to a stop and a third. It does not go the other way on purpose: lifting a saturated highlight pushes it into the ceiling, and a gain that fades as it approaches that ceiling makes the picture go DARKER as the light rises - measured at 233 times the surrounding curvature, which is the very defect this control exists to repair. Use Brilliance if you want a saturated highlight to sit higher. Not drawn on the Curve View, and here the reason is exact rather than small: the gain is scaled by the scene saturation, which is identically zero on a neutral - measured at 1.8e-07 over 15 stops, pure float noise - while the same setting moves saturated content by 0.24. There is literally nothing to plot.")
 DEFINE_UI_PARAMS(trim_br, 💎 Brilliance, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
 DEFINE_UI_PARAMS(trim_hs, 🏵 Highlight Saturation, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(trim_hs, "Colour in the upper midtones and the lower highlights - and it is not another Highlight Purity. Measured on a saturated orange climbing through the scale: this one peaks around four and a half stops over and then EASES, so the very top still goes to white, and it costs almost no lightness doing it. Highlight Purity instead climbs all the way and holds the top back from white, which is its job, and costs seven times more lightness. Right makes a bright colour stay a colour instead of turning pale as it brightens. Left is the same axis the other way: the colour gives way earlier and more gently on the way up, for a creamy shoulder, the way an older print behaves. The top reaches white either way. Not drawn on the Curve View: measured over 15 stops it moves a neutral by 0.0004, well under half a 10-bit code, against 0.22 on saturated content.")
+DEFINE_UI_TOOLTIP(trim_hs, "Saturation of the HIGHLIGHTS only, from the upper midtones up: it does nothing below mid grey and comes in gradually with brightness. Right: a bright colour stays a colour instead of going pale as it climbs - skies, practicals, sunlit skin, neon - up to about twice the chroma. It uses the same subtractive model as Chroma, so the colour gains density (the weaker channels come down) instead of pushing towards clipping, and white stays white. Left: highlights lose their colour earlier and more gently, for a creamy, older-print shoulder. Measured on every look over 15 stops and 16 hues: no gradient ever steps backwards.")
 DEFINE_UI_PARAMS(trim_mp, 🌿 Mid Purity, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(trim_mp, "Colour density of the midtones, where skin, foliage and skies live - and the only trim that works in the scene, alongside Color Weight and Color Density. It scales chroma in the DENSITY domain, anchored on the channel carrying the LEAST dye: that channel stays where it is and the others gain density, which is what a purer set of dyes actually does. So a colour DARKENS slightly as it enriches, about nine ten-bit codes at full travel on skin - that is the behaviour, not a side effect, and it is the same thing Color Weight does on purpose. The anchor is not a detail: an earlier version preserved the mean level instead, which sounds cleaner but means lowering the weak channel RAISES the other two, and the render divides by a norm those two dominate, so the weak channel took the same correction twice. Measured at equal rendered chroma it broke ramps at 1.30 percent against 0.83 for the Chroma slider - worse than a control already shipping, for the same result. Anchored on the strongest channel there is only one effect, and it is the same model Chroma uses, so the two handle alike. On a neutral all three densities are equal, so there is nothing to scale: a grey cannot move at any setting - measured at 2e-08 over the whole range, which is float noise. Because it sits in the scene, the tonescale and the path to white then RESPOND to what it puts down - you get an emulsion that carried more dye through the midrange, not a saturation pasted onto a render that has already decided. Right enriches, left goes pastel and the midrange turns chalky in a way a faded print does. The band is read on exposure relative to 18 percent grey with the same anchor Color Density uses, so it falls in the same place on all eight looks, and it is exactly zero beyond three and a half stops from its pivot - it cannot reach where Highlight Purity and Highlight Density work, so it never argues with them. What it cannot do is make a badly behaved look behave: on saturated foliage, sky and cyan the print looks break a ramp on their own, measured at 3.3 percent with every control at zero, and any control that adds chroma shows that up - this one at 4.8 percent worst case against 4.1 for Chroma. The limit there is the look, not the slider. Not drawn on the Curve View: a neutral has no chroma to scale, so there is nothing to plot.")
 DEFINE_UI_PARAMS(trim_mp_pv, 🌿 Mid Purity_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, -2.0, 2.0, 0.001)
@@ -3437,11 +3437,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // donc viser -1 a gauche ne laissait qu'un dixieme de course et le cote
   // gauche ne faisait presque rien. Mis a l'echelle, il en a autant que le
   // droit.
-  if (trim_hs != 0.0f && !trim_hl_bypass) {
-    ptm_high = trim_hs > 0.0f
-             ? ptm_high*(1.0f - trim_hs*0.78f)                  // plus de couleur
-             : ptm_high*(1.0f - trim_hs*0.85f);                  // plus cremeux
-  }
+  // (Version 1.2 : Highlight Saturation n'agit plus ici - il etait trop
+  // faible, +0.011 de chroma au mieux. Il vit maintenant apres Chroma, voir
+  // plus bas.)
 
   float ptm_sc = 1.0f;
   if (ptm_enable) {
@@ -3455,7 +3453,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // Ensure no negative scale - sans coin (audit 26/10/2026) : le raccord
     // s'elargit quand Highlight Saturation pousse vers le cremeux, la ou
     // l'echelle atteint zero.
-    ptm_sc = smooth_relu(ptm_sc, 0.02f + 0.15f*_fmaxf(-trim_hs, 0.0f)*(trim_hl_bypass ? 0.0f : 1.0f));
+    ptm_sc = smooth_relu(ptm_sc, 0.02f);
 
   }
 
@@ -3537,6 +3535,27 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // 0.76 pour cent de recul de luminance sur un bleu sature. Enleve, la
     // courbe est continue et le recul tombe dans le bruit.
     rgb = chroma_sub(rgb, col_chroma);
+  }
+
+  // ---- HIGHLIGHT SATURATION (version 1.2) ------------------------------------
+  // La saturation des HAUTES LUMIERES seulement, dosee par la clarte rendue.
+  // Meme modele que Chroma (soustractif, ancre sur le canal fort) : saturer
+  // fait descendre les canaux faibles au lieu de pousser le fort vers le clip,
+  // donc une haute lumiere qui se colore gagne de la densite au lieu de
+  // bruler. Le poids suit le niveau d'affichage (code ~0.40 au gris 18 %) : nul
+  // sous le haut des tons moyens, plein dans les hautes lumieres. Le blanc
+  // reste blanc : sur un neutre les ratios valent 1, et le chemin vers le
+  // blanc a deja ramene le sommet pres du neutre, il n'y a rien a saturer.
+  // A droite jusqu'a +120 % de chroma, a gauche jusqu'a -85 % (epaule
+  // cremeuse). La rampe du poids (code 0.40 -> 0.92) est assez large pour
+  // qu'aucune rampe d'exposition ne recule : mesure sur les 8 looks, 16
+  // teintes, 15 stops, Highlight Saturation de -1 a +1. A 0 le bloc est saute : identite au bit pres.
+  if (trim_hs != 0.0f && !trim_hl_bypass) {
+    const float hs_lv = spowf(_fmaxf(tsn*ts_m2_e, 0.0f), 1.0f/2.4f);
+    const float hs_w = smootherstep(0.40f, 0.92f, hs_lv);
+    const float hs_k = trim_hs > 0.0f ? 1.0f + 1.2f*trim_hs*hs_w
+                                      : 1.0f + 0.85f*trim_hs*hs_w;
+    rgb = chroma_sub(rgb, hs_k);
   }
 
   // Inverse Rendering Space

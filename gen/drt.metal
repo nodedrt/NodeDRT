@@ -3608,11 +3608,9 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   
-  if (trim_hs != 0.0f && !trim_hl_bypass) {
-    ptm_high = trim_hs > 0.0f
-             ? ptm_high*(1.0f - trim_hs*0.78f)                  
-             : ptm_high*(1.0f - trim_hs*0.85f);                  
-  }
+  
+  
+  
 
   float ptm_sc = 1.0f;
   if (ptm_enable) {
@@ -3626,7 +3624,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     
-    ptm_sc = smooth_relu(ptm_sc, 0.02f + 0.15f*_fmaxf(-trim_hs, 0.0f)*(trim_hl_bypass ? 0.0f : 1.0f));
+    ptm_sc = smooth_relu(ptm_sc, 0.02f);
 
   }
 
@@ -3708,6 +3706,27 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     rgb = chroma_sub(rgb, col_chroma);
+  }
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  if (trim_hs != 0.0f && !trim_hl_bypass) {
+    const float hs_lv = spowf(_fmaxf(tsn*ts_m2_e, 0.0f), 1.0f/2.4f);
+    const float hs_w = smootherstep(0.40f, 0.92f, hs_lv);
+    const float hs_k = trim_hs > 0.0f ? 1.0f + 1.2f*trim_hs*hs_w
+                                      : 1.0f + 0.85f*trim_hs*hs_w;
+    rgb = chroma_sub(rgb, hs_k);
   }
 
   
