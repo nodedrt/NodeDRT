@@ -253,7 +253,7 @@ def rewrite_transform(body, params):
     locals_ = []
     for p in params:
         t = 'float' if p.kind == 'float' else 'int'
-        locals_.append('%s %s = P_.%s;' % (t, p.name, p.name))
+        locals_.append('%s %s = NODEONE_PV_%s;' % (t, p.name, p.name))
     inj = ' '.join(locals_) + ' (void)0;'
     new = (body[:m.start()] + '__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, ' + args + ') {' + inj +
            body[brace + 1:])
@@ -281,7 +281,19 @@ def params_block(params):
             if names:
                 enums.append('enum { %s };' % ', '.join(names))
     fields = ['    %s %s;' % ('float' if p.kind == 'float' else 'int', p.name) for p in params]
-    return '\n'.join(enums) + '\nstruct DctlParams {\n' + '\n'.join(fields) + '\n};\n'
+    # SPECIALISATION. Each parameter is read through NODEONE_PV_<name>. By
+    # default that is the parameter block, as before. The Metal backend can
+    # compile a variant of the kernel in which some parameters are fixed
+    # (NODEONE_SPEC_<name> defined at compile time: every menu and checkbox,
+    # and any slider sitting exactly at 0 or 1). The compiler then removes the
+    # branches that cannot run and the kernel needs far fewer registers - the
+    # same arithmetic, several times faster. The CPU path never defines them.
+    spec = []
+    for p in params:
+        spec.append('#ifdef NODEONE_SPEC_%s\n#define NODEONE_PV_%s (NODEONE_SPEC_%s)\n#else\n#define NODEONE_PV_%s (P_.%s)\n#endif'
+                    % (p.name, p.name, p.name, p.name, p.name))
+    return ('\n'.join(enums) + '\nstruct DctlParams {\n' + '\n'.join(fields) + '\n};\n' +
+            '\n'.join(spec) + '\n')
 
 
 # ---------------------------------------------------------------------------

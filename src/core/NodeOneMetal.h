@@ -52,8 +52,9 @@ struct ChainMetalJob {
 bool metalRenderChain(const ChainMetalJob& job, std::string& error);
 
 // Starts compiling the effect's Metal kernel in the background so the first
-// frame does not wait for it.
-void metalPrewarm(const PluginDef& def);
+// frame does not wait for it - the generic kernel, and the specialised one for
+// `params` (the instance's settings) when given.
+void metalPrewarm(const PluginDef& def, const void* params = nullptr);
 
 
 

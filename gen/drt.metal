@@ -173,6 +173,326 @@ struct DctlParams {
     float look_intensity;
     float tone_intensity;
 };
+#ifdef NODEONE_SPEC_in_gamut
+#define NODEONE_PV_in_gamut (NODEONE_SPEC_in_gamut)
+#else
+#define NODEONE_PV_in_gamut (P_.in_gamut)
+#endif
+#ifdef NODEONE_SPEC_in_oetf
+#define NODEONE_PV_in_oetf (NODEONE_SPEC_in_oetf)
+#else
+#define NODEONE_PV_in_oetf (P_.in_oetf)
+#endif
+#ifdef NODEONE_SPEC_tn_Lp
+#define NODEONE_PV_tn_Lp (NODEONE_SPEC_tn_Lp)
+#else
+#define NODEONE_PV_tn_Lp (P_.tn_Lp)
+#endif
+#ifdef NODEONE_SPEC_tn_gb
+#define NODEONE_PV_tn_gb (NODEONE_SPEC_tn_gb)
+#else
+#define NODEONE_PV_tn_gb (P_.tn_gb)
+#endif
+#ifdef NODEONE_SPEC_pt_hdr
+#define NODEONE_PV_pt_hdr (NODEONE_SPEC_pt_hdr)
+#else
+#define NODEONE_PV_pt_hdr (P_.pt_hdr)
+#endif
+#ifdef NODEONE_SPEC_out_clamp
+#define NODEONE_PV_out_clamp (NODEONE_SPEC_out_clamp)
+#else
+#define NODEONE_PV_out_clamp (P_.out_clamp)
+#endif
+#ifdef NODEONE_SPEC_crv_enable
+#define NODEONE_PV_crv_enable (NODEONE_SPEC_crv_enable)
+#else
+#define NODEONE_PV_crv_enable (P_.crv_enable)
+#endif
+#ifdef NODEONE_SPEC_crv_size
+#define NODEONE_PV_crv_size (NODEONE_SPEC_crv_size)
+#else
+#define NODEONE_PV_crv_size (P_.crv_size)
+#endif
+#ifdef NODEONE_SPEC_fc_overlay
+#define NODEONE_PV_fc_overlay (NODEONE_SPEC_fc_overlay)
+#else
+#define NODEONE_PV_fc_overlay (P_.fc_overlay)
+#endif
+#ifdef NODEONE_SPEC_skin_check
+#define NODEONE_PV_skin_check (NODEONE_SPEC_skin_check)
+#else
+#define NODEONE_PV_skin_check (P_.skin_check)
+#endif
+#ifdef NODEONE_SPEC_legend
+#define NODEONE_PV_legend (NODEONE_SPEC_legend)
+#else
+#define NODEONE_PV_legend (P_.legend)
+#endif
+#ifdef NODEONE_SPEC_look_preset
+#define NODEONE_PV_look_preset (NODEONE_SPEC_look_preset)
+#else
+#define NODEONE_PV_look_preset (P_.look_preset)
+#endif
+#ifdef NODEONE_SPEC_look_bypass
+#define NODEONE_PV_look_bypass (NODEONE_SPEC_look_bypass)
+#else
+#define NODEONE_PV_look_bypass (P_.look_bypass)
+#endif
+#ifdef NODEONE_SPEC_print_tone_sel
+#define NODEONE_PV_print_tone_sel (NODEONE_SPEC_print_tone_sel)
+#else
+#define NODEONE_PV_print_tone_sel (P_.print_tone_sel)
+#endif
+#ifdef NODEONE_SPEC_tone_bypass
+#define NODEONE_PV_tone_bypass (NODEONE_SPEC_tone_bypass)
+#else
+#define NODEONE_PV_tone_bypass (P_.tone_bypass)
+#endif
+#ifdef NODEONE_SPEC_wb_preset
+#define NODEONE_PV_wb_preset (NODEONE_SPEC_wb_preset)
+#else
+#define NODEONE_PV_wb_preset (P_.wb_preset)
+#endif
+#ifdef NODEONE_SPEC_wb_kelvin
+#define NODEONE_PV_wb_kelvin (NODEONE_SPEC_wb_kelvin)
+#else
+#define NODEONE_PV_wb_kelvin (P_.wb_kelvin)
+#endif
+#ifdef NODEONE_SPEC_wb_temp
+#define NODEONE_PV_wb_temp (NODEONE_SPEC_wb_temp)
+#else
+#define NODEONE_PV_wb_temp (P_.wb_temp)
+#endif
+#ifdef NODEONE_SPEC_wb_tint
+#define NODEONE_PV_wb_tint (NODEONE_SPEC_wb_tint)
+#else
+#define NODEONE_PV_wb_tint (P_.wb_tint)
+#endif
+#ifdef NODEONE_SPEC_wb_bypass
+#define NODEONE_PV_wb_bypass (NODEONE_SPEC_wb_bypass)
+#else
+#define NODEONE_PV_wb_bypass (P_.wb_bypass)
+#endif
+#ifdef NODEONE_SPEC_cw_bypass
+#define NODEONE_PV_cw_bypass (NODEONE_SPEC_cw_bypass)
+#else
+#define NODEONE_PV_cw_bypass (P_.cw_bypass)
+#endif
+#ifdef NODEONE_SPEC__cwp
+#define NODEONE_PV__cwp (NODEONE_SPEC__cwp)
+#else
+#define NODEONE_PV__cwp (P_._cwp)
+#endif
+#ifdef NODEONE_SPEC__cwp_rng
+#define NODEONE_PV__cwp_rng (NODEONE_SPEC__cwp_rng)
+#else
+#define NODEONE_PV__cwp_rng (P_._cwp_rng)
+#endif
+#ifdef NODEONE_SPEC_col_weight
+#define NODEONE_PV_col_weight (NODEONE_SPEC_col_weight)
+#else
+#define NODEONE_PV_col_weight (P_.col_weight)
+#endif
+#ifdef NODEONE_SPEC_col_dens
+#define NODEONE_PV_col_dens (NODEONE_SPEC_col_dens)
+#else
+#define NODEONE_PV_col_dens (P_.col_dens)
+#endif
+#ifdef NODEONE_SPEC_col_bypass
+#define NODEONE_PV_col_bypass (NODEONE_SPEC_col_bypass)
+#else
+#define NODEONE_PV_col_bypass (P_.col_bypass)
+#endif
+#ifdef NODEONE_SPEC_col_chroma
+#define NODEONE_PV_col_chroma (NODEONE_SPEC_col_chroma)
+#else
+#define NODEONE_PV_col_chroma (P_.col_chroma)
+#endif
+#ifdef NODEONE_SPEC_col_ptw
+#define NODEONE_PV_col_ptw (NODEONE_SPEC_col_ptw)
+#else
+#define NODEONE_PV_col_ptw (P_.col_ptw)
+#endif
+#ifdef NODEONE_SPEC_col_onset
+#define NODEONE_PV_col_onset (NODEONE_SPEC_col_onset)
+#else
+#define NODEONE_PV_col_onset (P_.col_onset)
+#endif
+#ifdef NODEONE_SPEC_trim_con_bypass
+#define NODEONE_PV_trim_con_bypass (NODEONE_SPEC_trim_con_bypass)
+#else
+#define NODEONE_PV_trim_con_bypass (P_.trim_con_bypass)
+#endif
+#ifdef NODEONE_SPEC_trim_hl_bypass
+#define NODEONE_PV_trim_hl_bypass (NODEONE_SPEC_trim_hl_bypass)
+#else
+#define NODEONE_PV_trim_hl_bypass (P_.trim_hl_bypass)
+#endif
+#ifdef NODEONE_SPEC_trim_mid_bypass
+#define NODEONE_PV_trim_mid_bypass (NODEONE_SPEC_trim_mid_bypass)
+#else
+#define NODEONE_PV_trim_mid_bypass (P_.trim_mid_bypass)
+#endif
+#ifdef NODEONE_SPEC_trim_con
+#define NODEONE_PV_trim_con (NODEONE_SPEC_trim_con)
+#else
+#define NODEONE_PV_trim_con (P_.trim_con)
+#endif
+#ifdef NODEONE_SPEC_trim_piv
+#define NODEONE_PV_trim_piv (NODEONE_SPEC_trim_piv)
+#else
+#define NODEONE_PV_trim_piv (P_.trim_piv)
+#endif
+#ifdef NODEONE_SPEC_trim_ovl
+#define NODEONE_PV_trim_ovl (NODEONE_SPEC_trim_ovl)
+#else
+#define NODEONE_PV_trim_ovl (P_.trim_ovl)
+#endif
+#ifdef NODEONE_SPEC_trim_sh
+#define NODEONE_PV_trim_sh (NODEONE_SPEC_trim_sh)
+#else
+#define NODEONE_PV_trim_sh (P_.trim_sh)
+#endif
+#ifdef NODEONE_SPEC_trim_hp
+#define NODEONE_PV_trim_hp (NODEONE_SPEC_trim_hp)
+#else
+#define NODEONE_PV_trim_hp (P_.trim_hp)
+#endif
+#ifdef NODEONE_SPEC_trim_hd
+#define NODEONE_PV_trim_hd (NODEONE_SPEC_trim_hd)
+#else
+#define NODEONE_PV_trim_hd (P_.trim_hd)
+#endif
+#ifdef NODEONE_SPEC_trim_br
+#define NODEONE_PV_trim_br (NODEONE_SPEC_trim_br)
+#else
+#define NODEONE_PV_trim_br (P_.trim_br)
+#endif
+#ifdef NODEONE_SPEC_trim_hs
+#define NODEONE_PV_trim_hs (NODEONE_SPEC_trim_hs)
+#else
+#define NODEONE_PV_trim_hs (P_.trim_hs)
+#endif
+#ifdef NODEONE_SPEC_trim_mp
+#define NODEONE_PV_trim_mp (NODEONE_SPEC_trim_mp)
+#else
+#define NODEONE_PV_trim_mp (P_.trim_mp)
+#endif
+#ifdef NODEONE_SPEC_trim_mp_pv
+#define NODEONE_PV_trim_mp_pv (NODEONE_SPEC_trim_mp_pv)
+#else
+#define NODEONE_PV_trim_mp_pv (P_.trim_mp_pv)
+#endif
+#ifdef NODEONE_SPEC_trim_skin
+#define NODEONE_PV_trim_skin (NODEONE_SPEC_trim_skin)
+#else
+#define NODEONE_PV_trim_skin (P_.trim_skin)
+#endif
+#ifdef NODEONE_SPEC_trim_skin_sat
+#define NODEONE_PV_trim_skin_sat (NODEONE_SPEC_trim_skin_sat)
+#else
+#define NODEONE_PV_trim_skin_sat (P_.trim_skin_sat)
+#endif
+#ifdef NODEONE_SPEC_skin_piv
+#define NODEONE_PV_skin_piv (NODEONE_SPEC_skin_piv)
+#else
+#define NODEONE_PV_skin_piv (P_.skin_piv)
+#endif
+#ifdef NODEONE_SPEC_skin_soft
+#define NODEONE_PV_skin_soft (NODEONE_SPEC_skin_soft)
+#else
+#define NODEONE_PV_skin_soft (P_.skin_soft)
+#endif
+#ifdef NODEONE_SPEC_skin_mhue
+#define NODEONE_PV_skin_mhue (NODEONE_SPEC_skin_mhue)
+#else
+#define NODEONE_PV_skin_mhue (P_.skin_mhue)
+#endif
+#ifdef NODEONE_SPEC_skin_mrec
+#define NODEONE_PV_skin_mrec (NODEONE_SPEC_skin_mrec)
+#else
+#define NODEONE_PV_skin_mrec (P_.skin_mrec)
+#endif
+#ifdef NODEONE_SPEC_skin_medge
+#define NODEONE_PV_skin_medge (NODEONE_SPEC_skin_medge)
+#else
+#define NODEONE_PV_skin_medge (P_.skin_medge)
+#endif
+#ifdef NODEONE_SPEC_skin_mask_bypass
+#define NODEONE_PV_skin_mask_bypass (NODEONE_SPEC_skin_mask_bypass)
+#else
+#define NODEONE_PV_skin_mask_bypass (P_.skin_mask_bypass)
+#endif
+#ifdef NODEONE_SPEC_skin_zones
+#define NODEONE_PV_skin_zones (NODEONE_SPEC_skin_zones)
+#else
+#define NODEONE_PV_skin_zones (P_.skin_zones)
+#endif
+#ifdef NODEONE_SPEC_skin_col_bypass
+#define NODEONE_PV_skin_col_bypass (NODEONE_SPEC_skin_col_bypass)
+#else
+#define NODEONE_PV_skin_col_bypass (P_.skin_col_bypass)
+#endif
+#ifdef NODEONE_SPEC_skin_light_bypass
+#define NODEONE_PV_skin_light_bypass (NODEONE_SPEC_skin_light_bypass)
+#else
+#define NODEONE_PV_skin_light_bypass (P_.skin_light_bypass)
+#endif
+#ifdef NODEONE_SPEC_skin_hi
+#define NODEONE_PV_skin_hi (NODEONE_SPEC_skin_hi)
+#else
+#define NODEONE_PV_skin_hi (P_.skin_hi)
+#endif
+#ifdef NODEONE_SPEC_skin_mid
+#define NODEONE_PV_skin_mid (NODEONE_SPEC_skin_mid)
+#else
+#define NODEONE_PV_skin_mid (P_.skin_mid)
+#endif
+#ifdef NODEONE_SPEC_skin_sh
+#define NODEONE_PV_skin_sh (NODEONE_SPEC_skin_sh)
+#else
+#define NODEONE_PV_skin_sh (P_.skin_sh)
+#endif
+#ifdef NODEONE_SPEC_tone_curve_bypass
+#define NODEONE_PV_tone_curve_bypass (NODEONE_SPEC_tone_curve_bypass)
+#else
+#define NODEONE_PV_tone_curve_bypass (P_.tone_curve_bypass)
+#endif
+#ifdef NODEONE_SPEC_tonescale_preset
+#define NODEONE_PV_tonescale_preset (NODEONE_SPEC_tonescale_preset)
+#else
+#define NODEONE_PV_tonescale_preset (P_.tonescale_preset)
+#endif
+#ifdef NODEONE_SPEC_ts_intensity
+#define NODEONE_PV_ts_intensity (NODEONE_SPEC_ts_intensity)
+#else
+#define NODEONE_PV_ts_intensity (P_.ts_intensity)
+#endif
+#ifdef NODEONE_SPEC_credits
+#define NODEONE_PV_credits (NODEONE_SPEC_credits)
+#else
+#define NODEONE_PV_credits (P_.credits)
+#endif
+#ifdef NODEONE_SPEC_trial_mark
+#define NODEONE_PV_trial_mark (NODEONE_SPEC_trial_mark)
+#else
+#define NODEONE_PV_trial_mark (P_.trial_mark)
+#endif
+#ifdef NODEONE_SPEC_display_encoding_preset
+#define NODEONE_PV_display_encoding_preset (NODEONE_SPEC_display_encoding_preset)
+#else
+#define NODEONE_PV_display_encoding_preset (P_.display_encoding_preset)
+#endif
+#ifdef NODEONE_SPEC_look_intensity
+#define NODEONE_PV_look_intensity (NODEONE_SPEC_look_intensity)
+#else
+#define NODEONE_PV_look_intensity (P_.look_intensity)
+#endif
+#ifdef NODEONE_SPEC_tone_intensity
+#define NODEONE_PV_tone_intensity (NODEONE_SPEC_tone_intensity)
+#else
+#define NODEONE_PV_tone_intensity (P_.tone_intensity)
+#endif
 #line 1 "NODE_DRT.dctl"
 
 
@@ -2674,7 +2994,7 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(ws/gs, wl/gs);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = P_.in_gamut; int in_oetf = P_.in_oetf; float tn_Lp = P_.tn_Lp; float tn_gb = P_.tn_gb; float pt_hdr = P_.pt_hdr; int out_clamp = P_.out_clamp; int crv_enable = P_.crv_enable; float crv_size = P_.crv_size; int fc_overlay = P_.fc_overlay; int skin_check = P_.skin_check; int legend = P_.legend; int look_preset = P_.look_preset; int look_bypass = P_.look_bypass; int print_tone_sel = P_.print_tone_sel; int tone_bypass = P_.tone_bypass; int wb_preset = P_.wb_preset; float wb_kelvin = P_.wb_kelvin; float wb_temp = P_.wb_temp; float wb_tint = P_.wb_tint; int wb_bypass = P_.wb_bypass; int cw_bypass = P_.cw_bypass; int _cwp = P_._cwp; float _cwp_rng = P_._cwp_rng; float col_weight = P_.col_weight; float col_dens = P_.col_dens; int col_bypass = P_.col_bypass; float col_chroma = P_.col_chroma; float col_ptw = P_.col_ptw; float col_onset = P_.col_onset; int trim_con_bypass = P_.trim_con_bypass; int trim_hl_bypass = P_.trim_hl_bypass; int trim_mid_bypass = P_.trim_mid_bypass; float trim_con = P_.trim_con; float trim_piv = P_.trim_piv; float trim_ovl = P_.trim_ovl; float trim_sh = P_.trim_sh; float trim_hp = P_.trim_hp; float trim_hd = P_.trim_hd; float trim_br = P_.trim_br; float trim_hs = P_.trim_hs; float trim_mp = P_.trim_mp; float trim_mp_pv = P_.trim_mp_pv; float trim_skin = P_.trim_skin; float trim_skin_sat = P_.trim_skin_sat; float skin_piv = P_.skin_piv; float skin_soft = P_.skin_soft; float skin_mhue = P_.skin_mhue; float skin_mrec = P_.skin_mrec; float skin_medge = P_.skin_medge; int skin_mask_bypass = P_.skin_mask_bypass; int skin_zones = P_.skin_zones; int skin_col_bypass = P_.skin_col_bypass; int skin_light_bypass = P_.skin_light_bypass; float skin_hi = P_.skin_hi; float skin_mid = P_.skin_mid; float skin_sh = P_.skin_sh; int tone_curve_bypass = P_.tone_curve_bypass; int tonescale_preset = P_.tonescale_preset; float ts_intensity = P_.ts_intensity; int credits = P_.credits; int trial_mark = P_.trial_mark; int display_encoding_preset = P_.display_encoding_preset; float look_intensity = P_.look_intensity; float tone_intensity = P_.tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = NODEONE_PV_in_gamut; int in_oetf = NODEONE_PV_in_oetf; float tn_Lp = NODEONE_PV_tn_Lp; float tn_gb = NODEONE_PV_tn_gb; float pt_hdr = NODEONE_PV_pt_hdr; int out_clamp = NODEONE_PV_out_clamp; int crv_enable = NODEONE_PV_crv_enable; float crv_size = NODEONE_PV_crv_size; int fc_overlay = NODEONE_PV_fc_overlay; int skin_check = NODEONE_PV_skin_check; int legend = NODEONE_PV_legend; int look_preset = NODEONE_PV_look_preset; int look_bypass = NODEONE_PV_look_bypass; int print_tone_sel = NODEONE_PV_print_tone_sel; int tone_bypass = NODEONE_PV_tone_bypass; int wb_preset = NODEONE_PV_wb_preset; float wb_kelvin = NODEONE_PV_wb_kelvin; float wb_temp = NODEONE_PV_wb_temp; float wb_tint = NODEONE_PV_wb_tint; int wb_bypass = NODEONE_PV_wb_bypass; int cw_bypass = NODEONE_PV_cw_bypass; int _cwp = NODEONE_PV__cwp; float _cwp_rng = NODEONE_PV__cwp_rng; float col_weight = NODEONE_PV_col_weight; float col_dens = NODEONE_PV_col_dens; int col_bypass = NODEONE_PV_col_bypass; float col_chroma = NODEONE_PV_col_chroma; float col_ptw = NODEONE_PV_col_ptw; float col_onset = NODEONE_PV_col_onset; int trim_con_bypass = NODEONE_PV_trim_con_bypass; int trim_hl_bypass = NODEONE_PV_trim_hl_bypass; int trim_mid_bypass = NODEONE_PV_trim_mid_bypass; float trim_con = NODEONE_PV_trim_con; float trim_piv = NODEONE_PV_trim_piv; float trim_ovl = NODEONE_PV_trim_ovl; float trim_sh = NODEONE_PV_trim_sh; float trim_hp = NODEONE_PV_trim_hp; float trim_hd = NODEONE_PV_trim_hd; float trim_br = NODEONE_PV_trim_br; float trim_hs = NODEONE_PV_trim_hs; float trim_mp = NODEONE_PV_trim_mp; float trim_mp_pv = NODEONE_PV_trim_mp_pv; float trim_skin = NODEONE_PV_trim_skin; float trim_skin_sat = NODEONE_PV_trim_skin_sat; float skin_piv = NODEONE_PV_skin_piv; float skin_soft = NODEONE_PV_skin_soft; float skin_mhue = NODEONE_PV_skin_mhue; float skin_mrec = NODEONE_PV_skin_mrec; float skin_medge = NODEONE_PV_skin_medge; int skin_mask_bypass = NODEONE_PV_skin_mask_bypass; int skin_zones = NODEONE_PV_skin_zones; int skin_col_bypass = NODEONE_PV_skin_col_bypass; int skin_light_bypass = NODEONE_PV_skin_light_bypass; float skin_hi = NODEONE_PV_skin_hi; float skin_mid = NODEONE_PV_skin_mid; float skin_sh = NODEONE_PV_skin_sh; int tone_curve_bypass = NODEONE_PV_tone_curve_bypass; int tonescale_preset = NODEONE_PV_tonescale_preset; float ts_intensity = NODEONE_PV_ts_intensity; int credits = NODEONE_PV_credits; int trial_mark = NODEONE_PV_trial_mark; int display_encoding_preset = NODEONE_PV_display_encoding_preset; float look_intensity = NODEONE_PV_look_intensity; float tone_intensity = NODEONE_PV_tone_intensity; (void)0;
   
   
   

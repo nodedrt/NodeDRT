@@ -11,6 +11,7 @@
 #import <Metal/Metal.h>
 
 #include <condition_variable>
+#include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
@@ -124,6 +125,132 @@ id<MTLComputePipelineState> pipeline(id<MTLDevice> dev, const PluginDef* def, st
     return e.pso;
 }
 
+// =============================================================================
+//  SPECIALISED KERNELS
+// -----------------------------------------------------------------------------
+//  The generic kernel reads every setting from the parameter block, so it has
+//  to carry every branch of the DCTL at once: every look, every tonescale,
+//  every display, every trim. That costs registers, the GPU runs it with few
+//  threads in flight, and it is slow (57 ms per UHD frame on an M2 Pro with
+//  the default settings).
+//
+//  A specialised kernel is the same source compiled with some settings fixed
+//  (see NODEONE_SPEC_ in tools/dctl2ofx.py): every menu and checkbox, and any
+//  slider sitting exactly at +0 or 1. The compiler removes what cannot run.
+//  Same DCTL, same arithmetic, fast-math still off - and several times faster.
+//
+//  Variants are compiled in the background the first time a combination is
+//  seen and kept. Until a variant is ready the generic kernel renders the
+//  frame, so changing a menu never stalls playback.
+// =============================================================================
+struct SpecEntry {
+    id<MTLComputePipelineState> pso = nil;
+    bool compiling = false;
+    bool failed = false;
+    uint64_t lastUse = 0;
+};
+std::mutex gSpecMutex;
+std::map<std::string, SpecEntry> gSpec;
+uint64_t gSpecClock = 0;
+int gSpecInFlight = 0;
+const size_t kSpecMax = 64;        // variants kept per process (a few KB each)
+const int kSpecMaxInFlight = 4;    // compiles running at once
+
+// Key + macros for the settings in this parameter block. A float is fixed only
+// when its bits are exactly +0.0f or 1.0f, so the constant is the value itself.
+std::string specKey(id<MTLDevice> dev, const PluginDef* def, const void* params, NSMutableDictionary* macros)
+{
+    std::string key = std::to_string((unsigned long long)dev.registryID) + "|" + def->identifier;
+    const uint8_t* b = static_cast<const uint8_t*>(params);
+    for (int i = 0; i < def->nParams; ++i) {
+        const ParamSpec& p = def->params[i];
+        if (p.offset >= kPluginOnly) continue;      // plugin-only / synthetic: not in the block
+        uint32_t bits = 0;
+        std::memcpy(&bits, b + p.offset, 4);
+        std::string val;
+        if (p.kind == kParamFloat) {
+            if (bits == 0x00000000u) val = "0.0f";
+            else if (bits == 0x3F800000u) val = "1.0f";
+            else continue;
+        } else {
+            val = "(" + std::to_string((int32_t)bits) + ")";
+        }
+        key += "|";
+        key += p.name;
+        key += "=";
+        key += val;
+        if (macros)
+            macros[[NSString stringWithFormat:@"NODEONE_SPEC_%s", p.name]] = [NSString stringWithUTF8String:val.c_str()];
+    }
+    return key;
+}
+
+void specEvict()   // gSpecMutex held
+{
+    while (gSpec.size() > kSpecMax) {
+        auto victim = gSpec.end();
+        for (auto it = gSpec.begin(); it != gSpec.end(); ++it)
+            if (!it->second.compiling && (victim == gSpec.end() || it->second.lastUse < victim->second.lastUse))
+                victim = it;
+        if (victim == gSpec.end()) return;
+        gSpec.erase(victim);
+    }
+}
+
+// Non-blocking: the specialised pipeline when it is ready, nil otherwise (and
+// its compile is started if it was not already).
+id<MTLComputePipelineState> specializedPipeline(id<MTLDevice> dev, const PluginDef* def, const void* params)
+{
+    if (!dev || !def || !params || !def->metalSource) return nil;
+    const std::string key = specKey(dev, def, params, nil);
+    {
+        std::lock_guard<std::mutex> lock(gSpecMutex);
+        auto it = gSpec.find(key);
+        if (it != gSpec.end()) {
+            it->second.lastUse = ++gSpecClock;
+            return it->second.pso;      // nil while compiling or if it failed
+        }
+        if (gSpecInFlight >= kSpecMaxInFlight) return nil;   // try again next frame
+        SpecEntry& e = gSpec[key];
+        e.compiling = true;
+        e.lastUse = ++gSpecClock;
+        ++gSpecInFlight;
+        specEvict();
+    }
+    NSMutableDictionary* macros = [NSMutableDictionary dictionary];
+    specKey(dev, def, params, macros);
+    MTLCompileOptions* o = compileOptions();
+    o.preprocessorMacros = macros;
+    NSString* src = [NSString stringWithUTF8String:def->metalSource];
+    NSString* fnName = [NSString stringWithUTF8String:def->metalKernelName];
+    [dev newLibraryWithSource:src
+                      options:o
+            completionHandler:^(id<MTLLibrary> lib, NSError* err) {
+              id<MTLComputePipelineState> pso = nil;
+              std::string msg;
+              if (lib) {
+                  id<MTLFunction> fn = [lib newFunctionWithName:fnName];
+                  if (fn) {
+                      NSError* perr = nil;
+                      pso = [dev newComputePipelineStateWithFunction:fn error:&perr];
+                      if (!pso) msg = perr ? perr.localizedDescription.UTF8String : "pipeline creation failed";
+                  } else {
+                      msg = "kernel entry point not found";
+                  }
+              } else {
+                  msg = err ? err.localizedDescription.UTF8String : "Metal compile failed";
+              }
+              if (!msg.empty()) writeLog(def, "specialised kernel: " + msg);
+              std::lock_guard<std::mutex> lock(gSpecMutex);
+              --gSpecInFlight;
+              SpecEntry& e = gSpec[key];
+              e.pso = pso;
+              e.failed = (pso == nil);
+              e.compiling = false;
+            }];
+    return nil;
+}
+
 } // namespace
 
 // =============================================================================
@@ -142,6 +269,9 @@ struct MetalScratch {
     // the horizontal grain pass. Grown as needed, kept between frames.
     id<MTLBuffer> tex[6] = {nil, nil, nil, nil, nil, nil};
     NSUInteger texBytes[6] = {0, 0, 0, 0, 0, 0};
+    // kernel tables of the texture stage (halation, halo softness, grain)
+    id<MTLBuffer> tbl[3] = {nil, nil, nil};
+    std::vector<float> tblData[3];
 };
 
 MetalScratch* metalScratchCreate() { return new MetalScratch(); }
@@ -155,6 +285,7 @@ void metalScratchDestroy(MetalScratch* s)
         s->lutBuf = nil;
         s->input = nil;
         for (int i = 0; i < 6; ++i) s->tex[i] = nil;
+        for (int i = 0; i < 3; ++i) s->tbl[i] = nil;
     }
     delete s;
 }
@@ -343,14 +474,20 @@ void dispatch2D(id<MTLComputeCommandEncoder> enc, id<MTLComputePipelineState> ps
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
 }
 
-// small tables go inline, larger ones in a buffer
-void setTable(id<MTLComputeCommandEncoder> enc, id<MTLDevice> dev, const std::vector<float>& v, NSUInteger index)
+// small tables go inline, larger ones in a buffer kept on the instance and
+// re-uploaded only when the table changes (not on every frame).
+void setTable(id<MTLComputeCommandEncoder> enc, id<MTLDevice> dev, MetalScratch* s, int slot,
+              const std::vector<float>& v, NSUInteger index)
 {
     const NSUInteger bytes = MAX((NSUInteger)v.size() * sizeof(float), (NSUInteger)4);
     static const float zero = 0.0f;
     const void* data = v.empty() ? (const void*)&zero : (const void*)v.data();
-    if (bytes <= 4096) [enc setBytes:data length:bytes atIndex:index];
-    else [enc setBuffer:[dev newBufferWithBytes:data length:bytes options:MTLResourceStorageModeShared] offset:0 atIndex:index];
+    if (bytes <= 4096) { [enc setBytes:data length:bytes atIndex:index]; return; }
+    if (!s->tbl[slot] || s->tblData[slot] != v) {
+        s->tbl[slot] = [dev newBufferWithBytes:data length:bytes options:MTLResourceStorageModeShared];
+        s->tblData[slot] = v;
+    }
+    [enc setBuffer:s->tbl[slot] offset:0 atIndex:index];
 }
 
 // Encodes the texture stage: src -> returned buffer (W x 4 floats per row).
@@ -392,14 +529,14 @@ id<MTLBuffer> encodeTexture(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const Te
         [enc setComputePipelineState:ps.p[TX_HH]];
         [enc setBytes:&A length:sizeof(A) atIndex:0];
         [enc setBuffer:Sd offset:0 atIndex:1];
-        setTable(enc, dev, plan.halK, 2);
+        setTable(enc, dev, s, 0, plan.halK, 2);
         [enc setBuffer:tmp6 offset:0 atIndex:3];
         dispatch2D(enc, ps.p[TX_HH], A.W2, A.H2);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
         [enc setComputePipelineState:ps.p[TX_HV]];
         [enc setBytes:&A length:sizeof(A) atIndex:0];
         [enc setBuffer:tmp6 offset:0 atIndex:1];
-        setTable(enc, dev, plan.halK, 2);
+        setTable(enc, dev, s, 0, plan.halK, 2);
         [enc setBuffer:Bg offset:0 atIndex:3];
         [enc setBuffer:Sd offset:0 atIndex:4];
         dispatch2D(enc, ps.p[TX_HV], A.W2, A.H2);
@@ -408,24 +545,30 @@ id<MTLBuffer> encodeTexture(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const Te
             [enc setComputePipelineState:ps.p[TX_SH]];
             [enc setBytes:&A length:sizeof(A) atIndex:0];
             [enc setBuffer:Bg offset:0 atIndex:1];
-            setTable(enc, dev, plan.halSoftK, 2);
+            setTable(enc, dev, s, 1, plan.halSoftK, 2);
             [enc setBuffer:tmp6 offset:0 atIndex:3];
             dispatch2D(enc, ps.p[TX_SH], A.W2, A.H2);
             [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
             [enc setComputePipelineState:ps.p[TX_SV]];
             [enc setBytes:&A length:sizeof(A) atIndex:0];
             [enc setBuffer:tmp6 offset:0 atIndex:1];
-            setTable(enc, dev, plan.halSoftK, 2);
+            setTable(enc, dev, s, 1, plan.halSoftK, 2);
             [enc setBuffer:Bg offset:0 atIndex:3];
             dispatch2D(enc, ps.p[TX_SV], A.W2, A.H2);
         }
     }
     if (A.grOn) {
+        // One threadgroup = a run of TW pixels of one row; its noise is drawn
+        // once into threadgroup memory (see tx_gh).
+        const NSUInteger TW = MIN((NSUInteger)256, ps.p[TX_GH].maxTotalThreadsPerThreadgroup);
+        const NSUInteger tgBytes = ((NSUInteger)3 * (TW + 2 * (NSUInteger)A.grR) * sizeof(float) + 15) & ~(NSUInteger)15;
         [enc setComputePipelineState:ps.p[TX_GH]];
         [enc setBytes:&A length:sizeof(A) atIndex:0];
-        setTable(enc, dev, plan.grK, 1);
+        setTable(enc, dev, s, 2, plan.grK, 1);
         [enc setBuffer:T offset:0 atIndex:2];
-        dispatch2D(enc, ps.p[TX_GH], A.W, A.H + 2 * A.grR);
+        [enc setThreadgroupMemoryLength:tgBytes atIndex:0];
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)A.W + TW - 1) / TW, (NSUInteger)(A.H + 2 * A.grR), 1)
+            threadsPerThreadgroup:MTLSizeMake(TW, 1, 1)];
     }
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     [enc setComputePipelineState:ps.p[TX_FINAL]];
@@ -434,7 +577,7 @@ id<MTLBuffer> encodeTexture(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const Te
     [enc setBuffer:out offset:0 atIndex:2];
     [enc setBuffer:S offset:0 atIndex:3];
     [enc setBuffer:Bg offset:0 atIndex:4];
-    setTable(enc, dev, plan.grK, 5);
+    setTable(enc, dev, s, 2, plan.grK, 5);
     [enc setBuffer:T offset:0 atIndex:6];
     dispatch2D(enc, ps.p[TX_FINAL], A.W, A.H);
     [enc endEncoding];
@@ -464,11 +607,14 @@ void cpuFallback(const MetalJob& j, const float* src, float* dst)
 
 } // namespace
 
-void metalPrewarm(const PluginDef& def)
+void metalPrewarm(const PluginDef& def, const void* params)
 {
     @autoreleasepool {
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-        if (dev) startCompile(dev, &def);
+        if (!dev) return;
+        startCompile(dev, &def);
+        // and the variant for the settings the instance opens with
+        if (params) specializedPipeline(dev, &def, params);
     }
 }
 
@@ -484,7 +630,10 @@ bool metalRender(const MetalJob& j, std::string& error)
         }
         id<MTLDevice> dev = queue.device;
         std::string perr;
-        id<MTLComputePipelineState> pso = pipeline(dev, j.def, perr);
+        // The specialised kernel when it is ready; the generic one otherwise
+        // (waited for only if neither exists yet - the very first frame).
+        id<MTLComputePipelineState> pso = specializedPipeline(dev, j.def, j.params);
+        if (!pso) pso = pipeline(dev, j.def, perr);
 
         if (!pso) {
             // Kernel unavailable: run the CPU path on shared memory if possible.
@@ -621,7 +770,8 @@ bool metalRenderChain(const ChainMetalJob& j, std::string& error)
         bool allReady = true;
         for (int i = 0; i < j.nStages; ++i) {
             std::string e;
-            psos[i] = pipeline(dev, j.defs[i], e);
+            psos[i] = specializedPipeline(dev, j.defs[i], j.params[i]);
+            if (!psos[i]) psos[i] = pipeline(dev, j.defs[i], e);
             if (!psos[i]) {
                 allReady = false;
                 if (firstError.empty()) firstError = std::string(j.defs[i]->label) + ": " + e;

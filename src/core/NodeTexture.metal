@@ -89,17 +89,32 @@ kernel void tx_sv(constant TexArgs& A [[buffer(0)]], const device float* tmp [[b
 }
 
 // 5. grain noise, horizontal pass over the padded band (3 channels)
+// Each threadgroup covers a run of consecutive pixels of one row. The noise it
+// needs - its pixels plus GR on each side - is drawn ONCE into threadgroup
+// memory, then every pixel sums its taps from there. Same values, same order of
+// summation as drawing each tap on the spot (which drew every noise value
+// 2 GR + 1 times), so the result is bit for bit the same.
 kernel void tx_gh(constant TexArgs& A [[buffer(0)]], const device float* K [[buffer(1)]],
-                  device float* T [[buffer(2)]], uint2 gid [[thread_position_in_grid]])
+                  device float* T [[buffer(2)]], threadgroup float* nb [[threadgroup(0)]],
+                  uint2 tid [[thread_position_in_threadgroup]], uint2 tgid [[threadgroup_position_in_grid]],
+                  uint2 tgs [[threads_per_threadgroup]])
 {
     const int GR = A.grR, Hp = A.H + 2 * GR;
-    const int x = (int)gid.x, yy = (int)gid.y;
-    if (x >= A.W || yy >= Hp) return;
+    const int TW = (int)tgs.x;
+    const int x0 = (int)tgid.x * TW;
+    const int yy = (int)tgid.y;
     const int y = yy - GR;
+    const int span = TW + 2 * GR;
     for (int c = 0; c < 3; ++c) {
         const unsigned int sd = A.seed + (unsigned int)c * GX_CH_SEED;
+        for (int k = (int)tid.x; k < span; k += TW) nb[c * span + k] = tx_gauss(x0 - GR + k, y, sd);
+    }
+    metal::threadgroup_barrier(metal::mem_flags::mem_threadgroup);
+    const int x = x0 + (int)tid.x;
+    if (x >= A.W || yy >= Hp) return;
+    for (int c = 0; c < 3; ++c) {
         float a = 0.0f;
-        for (int i = -GR; i <= GR; ++i) a += K[i + GR] * tx_gauss(x + i, y, sd);
+        for (int i = -GR; i <= GR; ++i) a += K[i + GR] * nb[c * span + (int)tid.x + i + GR];
         T[(c * Hp + yy) * A.W + x] = a;
     }
 }

@@ -12,7 +12,7 @@ bool metalRender(const MetalJob&, std::string& error)
     error = "Metal is not available on this platform";
     return false;
 }
-void metalPrewarm(const PluginDef&) {}
+void metalPrewarm(const PluginDef&, const void*) {}
 
 
 

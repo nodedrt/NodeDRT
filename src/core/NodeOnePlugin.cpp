@@ -84,7 +84,13 @@ public:
             _lutName = fetchStringParam(kLutName);
             syncLutChoiceFromName();
         }
-        metalPrewarm(def);
+        {
+            // Compile the kernel now, and its variant for the settings this
+            // instance opens with, so the first frames do not wait for it.
+            std::vector<uint32_t> block;
+            fillParams(0.0, block);
+            metalPrewarm(def, block.data());
+        }
         _scratch = metalScratchCreate();
     }
 
