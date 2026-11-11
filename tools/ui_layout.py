@@ -238,7 +238,7 @@ PLUGINS = [
                 ]),
                 P('skin_reset', 'Reset Skin', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
-            # TEXTURE : grain et halation, calcules par le plugin lui-meme (ils
+            # TEXTURE : grain (la halation a ete retiree en 1.3), calcule par le plugin lui-meme (ils
             # lisent les pixels voisins sur plusieurs passes) sur l'image log
             # d'entree, AVANT le rendu - la ou la pellicule les cree. Les deux
             # sont eteints par defaut : le plugin rend exactement comme avant
@@ -268,26 +268,6 @@ PLUGINS = [
                     TP('tx_gr_seed', 'Seed', 'float', 0.0, 0.0, 999.0, 1.0,
                        hint='Changes the random pattern of the grain.'),
                 ]),
-                SUB('grp_tex_hal', 'Halation', [
-                    TP('tx_hal_on', 'Enable Halation', 'bool', 0,
-                       hint='The red-orange glow film gives around bright lights: light crossing the emulsion is '
-                            'reflected by the film base back into the red layer. Modelled by measurement: source '
-                            'threshold, radial spread and the weight of each colour layer. A flat highlight keeps '
-                            'its own colour; the halo spreads out of it.'),
-                    TP('tx_hal_str', 'Strength', 'float', 1.0, 0.0, 3.0, 0.01,
-                       hint='Halation strength. 1 = the measured film halation.'),
-                    TP('tx_hal_size', 'Size', 'float', 1.0, 0.25, 4.0, 0.01,
-                       hint='Spread of the halo. 1 = the measured spread, scaled to the frame width.'),
-                    TP('tx_hal_thr', 'Threshold', 'float', 0.0, -0.2, 0.2, 0.001,
-                       hint='Moves the brightness at which lights start to glow. Negative = more of the picture glows, '
-                            'positive = only the brightest lights.'),
-                    TP('tx_hal_soft', 'Softness', 'float', 0.0, 0.0, 1.0, 0.01,
-                       hint='Softens the halo: the tight rim of the film opens into a smooth, diffuse glow. The total '
-                            'light of the halo is kept - only its shape changes - so Strength still means the same, '
-                            'and a flat highlight is never touched. 0 = the measured film halo.'),
-                    TP('tx_hal_warm', 'Warmth', 'float', 0.0, -1.0, 1.0, 0.01,
-                       hint='Colour of the halo. Positive = redder, negative = more orange-yellow.'),
-                ]),
                 P('texture_reset', 'Reset Texture', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
             {'name': 'grp_view', 'label': 'Scopes', 'open': False, 'params': [
@@ -303,7 +283,7 @@ PLUGINS = [
                'Look presets fitted against spektrafilm references by Andrea Volpato, CC BY-SA 4.0 — github.com/andreavolpato/spektrafilm. No LUT data is embedded; what remains are fitted parameter values.',
                'Subtractive saturation model by Nikita Petrovich, MIT licence — the Chroma control in the Color group. See MIT-SubtractiveSaturation.txt.',
                'Skin Line turns hue in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.',
-               'Texture (Grain, Halation): computed by the plugin on the log image before the display rendering. Grain and halation are models fitted by measurement on film-emulation renders - curves, kernels and weights only; no code or data of another product is included.',
+               'Texture (Grain): computed by the plugin on the log image before the display rendering. Grain is a model fitted by measurement on film-emulation renders - curves, kernels and weights only; no code or data of another product is included.',
                'Density Pro: from RELIEF by Samuel Drouin - density by zone and by colour, with hue windows in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.',
                'OpenFX support library: Academy Software Foundation, BSD 3-Clause.'],
     ),

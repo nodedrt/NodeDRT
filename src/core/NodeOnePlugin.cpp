@@ -266,12 +266,7 @@ private:
         const unsigned int frame = bln("tx_gr_anim", t, true) ? (unsigned int)(int64_t)std::floor(t + 0.5) * 5u : 0u;
         const unsigned int user = (unsigned int)std::lround(std::max(0.0, dbl("tx_gr_seed", t, 0.0)));
         s.seed = frame + user * 0x9E3779B1u + 0x1B873593u;
-        s.halOn = bln("tx_hal_on", t, false);
-        s.halStrength = (float)dbl("tx_hal_str", t, 1.0);
-        s.halSize = (float)dbl("tx_hal_size", t, 1.0);
-        s.halThreshold = (float)dbl("tx_hal_thr", t, 0.0);
-        s.halWarmth = (float)dbl("tx_hal_warm", t, 0.0);
-        s.halSoftness = (float)dbl("tx_hal_soft", t, 0.0);
+        s.halOn = false;   // Halation retiree de Node DRT en 1.3 (plus de reglages dans l'Inspector)
         s.gamut = blockInt(block, "in_gamut", 15);
         s.oetf = blockInt(block, "in_oetf", 1);
         return s;
