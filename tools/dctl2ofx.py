@@ -577,11 +577,29 @@ def bake_texture_kernel():
     return len(src)
 
 
+def bake_density_kernel():
+    """Density Pro: the log-curve helpers of the texture maths, the Density Pro
+    maths header, then its kernels - one Metal source for the plugin, copied to
+    gen/ for the build's kernel check."""
+    core = os.path.join(ROOT, 'src', 'core')
+    tmath = open(os.path.join(core, 'NodeTextureMath.h'), encoding='utf-8').read().replace('#pragma once', '', 1)
+    dmath = open(os.path.join(core, 'NodeDensityMath.h'), encoding='utf-8').read().replace('#pragma once', '', 1)
+    kern = open(os.path.join(core, 'NodeDensity.metal'), encoding='utf-8').read()
+    src = ('#include <metal_stdlib>\nusing namespace metal;\n#line 1 "NodeTextureMath.h"\n' + tmath +
+           '\n#line 1 "NodeDensityMath.h"\n' + dmath + '\n#line 1 "NodeDensity.metal"\n' + kern)
+    write_if_changed(os.path.join(ROOT, 'gen', 'density.metal'), src)
+    header = ('// GENERATED from src/core/NodeTextureMath.h + NodeDensityMath.h + NodeDensity.metal by tools/dctl2ofx.py — do not edit.\n'
+              '#pragma once\nstatic const char* const kDensityMetalSource =\n%s;\n' % raw_string(src, 'NODEDENS'))
+    write_if_changed(os.path.join(ROOT, 'gen', 'density_metal_src.h'), header)
+    return len(src)
+
+
 def main():
     prelude = open(os.path.join(ROOT, 'src', 'core', 'dctl_metal_prelude.metal'), encoding='utf-8').read()
     os.makedirs(os.path.join(ROOT, 'gen'), exist_ok=True)
     bake_lut_kernel()
     bake_texture_kernel()
+    bake_density_kernel()
     only = sys.argv[1:]
     for spec in ui_layout.PLUGINS:
         if only and spec['key'] not in only:

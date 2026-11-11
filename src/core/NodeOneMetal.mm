@@ -24,6 +24,8 @@
 #include "lut_metal_src.h"
 #include "NodeTexture.h"
 #include "texture_metal_src.h"
+#include "NodeDensity.h"
+#include "density_metal_src.h"
 
 #if !__has_feature(objc_arc)
 #error "NodeOneMetal.mm must be compiled with -fobjc-arc"
@@ -272,6 +274,9 @@ struct MetalScratch {
     // kernel tables of the texture stage (halation, halo softness, grain)
     id<MTLBuffer> tbl[3] = {nil, nil, nil};
     std::vector<float> tblData[3];
+    // Density Pro: key, its blur ping-pong, the stage output
+    id<MTLBuffer> dens[4] = {nil, nil, nil, nil};
+    NSUInteger densBytes[4] = {0, 0, 0, 0};
 };
 
 MetalScratch* metalScratchCreate() { return new MetalScratch(); }
@@ -286,6 +291,7 @@ void metalScratchDestroy(MetalScratch* s)
         s->input = nil;
         for (int i = 0; i < 6; ++i) s->tex[i] = nil;
         for (int i = 0; i < 3; ++i) s->tbl[i] = nil;
+        for (int i = 0; i < 4; ++i) s->dens[i] = nil;
     }
     delete s;
 }
@@ -584,15 +590,134 @@ id<MTLBuffer> encodeTexture(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const Te
     return out;
 }
 
+// =============================================================================
+//  Density Pro stage on the GPU: the passes of densityCPU().
+// =============================================================================
+enum { DP_KEY, DP_BOXH, DP_BOXV, DP_GRID, DP_APPLY, DP_N };
+struct DensityPsos { id<MTLComputePipelineState> p[DP_N]; };
+
+bool densityPipelines(id<MTLDevice> dev, DensityPsos& out, std::string& error)
+{
+    static std::mutex m;
+    static std::map<unsigned long long, DensityPsos> cache;
+    static std::map<unsigned long long, std::string> errors;
+    const unsigned long long key = dev.registryID;
+    std::lock_guard<std::mutex> lock(m);
+    auto it = cache.find(key);
+    if (it != cache.end()) { out = it->second; return true; }
+    auto e = errors.find(key);
+    if (e != errors.end()) { error = e->second; return false; }
+    NSError* err = nil;
+    id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:kDensityMetalSource]
+                                           options:compileOptions()
+                                             error:&err];
+    std::string msg;
+    DensityPsos ps;
+    static const char* const names[DP_N] = {"dp_key", "dp_boxh", "dp_boxv", "dp_grid", "dp_apply"};
+    if (!lib) msg = err ? err.localizedDescription.UTF8String : "density kernels compile failed";
+    for (int i = 0; i < DP_N && msg.empty(); ++i) {
+        id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:names[i]]];
+        if (!fn) { msg = std::string("density kernel ") + names[i] + " not found"; break; }
+        NSError* perr = nil;
+        ps.p[i] = [dev newComputePipelineStateWithFunction:fn error:&perr];
+        if (!ps.p[i]) msg = perr ? perr.localizedDescription.UTF8String : "density pipeline creation failed";
+    }
+    if (!msg.empty()) { errors[key] = msg; error = msg; return false; }
+    cache[key] = ps;
+    out = ps;
+    return true;
+}
+
+void dispatch1D(id<MTLComputeCommandEncoder> enc, id<MTLComputePipelineState> pso, int n)
+{
+    const NSUInteger tw = MIN((NSUInteger)64, pso.maxTotalThreadsPerThreadgroup);
+    [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)n + tw - 1) / tw, 1, 1) threadsPerThreadgroup:MTLSizeMake(tw, 1, 1)];
+}
+
+id<MTLBuffer> densBuffer(id<MTLDevice> dev, MetalScratch* s, int i, NSUInteger bytes)
+{
+    bytes = MAX(bytes, (NSUInteger)16);
+    if (s->densBytes[i] < bytes || !s->dens[i]) {
+        s->dens[i] = [dev newBufferWithLength:bytes options:MTLResourceStorageModePrivate];
+        s->densBytes[i] = s->dens[i] ? bytes : 0;
+    }
+    return s->dens[i];
+}
+
+// Encodes Density Pro: src -> returned buffer (W x 4 floats per row). nil when
+// a buffer could not be allocated.
+id<MTLBuffer> encodeDensity(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const DensityPsos& ps, const DensityPlan& plan,
+                            id<MTLBuffer> src, int srcRowFloats, MetalScratch* s)
+{
+    DensArgs A = plan.a;
+    A.srcRow = srcRowFloats;
+    A.dstRow = A.W * 4;
+    const NSUInteger W = (NSUInteger)A.W, H = (NSUInteger)A.H;
+    id<MTLBuffer> K = densBuffer(dev, s, 0, W * H * 3 * sizeof(float));
+    id<MTLBuffer> T = A.blurR > 0 ? densBuffer(dev, s, 1, W * H * 3 * sizeof(float)) : K;
+    id<MTLBuffer> out = densBuffer(dev, s, 2, W * H * 4 * sizeof(float));
+    const int Wl = (A.W - 1) / 2 + 2, Hl = (A.H - 1) / 2 + 2;
+    id<MTLBuffer> G = densBuffer(dev, s, 3, (NSUInteger)Wl * Hl * sizeof(float));
+    if (!K || !T || !out || !G) return nil;
+    id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+    [enc setComputePipelineState:ps.p[DP_KEY]];
+    [enc setBytes:&A length:sizeof(A) atIndex:0];
+    [enc setBuffer:src offset:0 atIndex:1];
+    [enc setBuffer:K offset:0 atIndex:2];
+    dispatch2D(enc, ps.p[DP_KEY], A.W, A.H);
+    for (int pass = 0; A.blurR > 0 && pass < 3; ++pass) {
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        {   // a threadgroup = a run of TW pixels of one row, read once into threadgroup memory
+            const NSUInteger TW = MIN((NSUInteger)256, ps.p[DP_BOXH].maxTotalThreadsPerThreadgroup);
+            const NSUInteger tg = ((NSUInteger)3 * (TW + 2 * (NSUInteger)A.blurR) * sizeof(float) + 15) & ~(NSUInteger)15;
+            [enc setComputePipelineState:ps.p[DP_BOXH]];
+            [enc setBytes:&A length:sizeof(A) atIndex:0];
+            [enc setBuffer:K offset:0 atIndex:1];
+            [enc setBuffer:T offset:0 atIndex:2];
+            [enc setThreadgroupMemoryLength:tg atIndex:0];
+            [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)A.W + TW - 1) / TW, (NSUInteger)A.H, 1)
+                threadsPerThreadgroup:MTLSizeMake(TW, 1, 1)];
+        }
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        [enc setComputePipelineState:ps.p[DP_BOXV]];
+        [enc setBytes:&A length:sizeof(A) atIndex:0];
+        [enc setBuffer:T offset:0 atIndex:1];
+        [enc setBuffer:K offset:0 atIndex:2];
+        dispatch2D(enc, ps.p[DP_BOXV], A.W * 3, (A.H + 63) / 64);   // one thread per 64-row run of a float column
+    }
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    [enc setComputePipelineState:ps.p[DP_GRID]];
+    [enc setBytes:&A length:sizeof(A) atIndex:0];
+    [enc setBuffer:K offset:0 atIndex:1];
+    [enc setBuffer:G offset:0 atIndex:2];
+    dispatch2D(enc, ps.p[DP_GRID], Wl, Hl);
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    [enc setComputePipelineState:ps.p[DP_APPLY]];
+    [enc setBytes:&A length:sizeof(A) atIndex:0];
+    [enc setBuffer:src offset:0 atIndex:1];
+    [enc setBuffer:out offset:0 atIndex:2];
+    [enc setBuffer:K offset:0 atIndex:3];
+    [enc setBuffer:G offset:0 atIndex:4];
+    dispatch2D(enc, ps.p[DP_APPLY], A.W, A.H);
+    [enc endEncoding];
+    return out;
+}
+
 // CPU render of the whole effect (texture stage included) on shared memory.
 void cpuFallback(const MetalJob& j, const float* src, float* dst)
 {
-    std::vector<float> tex;
+    std::vector<float> tex, den;
     const float* in = src;
     ptrdiff_t inRow = j.srcRowFloats;
+    if (j.density) {
+        den.resize((size_t)j.width * 4 * j.height);
+        densityCPU(*j.density, src, j.srcRowFloats, den.data(), (ptrdiff_t)j.width * 4);
+        in = den.data();
+        inRow = (ptrdiff_t)j.width * 4;
+    }
     if (j.texture) {
         tex.resize((size_t)j.width * 4 * j.height);
-        textureCPU(*j.texture, src, j.srcRowFloats, tex.data(), (ptrdiff_t)j.width * 4);
+        textureCPU(*j.texture, in, inRow, tex.data(), (ptrdiff_t)j.width * 4);
         in = tex.data();
         inRow = (ptrdiff_t)j.width * 4;
     }
@@ -696,6 +821,23 @@ bool metalRender(const MetalJob& j, std::string& error)
             }
         }
 
+        // Density Pro, same rule as the texture stage.
+        DensityPsos denPs;
+        if (j.density) {
+            std::string derr;
+            if (!j.scratch || !densityPipelines(dev, denPs, derr)) {
+                if (src.storageMode == MTLStorageModeShared && dst.storageMode == MTLStorageModeShared) {
+                    id<MTLCommandBuffer> sync = [queue commandBuffer];
+                    [sync commit];
+                    [sync waitUntilCompleted];
+                    cpuFallback(j, static_cast<const float*>(src.contents), static_cast<float*>(dst.contents));
+                    return true;
+                }
+                error = "Density Pro unavailable on the GPU (" + derr + "). See ~/Library/Logs/NodeOne/";
+                return false;
+            }
+        }
+
         id<MTLCommandBuffer> cb = [queue commandBuffer];
         cb.label = @"Node_One";
 
@@ -708,16 +850,25 @@ bool metalRender(const MetalJob& j, std::string& error)
         // per-pixel n'en a jamais besoin - il lit et ecrit le meme pixel.
         id<MTLBuffer> input = src;
         int inRow = j.srcRowFloats;
+        if (j.density) {
+            // Density Pro first, into the instance's own buffer.
+            input = encodeDensity(cb, dev, denPs, *j.density, src, j.srcRowFloats, j.scratch);
+            if (!input) {
+                error = "could not allocate GPU buffers for Density Pro";
+                return false;
+            }
+            inRow = j.width * 4;
+        }
         if (j.texture) {
-            // Grain and halation first, into the instance's own buffer: the
+            // Grain and halation, into the instance's own buffer: the
             // DCTL then reads that buffer, never the one it writes.
-            input = encodeTexture(cb, dev, texPs, *j.texture, src, j.srcRowFloats, j.scratch);
+            input = encodeTexture(cb, dev, texPs, *j.texture, input, inRow, j.scratch);
             if (!input) {
                 error = "could not allocate GPU buffers for the texture stage";
                 return false;
             }
             inRow = j.width * 4;
-        } else if (src == dst && j.def->spatial && j.scratch) {
+        } else if (!j.density && src == dst && j.def->spatial && j.scratch) {
             if (j.scratch->inputBytes < src.length) {
                 j.scratch->input = [dev newBufferWithLength:src.length options:MTLResourceStorageModePrivate];
                 j.scratch->inputBytes = j.scratch->input ? src.length : 0;

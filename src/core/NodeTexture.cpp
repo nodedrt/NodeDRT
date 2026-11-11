@@ -329,3 +329,6 @@ void textureCPU(const TexturePlan& plan, const float* src, ptrdiff_t srcRow, flo
 }
 
 } // namespace nodeone
+
+// Density Pro is compiled with this file (see NodeDensity.cpp).
+#include "NodeDensity.cpp"
