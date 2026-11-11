@@ -302,9 +302,9 @@ def params_block(params):
 def emit_metal(prelude, dctl_name, pblock, body, texture):
     if texture:
         call = 'dctl_transform(P, W, H, x, y, tr, tg, tb)'
-        setup = ('    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY};\n'
-                 '    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY};\n'
-                 '    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY};\n')
+        setup = ('    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4};\n'
+                 '    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4};\n'
+                 '    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4};\n')
     else:
         call = 'dctl_transform(P, W, H, x, y, s[0], s[1], s[2])'
         setup = ''
@@ -315,6 +315,7 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
                           const device float* src [[buffer(1)]],
                           device float* dst [[buffer(2)]],
                           constant DctlDims& D [[buffer(3)]],
+                          const device float* aux [[buffer(4)]],
                           uint2 gid [[thread_position_in_grid]])
 {
     const int W = D.width, H = D.height;

@@ -120,7 +120,9 @@ int main(int argc, char** argv)
             for (int w = 0; w < 3; ++w) metalRender(j, err);   // warm-up (+ kernel compile)
             { id<MTLCommandBuffer> cb = [q commandBuffer]; [cb commit]; [cb waitUntilCompleted]; }
             // let a background (specialised) compile finish, then render once more
-            [NSThread sleepForTimeInterval:1.5];
+            [NSThread sleepForTimeInterval:getenv("BENCH_WAIT") ? atof(getenv("BENCH_WAIT")) : 1.5];
+            metalRender(j, err);
+            [NSThread sleepForTimeInterval:getenv("BENCH_WAIT") ? atof(getenv("BENCH_WAIT")) : 1.5];
             metalRender(j, err);
             { id<MTLCommandBuffer> cb = [q commandBuffer]; [cb commit]; [cb waitUntilCompleted]; }
             NSDate* t0 = [NSDate date];

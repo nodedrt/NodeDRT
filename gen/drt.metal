@@ -89,12 +89,26 @@ struct DctlTex {
     int rowFloats;
     int w, h, ch;
     int flipY;
+    const device float* aux;   // per-pixel values precomputed by the plugin (skin mask), or the source
+    int auxPlane;              // floats per plane of aux (one plane per look pass)
 };
 inline float _tex2D(DctlTex t, int x, int y) {
     x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
     y = y < 0 ? 0 : (y >= t.h ? t.h - 1 : y);
     const int row = t.flipY ? (t.h - 1 - y) : y;
     return t.base[row * t.rowFloats + x * 4 + t.ch];
+}
+
+// SKIN MASK, precomputed (NODEONE_SKIN_FEAT): what each pixel brings to the
+// mask - skin_tap() of the DCTL, written once per pixel by a pre-pass of the
+// same kernel (NODEONE_SKIN_PREPASS). Same layout, rows and edge clamping as
+// _tex2D; one W x H x 4 plane per look pass.
+inline float3 nodeone_skin_feat(DctlTex t, int x, int y, int pass) {
+    x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
+    y = y < 0 ? 0 : (y >= t.h ? t.h - 1 : y);
+    const int row = t.flipY ? (t.h - 1 - y) : y;
+    const device float* p = t.aux + pass * t.auxPlane + (row * t.w + x) * 4;
+    return float3(p[0], p[1], p[2]);
 }
 
 #line 1 "node_one_params"
@@ -2900,16 +2914,53 @@ __DEVICE__ float3 skin_proxy_p3(float3 code, int tf, dctl_float3x3 pre, float rs
 
 
 
+
+
+
+
+
+__DEVICE__ float3 skin_tap(float3 code, int tf, dctl_float3x3 pre, float rs_sa, float3 rs_w, float gain,
+                           float soft, float hr, float rc, int need_s, int need_l) {
+  const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
+  const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
+  const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
+  float ts = 0.0f, tl = 0.0f;
+  const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
+  const float m = fmaxf3(c709);
+  if (m > 1.0e-6f) {
+    
+    const float gate = smootherstep(-12.0f - 2.0f*rc, -7.5f - 2.0f*rc, _log2f(m));
+    const float3 cn = c709*(0.5f/m);
+    const float2 fe = skin_feat(cn);
+    if (need_s) ts = skin_win_s(fe, hr, rc)*gate;
+    if (need_l) tl = skin_win_l(fe, soft, hr, rc)*gate;
+  }
+  return make_float3(ly, ts, tl);
+}
+
+
+
+
+#ifdef NODEONE_SKIN_FEAT
+
+
+#define SKIN_TAP_AT(xx, yy) nodeone_skin_feat(tR, (xx), (yy), pass < NODEONE_SKIN_FEAT ? pass : NODEONE_SKIN_FEAT - 1)
+#else
+#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, rc, need_s, need_l)
+#endif
+
+
+
+
 __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ tB,
                                     int X, int Y, int H, int tf, dctl_float3x3 pre,
                                     float rs_sa, float3 rs_w, float gain, float soft,
                                     float hr, float rc, float ed,
-                                    int need_s, int need_l) {
+                                    int need_s, int need_l, int pass) {
   
   
   const float R = _fmaxf(1.0f, (float)H/360.0f)*(1.0f + 2.0f*ed);
   const float gsig = 0.75f*(1.0f + 2.0f*ed);
-  const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
   for (int k = 0; k < SKM_TAPS; ++k) {
     
@@ -2933,22 +2984,12 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
     }
     const int xx = X + (int)_floorf(ox + 0.5f);
     const int yy = Y + (int)_floorf(oy + 0.5f);
-    const float3 code = make_float3(_tex2D(tR, xx, yy), _tex2D(tG, xx, yy), _tex2D(tB, xx, yy));
-    const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
-    const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
-    if (k == 0) lyc = ly;
-    const float dl = ly - lyc;
+    const float3 tp = SKIN_TAP_AT(xx, yy);
+    if (k == 0) lyc = tp.x;
+    const float dl = tp.x - lyc;
     const float g = gsp*_expf(-0.5f*dl*dl/(gsig*gsig));
-    const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
-    const float m = fmaxf3(c709);
-    if (m > 1.0e-6f) {
-      
-      const float gate = smootherstep(-12.0f - 2.0f*rc, -7.5f - 2.0f*rc, _log2f(m));
-      const float3 cn = c709*(0.5f/m);
-      const float2 fe = skin_feat(cn);
-      if (need_s) ws += g*skin_win_s(fe, hr, rc)*gate;
-      if (need_l) wl += g*skin_win_l(fe, soft, hr, rc)*gate;
-    }
+    ws += g*tp.y;
+    wl += g*tp.z;
     gs += g;
   }
   
@@ -2974,20 +3015,11 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
       const float gsp = ce*(outer ? 0.55f : 0.85f);
       const int xx = X + (int)_floorf(rr*cx + 0.5f);
       const int yy = Y + (int)_floorf(rr*cy + 0.5f);
-      const float3 code = make_float3(_tex2D(tR, xx, yy), _tex2D(tG, xx, yy), _tex2D(tB, xx, yy));
-      const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
-      const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
-      const float dl = ly - lyc;
+      const float3 tp = SKIN_TAP_AT(xx, yy);
+      const float dl = tp.x - lyc;
       const float g = gsp*_expf(-0.5f*dl*dl/(gsig*gsig));
-      const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
-      const float m = fmaxf3(c709);
-      if (m > 1.0e-6f) {
-        const float gate = smootherstep(-12.0f - 2.0f*rc, -7.5f - 2.0f*rc, _log2f(m));
-        const float3 cn = c709*(0.5f/m);
-        const float2 fe = skin_feat(cn);
-        if (need_s) ws += g*skin_win_s(fe, hr, rc)*gate;
-        if (need_l) wl += g*skin_win_l(fe, soft, hr, rc)*gate;
-      }
+      ws += g*tp.y;
+      wl += g*tp.z;
       gs += g;
     }
   }
@@ -3023,6 +3055,10 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   float3 lk_full = make_float3(0.0f, 0.0f, 0.0f), lk_full_crv = make_float3(0.0f, 0.0f, 0.0f);
   for (int lk_pass = 0; lk_pass < lk_passes; ++lk_pass) {
   rgb = lk_in;
+#ifdef NODEONE_SKIN_PREPASS
+  
+  if (lk_pass < NODEONE_SKIN_PREPASS) continue;
+#endif
 
   
 
@@ -3595,11 +3631,20 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     const dctl_float3x3 sk_pre = mat3_mul(matrix_xyz_to_p3d65, mat3_mul(in_to_xyz, wb_m));
+    const int sk_need_s = (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0;
+    const int sk_need_l = (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0;
+#ifdef NODEONE_SKIN_PREPASS
+    
+    
+    
+    if (lk_pass == NODEONE_SKIN_PREPASS)
+      return skin_tap(make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
+                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_mrec_e, sk_need_s, sk_need_l);
+#endif
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
                                          rs_sa, rs_w, look_exp, sk_soft_e,
                                          sk_mhue_e, sk_mrec_e, sk_medge_e,
-                                         (trim_skin_sat != 0.0f || trim_skin > 0.0f) ? 1 : 0,
-                                         (skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f || skin_zones == 1) ? 1 : 0);
+                                         sk_need_s, sk_need_l, lk_pass);
     sk_w_scene = skm.x;
     sk_wl_scene = skm.y;
   }
@@ -4582,6 +4627,7 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
                           const device float* src [[buffer(1)]],
                           device float* dst [[buffer(2)]],
                           constant DctlDims& D [[buffer(3)]],
+                          const device float* aux [[buffer(4)]],
                           uint2 gid [[thread_position_in_grid]])
 {
     const int W = D.width, H = D.height;
@@ -4589,9 +4635,9 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
     const int x = (int)gid.x;
     const int row = (int)gid.y;
     const int y = D.flipY ? (H - 1 - row) : row;
-    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY};
-    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY};
-    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY};
+    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4};
+    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4};
+    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4};
     const device float* s = src + row * D.rowFloatsSrc + x * 4;
     device float* d = dst + row * D.rowFloatsDst + x * 4;
     const float3 o = dctl_transform(P, W, H, x, y, tr, tg, tb);

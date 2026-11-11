@@ -160,9 +160,20 @@ const int kSpecMaxInFlight = 4;    // compiles running at once
 
 // Key + macros for the settings in this parameter block. A float is fixed only
 // when its bits are exactly +0.0f or 1.0f, so the constant is the value itself.
-std::string specKey(id<MTLDevice> dev, const PluginDef* def, const void* params, NSMutableDictionary* macros)
+std::string specKey(id<MTLDevice> dev, const PluginDef* def, const void* params, NSMutableDictionary* macros,
+                    int skinPrepass, int skinFeat)
 {
     std::string key = std::to_string((unsigned long long)dev.registryID) + "|" + def->identifier;
+    // Skin mask pre-pass (see skinPasses): the pre-pass kernel for one look
+    // pass, or the main kernel that reads what the pre-passes wrote.
+    if (skinPrepass >= 0) {
+        key += "|SKINPRE=" + std::to_string(skinPrepass);
+        if (macros) macros[@"NODEONE_SKIN_PREPASS"] = [NSString stringWithFormat:@"%d", skinPrepass];
+    }
+    if (skinFeat > 0) {
+        key += "|SKINFEAT=" + std::to_string(skinFeat);
+        if (macros) macros[@"NODEONE_SKIN_FEAT"] = [NSString stringWithFormat:@"%d", skinFeat];
+    }
     const uint8_t* b = static_cast<const uint8_t*>(params);
     for (int i = 0; i < def->nParams; ++i) {
         const ParamSpec& p = def->params[i];
@@ -201,10 +212,11 @@ void specEvict()   // gSpecMutex held
 
 // Non-blocking: the specialised pipeline when it is ready, nil otherwise (and
 // its compile is started if it was not already).
-id<MTLComputePipelineState> specializedPipeline(id<MTLDevice> dev, const PluginDef* def, const void* params)
+id<MTLComputePipelineState> specializedPipeline(id<MTLDevice> dev, const PluginDef* def, const void* params,
+                                                int skinPrepass = -1, int skinFeat = 0)
 {
     if (!dev || !def || !params || !def->metalSource) return nil;
-    const std::string key = specKey(dev, def, params, nil);
+    const std::string key = specKey(dev, def, params, nil, skinPrepass, skinFeat);
     {
         std::lock_guard<std::mutex> lock(gSpecMutex);
         auto it = gSpec.find(key);
@@ -220,7 +232,7 @@ id<MTLComputePipelineState> specializedPipeline(id<MTLDevice> dev, const PluginD
         specEvict();
     }
     NSMutableDictionary* macros = [NSMutableDictionary dictionary];
-    specKey(dev, def, params, macros);
+    specKey(dev, def, params, macros, skinPrepass, skinFeat);
     MTLCompileOptions* o = compileOptions();
     o.preprocessorMacros = macros;
     NSString* src = [NSString stringWithUTF8String:def->metalSource];
@@ -253,6 +265,45 @@ id<MTLComputePipelineState> specializedPipeline(id<MTLDevice> dev, const PluginD
     return nil;
 }
 
+// SKIN MASK PRE-PASS. The skin mask averages 17 (33 with Mask Edge Softness)
+// samples around each pixel, and each sample used to redo the whole scene
+// colour path of its pixel (log curve, white balance, gamut, look space, skin
+// windows). That part depends only on the sampled pixel: a pre-pass of the same
+// kernel (NODEONE_SKIN_PREPASS) writes it once per pixel, and the main kernel
+// (NODEONE_SKIN_FEAT) reads it - the same skin_tap() of the DCTL, computed once
+// instead of 17 to 33 times.
+// Returns how many look passes need the pre-pass (0: skin mask not in use, or
+// not this effect; 2 when Look Intensity renders the picture twice). This
+// mirrors the DCTL's own conditions; if it ever disagreed, the result would
+// only be slower, never different: the main kernel computes any pass it was
+// not given.
+float specParamF(const PluginDef* def, const void* params, const char* name, bool& found)
+{
+    for (int i = 0; i < def->nParams; ++i)
+        if (std::strcmp(def->params[i].name, name) == 0 && def->params[i].offset < kPluginOnly) {
+            found = true;
+            const uint8_t* b = static_cast<const uint8_t*>(params) + def->params[i].offset;
+            if (def->params[i].kind == kParamFloat) { float v; std::memcpy(&v, b, 4); return v; }
+            int32_t v; std::memcpy(&v, b, 4); return (float)v;
+        }
+    found = false;
+    return 0.0f;
+}
+int skinPasses(const PluginDef* def, const void* params)
+{
+    bool ok = true, f = false;
+    auto P = [&](const char* n) { const float v = specParamF(def, params, n, f); ok = ok && f; return v; };
+    const float sat = P("trim_skin_sat"), line = P("trim_skin"), colByp = P("skin_col_bypass");
+    const float hi = P("skin_hi"), mid = P("skin_mid"), sh = P("skin_sh"), lightByp = P("skin_light_bypass");
+    const float zones = P("skin_zones"), lookByp = P("look_bypass"), lookI = P("look_intensity");
+    if (!ok) return 0;
+    const bool active = ((sat != 0.0f || line > 0.0f) && colByp == 0.0f) ||
+                        ((hi != 0.0f || mid != 0.0f || sh != 0.0f) && lightByp == 0.0f) || zones == 1.0f;
+    if (!active) return 0;
+    const float t = lookByp != 0.0f ? 0.0f : std::fmin(std::fmax(lookI, 0.0f), 1.0f);
+    return (t > 0.0f && t < 1.0f) ? 2 : 1;
+}
+
 } // namespace
 
 // =============================================================================
@@ -277,6 +328,9 @@ struct MetalScratch {
     // Density Pro: key, its blur ping-pong, the stage output
     id<MTLBuffer> dens[4] = {nil, nil, nil, nil};
     NSUInteger densBytes[4] = {0, 0, 0, 0};
+    // skin mask pre-pass: one W x H x 4 plane per look pass
+    id<MTLBuffer> skin = nil;
+    NSUInteger skinBytes = 0;
 };
 
 MetalScratch* metalScratchCreate() { return new MetalScratch(); }
@@ -292,6 +346,7 @@ void metalScratchDestroy(MetalScratch* s)
         for (int i = 0; i < 6; ++i) s->tex[i] = nil;
         for (int i = 0; i < 3; ++i) s->tbl[i] = nil;
         for (int i = 0; i < 4; ++i) s->dens[i] = nil;
+        s->skin = nil;
     }
     delete s;
 }
@@ -304,15 +359,17 @@ namespace {
 // tomber.
 // Encodes one stage: input buffer -> output buffer, through that stage's kernel.
 void encodeStage(id<MTLCommandBuffer> cb, id<MTLComputePipelineState> pso, const void* params, size_t paramsSize,
-                 id<MTLBuffer> in, int inRowFloats, id<MTLBuffer> out, int outRowFloats, int W, int H, int flipY)
+                 id<MTLBuffer> in, int inRowFloats, id<MTLBuffer> out, int outRowFloats, int W, int H, int flipY,
+                 id<MTLBuffer> aux = nil, NSUInteger outOffset = 0)
 {
     KernelDims d = {W, H, inRowFloats, outRowFloats, flipY, 0, 0, 0};
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBytes:params length:paramsSize atIndex:0];
     [enc setBuffer:in offset:0 atIndex:1];
-    [enc setBuffer:out offset:0 atIndex:2];
+    [enc setBuffer:out offset:outOffset atIndex:2];
     [enc setBytes:&d length:sizeof(d) atIndex:3];
+    [enc setBuffer:(aux ? aux : in) offset:0 atIndex:4];   // skin pre-pass values (unused otherwise)
     const NSUInteger tw = pso.threadExecutionWidth;
     const NSUInteger th = MAX((NSUInteger)1, pso.maxTotalThreadsPerThreadgroup / tw);
     const MTLSize tg = MTLSizeMake(tw, MIN(th, (NSUInteger)8), 1);
@@ -885,8 +942,31 @@ bool metalRender(const MetalJob& j, std::string& error)
         // the log image into scratch and the LUT kernel finishes the picture.
         id<MTLBuffer> stageOut = j.lut ? j.scratch->buf[0] : dst;
         const int stageOutRow = j.lut ? j.width * 4 : j.dstRowFloats;
+
+        // Skin mask pre-pass (see skinPasses): when its kernels are ready,
+        // what each pixel brings to the mask is written once, then read.
+        id<MTLBuffer> skinAux = nil;
+        if (const int sp = j.scratch ? skinPasses(j.def, j.params) : 0) {
+            id<MTLComputePipelineState> pre0 = specializedPipeline(dev, j.def, j.params, 0, 0);
+            id<MTLComputePipelineState> pre1 = sp == 2 ? specializedPipeline(dev, j.def, j.params, 1, 0) : nil;
+            id<MTLComputePipelineState> mainF = specializedPipeline(dev, j.def, j.params, -1, sp);
+            if (pre0 && (sp == 1 || pre1) && mainF) {
+                const NSUInteger plane = (NSUInteger)j.width * j.height * 4 * sizeof(float);
+                if (j.scratch->skinBytes < plane * sp || !j.scratch->skin) {
+                    j.scratch->skin = [dev newBufferWithLength:plane * sp options:MTLResourceStorageModePrivate];
+                    j.scratch->skinBytes = j.scratch->skin ? plane * sp : 0;
+                }
+                if (j.scratch->skin) {
+                    for (int p = 0; p < sp; ++p)
+                        encodeStage(cb, p == 0 ? pre0 : pre1, j.params, j.def->paramsSize, input, inRow, j.scratch->skin,
+                                    j.width * 4, j.width, j.height, j.flipY, nil, plane * p);
+                    skinAux = j.scratch->skin;
+                    pso = mainF;
+                }
+            }
+        }
         encodeStage(cb, pso, j.params, j.def->paramsSize, input, inRow, stageOut, stageOutRow, j.width,
-                    j.height, j.flipY);
+                    j.height, j.flipY, skinAux);
         if (j.lut)
             encodeLut(cb, lutPso, *j.lut, lutTable, stageOut, stageOutRow, dst, j.dstRowFloats, j.width, j.height);
         [cb commit];

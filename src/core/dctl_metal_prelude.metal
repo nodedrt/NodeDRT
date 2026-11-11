@@ -89,10 +89,24 @@ struct DctlTex {
     int rowFloats;
     int w, h, ch;
     int flipY;
+    const device float* aux;   // per-pixel values precomputed by the plugin (skin mask), or the source
+    int auxPlane;              // floats per plane of aux (one plane per look pass)
 };
 inline float _tex2D(DctlTex t, int x, int y) {
     x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
     y = y < 0 ? 0 : (y >= t.h ? t.h - 1 : y);
     const int row = t.flipY ? (t.h - 1 - y) : y;
     return t.base[row * t.rowFloats + x * 4 + t.ch];
+}
+
+// SKIN MASK, precomputed (NODEONE_SKIN_FEAT): what each pixel brings to the
+// mask - skin_tap() of the DCTL, written once per pixel by a pre-pass of the
+// same kernel (NODEONE_SKIN_PREPASS). Same layout, rows and edge clamping as
+// _tex2D; one W x H x 4 plane per look pass.
+inline float3 nodeone_skin_feat(DctlTex t, int x, int y, int pass) {
+    x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
+    y = y < 0 ? 0 : (y >= t.h ? t.h - 1 : y);
+    const int row = t.flipY ? (t.h - 1 - y) : y;
+    const device float* p = t.aux + pass * t.auxPlane + (row * t.w + x) * 4;
+    return float3(p[0], p[1], p[2]);
 }
