@@ -1663,11 +1663,26 @@ __DEVICE__ float trim_wroll_gain(float y, float y0, float y1, float d, float pv)
   const float s = smootherstep(l0, l1, _log2f(y));
   return 1.0f - d*s;
 }
-__DEVICE__ float trim_blift_add(float y, float y0, float b, float pv) {
-  if (b <= 0.0f) return 0.0f;
-  const float a = 0.15f*b*y0, h = 2.2f*a + _clampf(pv, 0.0f, 1.0f)*1.5f*y0;
-  const float q = h/(_fmaxf(y, 0.0f) + h);
-  return a*q*q;
+
+
+
+
+
+
+
+
+
+
+__DEVICE__ float trim_blift_add(float y, float y0, float y1, float b, float pv) {
+  if (b <= 0.0f || y1 <= 0.0f) return 0.0f;
+  const float cg0 = _powf(_fminf(y0/y1, 1.0f), 1.0f/2.4f);
+  const float cg = _powf(_fminf(y0*_exp2f(-2.0f + 3.0f*_clampf(pv, 0.0f, 1.0f))/y1, 1.0f), 1.0f/2.4f);
+  const float L = _fminf(0.18f*cg0*b*(0.5f + 0.5f*b), 0.225f*cg);
+  const float c = _powf(_fmaxf(y, 0.0f)/y1, 1.0f/2.4f);
+  if (c >= cg) return 0.0f;
+  const float u = 1.0f - c/cg;
+  const float c2 = c + L*u*u;
+  return y1*_powf(c2, 2.4f) - _fmaxf(y, 0.0f);
 }
 
 
@@ -4433,7 +4448,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
       float cl = crv_ach*ts_dsc;
       const float cg = trim_wroll > 0.0f ? trim_wroll_gain(cl, cy0, cy1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f), trim_wroll_pv) : 1.0f;
       cl *= cg;
-      const float ca = trim_blift_add(cl, cy0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+      const float ca = trim_blift_add(cl, cy0, cy1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
       crv_rgb = make_float3(crv_rgb.x*cg + ca, crv_rgb.y*cg + ca, crv_rgb.z*cg + ca);
     }
     
@@ -4505,7 +4520,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   rgb *= tsn;
   if (tb_on && trim_blift > 0.0f) {
-    const float tb_a = trim_blift_add(tsn, tb_y0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+    const float tb_a = trim_blift_add(tsn, tb_y0, tb_y1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
     rgb = make_float3(rgb.x + tb_a, rgb.y + tb_a, rgb.z + tb_a);
   }
 
@@ -4791,7 +4806,7 @@ static void cpu_render(const void* pv, const float* src, ptrdiff_t srcRowFloats,
 }
 } // namespace nodeone_drt
 
-#line 4795 "gen/drt.cpp"
+#line 4810 "gen/drt.cpp"
 namespace nodeone_drt {
 static const char* const kMetalSource =
 R"NODEONE(// =============================================================================
@@ -6586,11 +6601,26 @@ __DEVICE__ float trim_wroll_gain(float y, float y0, float y1, float d, float pv)
   const float s = smootherstep(l0, l1, _log2f(y));
   return 1.0f - d*s;
 }
-__DEVICE__ float trim_blift_add(float y, float y0, float b, float pv) {
-  if (b <= 0.0f) return 0.0f;
-  const float a = 0.15f*b*y0, h = 2.2f*a + _clampf(pv, 0.0f, 1.0f)*1.5f*y0;
-  const float q = h/(_fmaxf(y, 0.0f) + h);
-  return a*q*q;
+
+
+
+
+
+
+
+
+
+
+__DEVICE__ float trim_blift_add(float y, float y0, float y1, float b, float pv) {
+  if (b <= 0.0f || y1 <= 0.0f) return 0.0f;
+  const float cg0 = _powf(_fminf(y0/y1, 1.0f), 1.0f/2.4f);
+  const float cg = _powf(_fminf(y0*_exp2f(-2.0f + 3.0f*_clampf(pv, 0.0f, 1.0f))/y1, 1.0f), 1.0f/2.4f);
+  const float L = _fminf(0.18f*cg0*b*(0.5f + 0.5f*b), 0.225f*cg);
+  const float c = _powf(_fmaxf(y, 0.0f)/y1, 1.0f/2.4f);
+  if (c >= cg) return 0.0f;
+  const float u = 1.0f - c/cg;
+  const float c2 = c + L*u*u;
+  return y1*_powf(c2, 2.4f) - _fmaxf(y, 0.0f);
 }
 
 
@@ -6733,7 +6763,8 @@ __DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
 
   
   const float xr = _log2f(_fmaxf(rgb.x, 1.0e-10f));
-  const float xg = _log2f(_fmaxf(rgb.y, 1.0e-10f));
+  const float xg = _log2f(_fmaxf(rgb.y, 1.0e-10f)))NODEONE"
+R"NODEONE(;
   const float xb = _log2f(_fmaxf(rgb.z, 1.0e-10f));
   const float m  = (xr + xg + xb)/3.0f;
   const float dr = xr - m, dg = xg - m, db = xb - m;   
@@ -6743,8 +6774,7 @@ __DEVICE__ float3 mid_purity(float3 rgb, float a, float pivot) {
   
 
   const float aw = a*w;
-  const float k = aw > 0.0f ? 1.0f + MP_)NODEONE"
-R"NODEONE(MAX*aw/(c + MP_KC)
+  const float k = aw > 0.0f ? 1.0f + MP_MAX*aw/(c + MP_KC)
                             : 1.0f + MP_CUT*aw;
   if (k == 1.0f) return rgb;
 
@@ -6834,9 +6864,9 @@ __CONSTANT__ float PT_TOP[7][3][97] = {
   {{0.087620f,0.092411f,0.097173f,0.101886f,0.106535f,0.111112f,0.115611f,0.120023f,0.124343f,0.128562f,0.132673f,0.136503f,0.139664f,0.141559f,0.141881f,0.140776f,0.138823f,0.136534f,0.134191f,0.131847f,0.129503f,0.127159f,0.124816f,0.122472f,0.120128f,0.117784f,0.115441f,0.113097f,0.110753f,0.108409f,0.106066f,0.103722f,0.101378f,0.099034f,0.096691f,0.094347f,0.092003f,0.089659f,0.087316f,0.084972f,0.082628f,0.080284f,0.077941f,0.075597f,0.073253f,0.070909f,0.068566f,0.066222f,0.063878f,0.061534f,0.059191f,0.056847f,0.054503f,0.052159f,0.049816f,0.047472f,0.045128f,0.042784f,0.040441f,0.038097f,0.035753f,0.033409f,0.031066f,0.028722f,0.026378f,0.024034f,0.021691f,0.019347f,0.017003f,0.014659f,0.012316f,0.009972f,0.007628f,0.005284f,0.002941f,0.000597f,-0.001747f,-0.004091f,-0.006434f,-0.008778f,-0.011122f,-0.013466f,-0.015809f,-0.018153f,-0.020497f,-0.022841f,-0.025184f,-0.027528f,-0.029872f,-0.032216f,-0.034559f,-0.036867f,-0.038275f,-0.036981f,-0.030356f,-0.017429f,0.000000f},
    {0.003691f,0.008314f,0.012920f,0.017497f,0.022034f,0.026523f,0.030958f,0.035330f,0.039631f,0.043855f,0.047993f,0.052037f,0.055979f,0.059812f,0.063526f,0.067114f,0.070525f,0.073518f,0.075663f,0.076482f,0.075898f,0.074227f,0.072039f,0.069695f,0.067352f,0.065008f,0.062664f,0.060320f,0.057977f,0.055633f,0.053289f,0.050945f,0.048602f,0.046258f,0.043914f,0.041570f,0.039227f,0.036883f,0.034539f,0.032195f,0.029852f,0.027508f,0.025164f,0.022820f,0.020477f,0.018133f,0.015789f,0.013445f,0.011102f,0.008758f,0.006414f,0.004070f,0.001727f,-0.000617f,-0.002961f,-0.005305f,-0.007648f,-0.009992f,-0.012336f,-0.014680f,-0.017023f,-0.019367f,-0.021711f,-0.024055f,-0.026398f,-0.028742f,-0.031086f,-0.033430f,-0.035773f,-0.038117f,-0.040461f,-0.042805f,-0.045148f,-0.047492f,-0.049836f,-0.052180f,-0.054523f,-0.056867f,-0.059211f,-0.061555f,-0.063898f,-0.066242f,-0.068586f,-0.070930f,-0.073273f,-0.075617f,-0.077961f,-0.080305f,-0.082648f,-0.084843f,-0.085994f,-0.084361f,-0.077698f,-0.064938f,-0.046479f,-0.024178f,0.000000f},
    {-0.078596f,-0.075989f,-0.073410f,-0.070881f,-0.068413f,-0.066017f,-0.063697f,-0.061462f,-0.059371f,-0.057632f,-0.056601f,-0.056617f,-0.057706f,-0.059583f,-0.061824f,-0.064168f,-0.066511f,-0.068855f,-0.071199f,-0.073543f,-0.075886f,-0.078230f,-0.080574f,-0.082918f,-0.085261f,-0.087605f,-0.089949f,-0.092293f,-0.094636f,-0.096980f,-0.099324f,-0.101668f,-0.104011f,-0.106355f,-0.108699f,-0.111043f,-0.113386f,-0.115730f,-0.118074f,-0.120418f,-0.122761f,-0.125105f,-0.127449f,-0.129793f,-0.132136f,-0.134480f,-0.136824f,-0.139168f,-0.141511f,-0.143855f,-0.146199f,-0.148543f,-0.150886f,-0.153230f,-0.155574f,-0.157918f,-0.160261f,-0.162605f,-0.164949f,-0.167293f,-0.169636f,-0.171980f,-0.174324f,-0.176668f,-0.179011f,-0.181355f,-0.183699f,-0.186043f,-0.188386f,-0.190730f,-0.193074f,-0.195418f,-0.197761f,-0.200105f,-0.202449f,-0.204793f,-0.207136f,-0.209480f,-0.211824f,-0.214168f,-0.216511f,-0.218855f,-0.221199f,-0.223543f,-0.225886f,-0.227956f,-0.228714f,-0.226267f,-0.218590f,-0.204877f,-0.185709f,-0.162414f,-0.135795f,-0.106056f,-0.073138f,-0.037416f,0.000000f}},
-  {{0.010262f,0.015533f,0.020771f,0.025948f,0.031048f,0.036062f,0.040982f,0.045801f,0.050510f,0.055101f,0.059566f,0.063898f,0.068070f,0.071838f,0.074748f,0.076192f,0.076021f,0.074530f,0.072393f,0.070049f,0.067706f,0.065362f,0.063018f,0.060674f,0.058331f,0.055987f,0.053643f,0.051299f,0.048956f,0.046612f,0.044268f,0.041924f,0.039581f,0.037237f,0.034893f,0.032549f,0.030206f,0.027862f,0.025518f,0.023174f,0.020831f,0.018487f,0.016143f,0.013799f,0.011456f,0.009112f,0.006768f,0.004424f,0.002081f,-0.000263f,-0.002607f,-0.004951f,-0.007294f,-0.009638f,-0.011982f,-0.014326f,-0.016669f,-0.019013f,-0.021357f,-0.023701f,-0.026044f,-0.028388f,-0.030732f,-0.033076f,-0.035419f,-0.037763f,-0.040107f,-0.042451f,-0.044794f,-0.047138f,-0.049482f,-0.051826f,-0.054169f,-0.056513f,-0.058857f,-0.061201f,-0.063544f,-0.065888f,-0.068232f,-0.070576f,-0.072919f,-0.075263f,-0.077607f,-0.079951f,-0.082294f,-0.084638f,-0.086982f,-0.089326f,-0.091669f,-0.093992f,-0.095426f,-0.094149f,-0.087331f,-0.073483f,-0.052788f,-0.027509f,0.000000f},
-   {0.064446f,0.069128f,0.073771f,0.078345f,0.082832f,0.087222f,0.091508f,0.095682f,0.099736f,0.103562f,0.106843f,0.109058f,0)NODEONE"
-R"NODEONE(.109782f,0.109036f,0.107267f,0.105040f,0.102696f,0.100353f,0.098009f,0.095665f,0.093321f,0.090978f,0.088634f,0.086290f,0.083946f,0.081603f,0.079259f,0.076915f,0.074571f,0.072228f,0.069884f,0.067540f,0.065196f,0.062853f,0.060509f,0.058165f,0.055821f,0.053478f,0.051134f,0.048790f,0.046446f,0.044103f,0.041759f,0.039415f,0.037071f,0.034728f,0.032384f,0.030040f,0.027696f,0.025353f,0.023009f,0.020665f,0.018321f,0.015978f,0.013634f,0.011290f,0.008946f,0.006603f,0.004259f,0.001915f,-0.000429f,-0.002772f,-0.005116f,-0.007460f,-0.009804f,-0.012147f,-0.014491f,-0.016835f,-0.019179f,-0.021522f,-0.023866f,-0.026210f,-0.028554f,-0.030897f,-0.033241f,-0.035585f,-0.037929f,-0.040272f,-0.042616f,-0.044960f,-0.047304f,-0.049647f,-0.051991f,-0.054335f,-0.056679f,-0.059022f,-0.061366f,-0.063710f,-0.066054f,-0.068397f,-0.070741f,-0.072287f,-0.071130f,-0.064129f,-0.049302f,-0.026878f,0.000000f},
+  {{0.010262f,0.015533f,0.020771f,0.025948f,0.031048f,0.036062f,0.040982f,0.045801f,0.050510f,0.055101f,0.059566f,0.063898f,0.068070f,0.071838f,0.074748f,0.076192f,0.076021f,0.074530f,0.072393f,0.070049f,0.067706f,0.065362f,0.063018f,0.060674f,0.058331f,0.055987f,0.053643f,0.051299f,0.048956f,0.046612f,0.044268f,0.041924f,0.039581f,0.037237f,0.034893f,0.032549f,0.030206f,0.027862f,0.025518f,0.023174f,0.020831f,0.018487f,0.016143f,0.013799f,0.011456f,0.009112f,0.006768f,0.004424f,0.002081f,-0.000263f,-0.002607f,-0.004951f,-0.007294f,-0.009638f,-0.011982f,-0.014326f,-0.016669f,-0.019013f,-0.021357f,-0.023701f,-0.026044f,-0.028388f,-0.030732f,-0.033076f,-0.035419f,-0.037763f,-0.040107f,-0.042451f,-0.044794f,-0.047138f,-0.049482f,-0.051826f,-0.054169f,-0.056513f,-0.058857f,-0.061201f,-0.063544f,-0.065888f,-0.068232f,-0.07)NODEONE"
+R"NODEONE(0576f,-0.072919f,-0.075263f,-0.077607f,-0.079951f,-0.082294f,-0.084638f,-0.086982f,-0.089326f,-0.091669f,-0.093992f,-0.095426f,-0.094149f,-0.087331f,-0.073483f,-0.052788f,-0.027509f,0.000000f},
+   {0.064446f,0.069128f,0.073771f,0.078345f,0.082832f,0.087222f,0.091508f,0.095682f,0.099736f,0.103562f,0.106843f,0.109058f,0.109782f,0.109036f,0.107267f,0.105040f,0.102696f,0.100353f,0.098009f,0.095665f,0.093321f,0.090978f,0.088634f,0.086290f,0.083946f,0.081603f,0.079259f,0.076915f,0.074571f,0.072228f,0.069884f,0.067540f,0.065196f,0.062853f,0.060509f,0.058165f,0.055821f,0.053478f,0.051134f,0.048790f,0.046446f,0.044103f,0.041759f,0.039415f,0.037071f,0.034728f,0.032384f,0.030040f,0.027696f,0.025353f,0.023009f,0.020665f,0.018321f,0.015978f,0.013634f,0.011290f,0.008946f,0.006603f,0.004259f,0.001915f,-0.000429f,-0.002772f,-0.005116f,-0.007460f,-0.009804f,-0.012147f,-0.014491f,-0.016835f,-0.019179f,-0.021522f,-0.023866f,-0.026210f,-0.028554f,-0.030897f,-0.033241f,-0.035585f,-0.037929f,-0.040272f,-0.042616f,-0.044960f,-0.047304f,-0.049647f,-0.051991f,-0.054335f,-0.056679f,-0.059022f,-0.061366f,-0.063710f,-0.066054f,-0.068397f,-0.070741f,-0.072287f,-0.071130f,-0.064129f,-0.049302f,-0.026878f,0.000000f},
    {0.085165f,0.089694f,0.094172f,0.098562f,0.102843f,0.107003f,0.111036f,0.114816f,0.118011f,0.120086f,0.120662f,0.119794f,0.117966f,0.115720f,0.113376f,0.111032f,0.108689f,0.106345f,0.104001f,0.101657f,0.099314f,0.096970f,0.094626f,0.092282f,0.089939f,0.087595f,0.085251f,0.082907f,0.080564f,0.078220f,0.075876f,0.073532f,0.071189f,0.068845f,0.066501f,0.064157f,0.061814f,0.059470f,0.057126f,0.054782f,0.052439f,0.050095f,0.047751f,0.045407f,0.043064f,0.040720f,0.038376f,0.036032f,0.033689f,0.031345f,0.029001f,0.026657f,0.024314f,0.021970f,0.019626f,0.017282f,0.014939f,0.012595f,0.010251f,0.007907f,0.005564f,0.003220f,0.000876f,-0.001468f,-0.003811f,-0.006155f,-0.008499f,-0.010843f,-0.013186f,-0.015530f,-0.017874f,-0.020218f,-0.022561f,-0.024905f,-0.027249f,-0.029593f,-0.031936f,-0.034280f,-0.036624f,-0.038968f,-0.041311f,-0.043655f,-0.045999f,-0.048343f,-0.050686f,-0.053030f,-0.055374f,-0.057718f,-0.060061f,-0.062405f,-0.064749f,-0.066712f,-0.066713f,-0.061832f,-0.048956f,-0.027372f,0.000000f}},
   {{0.247712f,0.245368f,0.243025f,0.240681f,0.238337f,0.235993f,0.233650f,0.231306f,0.228962f,0.226618f,0.224275f,0.221931f,0.219587f,0.217243f,0.214900f,0.212556f,0.210212f,0.207868f,0.205525f,0.203181f,0.200837f,0.198493f,0.196150f,0.193806f,0.191462f,0.189118f,0.186775f,0.184431f,0.182087f,0.179743f,0.177400f,0.175056f,0.172712f,0.170368f,0.168025f,0.165681f,0.163337f,0.160993f,0.158650f,0.156306f,0.153962f,0.151618f,0.149275f,0.146931f,0.144587f,0.142243f,0.139900f,0.137556f,0.135212f,0.132868f,0.130525f,0.128181f,0.125837f,0.123493f,0.121150f,0.118806f,0.116462f,0.114118f,0.111775f,0.109431f,0.107087f,0.104743f,0.102400f,0.100056f,0.097712f,0.095368f,0.093025f,0.090681f,0.088337f,0.085993f,0.083650f,0.081306f,0.078962f,0.076618f,0.074275f,0.071931f,0.069587f,0.067243f,0.064900f,0.062556f,0.060212f,0.057868f,0.055525f,0.053181f,0.050837f,0.048493f,0.046150f,0.043806f,0.041462f,0.039118f,0.036775f,0.034431f,0.032087f,0.029743f,0.027400f,0.025056f,0.000000f},
    {0.302263f,0.299919f,0.297576f,0.295232f,0.292888f,0.290544f,0.288201f,0.285857f,0.283513f,0.281169f,0.278826f,0.276482f,0.274138f,0.271794f,0.269451f,0.267107f,0.264763f,0.262419f,0.260076f,0.257732f,0.255388f,0.253044f,0.250701f,0.248357f,0.246013f,0.243669f,0.241326f,0.238982f,0.236638f,0.234294f,0.231951f,0.229607f,0.227263f,0.224919f,0.222576f,0.220232f,0.217888f,0.215544f,0.213201f,0.210857f,0.208513f,0.206169f,0.203826f,0.201482f,0.199138f,0.196794f,0.194451f,0.192107f,0.189763f,0.187419f,0.185076f,0.182732f,0.180388f,0.178044f,0.175701f,0.173357f,0.171013f,0.168669f,0.166326f,0.163982f,0.161638f,0.159294f,0.156951f,0.154607f,0.152263f,0.149919f,0.147576f,0.145232f,0.142888f,0.140544f,0.138201f,0.135857f,0.133513f,0.131169f,0.128826f,0.126482f,0.124138f,0.121794f,0.119451f,0.117107f,0.114763f,0.112419f,0.110076f,0.107732f,0.105388f,0.103044f,0.100701f,0.098357f,0.096013f,0.093669f,0.091326f,0.088982f,0.086638f,0.084294f,0.081951f,0.079607f,0.000000f},
@@ -6859,10 +6889,10 @@ __DEVICE__ float3 print_tone(float tsn, int id, float amt, float lim) {
     lg.z = env*(3.24557422f + u*(-51.7206987f + u*(230.122185f + u*(-300.001281f + u*(-125.215939f + u*(300.001451f + u*(229.545555f + u*(-300.006082f))))))));
   }
   else if (id==2) { 
-    lg.x = env*(3.53640281f + u*(-61.3436501f + u*(251.205781f + u*(-300.000476f + u*(-148.313757f + u*(300.001164f + u*(245.480543f + u*(-300.006435f))))))));
+    lg.x =)NODEONE"
+R"NODEONE( env*(3.53640281f + u*(-61.3436501f + u*(251.205781f + u*(-300.000476f + u*(-148.313757f + u*(300.001164f + u*(245.480543f + u*(-300.006435f))))))));
     lg.y = env*(1.80697342f + u*(-28.3333782f + u*(128.134024f + u*(-118.661521f + u*(-253.109922f + u*(300.00308f + u*(261.112738f + u*(-300.019773f))))))));
-    lg.z =)NODEONE"
-R"NODEONE( env*(0.118328352f + u*(-18.8524489f + u*(98.3071484f + u*(-60.9886514f + u*(-300.000034f + u*(298.307815f + u*(272.417549f + u*(-300.00104f))))))));
+    lg.z = env*(0.118328352f + u*(-18.8524489f + u*(98.3071484f + u*(-60.9886514f + u*(-300.000034f + u*(298.307815f + u*(272.417549f + u*(-300.00104f))))))));
   }
   else if (id==3) { 
     lg.x = env*(4.15054865f + u*(-67.0463055f + u*(263.188128f + u*(-300.001202f + u*(-162.069489f + u*(300.001777f + u*(253.659258f + u*(-300.008536f))))))));
@@ -7141,14 +7171,14 @@ __DEVICE__ float3 trial_wm(float3 rgb, float px, float py, float Hf) {
     float u = px / fp, v = py / fp;
     float row = _floorf(v / 26.0f);
     float sh = (row - 2.0f*_floorf(row*0.5f)) * 42.0f;
-    float uu = u + sh;
+    float uu = u + )NODEONE"
+R"NODEONE(sh;
     float lx = (uu - 84.0f*_floorf(uu / 84.0f)) * fp;
     float ly = (v - 26.0f*row) * fp;
     float c1 = txt_cov(lx, ly, 18.0f*fp, 5.0f*fp, fp, 8,
                        C_N, C_O, C_D, C_E, C_SP, C_D, C_R, C_T, C_SP, C_SP, C_SP);
     float c2 = txt_cov(lx, ly, 9.5f*fp, 14.0f*fp, fp, 11,
-                       C_T)NODEONE"
-R"NODEONE(, C_R, C_I, C_A, C_L, C_SP, C_E, C_N, C_D, C_E, C_D);
+                       C_T, C_R, C_I, C_A, C_L, C_SP, C_E, C_N, C_D, C_E, C_D);
     float c = _fmaxf(c1, c2);
     float3 d = rgb * 0.3f;
     return d + (make_float3(0.8f, 0.8f, 0.8f) - d) * c;
@@ -7432,7 +7462,8 @@ __DEVICE__ float ovl_rrect_sdf(float px, float py, float cx, float cy, float hx,
     float qy = _fabs(py - cy) - (hy - r);
     float ax = _fmaxf(qx, 0.0f);
     float ay = _fmaxf(qy, 0.0f);
-    return _sqrtf(ax * ax + ay * ay) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
+    return _sqrtf(ax * ax + ay * a)NODEONE"
+R"NODEONE(y) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
 }
 
 
@@ -7447,8 +7478,7 @@ __DEVICE__ float ovl_mix(float x, float t, float a) {
 }
 
 __DEVICE__ float ovl_ss(float e0, float e1, float x) {
-    float t = _clampf((x - e0) / (e)NODEONE"
-R"NODEONE(1 - e0), 0.0f, 1.0f);
+    float t = _clampf((x - e0) / (e1 - e0), 0.0f, 1.0f);
     return t * t * (3.0f - 2.0f * t);
 }
 
@@ -7818,14 +7848,14 @@ __DEVICE__ ts_out ts_core(float3 rgb, float3 crv_val, int crv_on,
     sh_fl = contrast_high(sh_fl, hcon_p, hcon_pv, hcon_st, 0);
     if (crv_on) crv_val = make_float3(contrast_high(crv_val.x, hcon_p, hcon_pv, hcon_st, 0),
                                       contrast_high(crv_val.y, hcon_p, hcon_pv, hcon_st, 0),
-                                      contrast_high(crv_val.z, hcon_p, hcon_pv, hcon_st, 0));
+                                      contrast_high(crv_val.z, hcon_p, hcon)NODEONE"
+R"NODEONE(_pv, hcon_st, 0));
   }
   tsn = compress_hyperbolic_power(tsn, ts_s, con);
   ts_pt = compress_hyperbolic_power(ts_pt, ts_s1, con);
   sh_fl = compress_hyperbolic_power(sh_fl, ts_s, con);
   if (crv_on) crv_val = make_float3(compress_hyperbolic_power(crv_val.x, ts_s, con),
-                                    compress_hype)NODEONE"
-R"NODEONE(rbolic_power(crv_val.y, ts_s, con),
+                                    compress_hyperbolic_power(crv_val.y, ts_s, con),
                                     compress_hyperbolic_power(crv_val.z, ts_s, con));
   ts_out o;
   o.r = rgb;
@@ -8093,8 +8123,8 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
 
   #ifdef INIT_PARAMS  
 
-  tn_Lg=_tn_Lg, tn_con=_tn_con, tn_sh=_tn_sh, tn_toe=_tn_toe, tn_off=_tn_off, tn_hcon_enable=_tn_hcon_enable, tn_hcon=_tn_hcon, tn_hcon_pv=_tn_hcon_pv, tn_hcon_st=_tn_hcon_st, tn_lcon_enable=_tn_lcon_enable, tn_lcon=_tn_lcon, tn_lcon_w=_tn_lcon_w, tn_lcon_pc=_tn_lcon_pc, cwp=_cwp, cwp_rng=_cwp_rng, rs_sa=_rs_sa, rs_rw=_rs_rw, rs_bw=_rs_bw, pt_r=_pt_r, pt_g=_pt_g, pt_b=_pt_b, pt_rng_low=_pt_rng_low, pt_rng_high=_pt_rng_high, ptl_enable=_ptl_enable, ptm_enable=_ptm_enable, ptm_low=_ptm_low, ptm_low_st=_ptm_low_st, ptm_hi)NODEONE"
-R"NODEONE(gh=_ptm_high, ptm_high_st=_ptm_high_st, brl_enable=_brl_enable, brl_r=_brl_r, brl_g=_brl_g, brl_b=_brl_b, brl_c=_brl_c, brl_m=_brl_m, brl_y=_brl_y, brl_rng=_brl_rng, hs_rgb_enable=_hs_rgb_enable, hs_r=_hs_r, hs_g=_hs_g, hs_b=_hs_b, hs_rgb_rng=_hs_rgb_rng, hs_cmy_enable=_hs_cmy_enable, hs_c=_hs_c, hs_m=_hs_m, hs_y=_hs_y, hc_enable=_hc_enable, hc_r=_hc_r, display_gamut=_display_gamut, eotf=_eotf;
+  tn_Lg=_tn_Lg, tn_con=_tn_con, tn_sh=_tn_sh, tn_toe=_tn_toe, tn_off=_tn_off, tn_hcon_enable=_tn_hcon_enable, tn_hcon=_tn_hcon, tn_hcon_pv=_tn_hcon_pv, tn_hcon_st=_tn_hcon_st, tn_lcon_enable=_tn_lcon_enabl)NODEONE"
+R"NODEONE(e, tn_lcon=_tn_lcon, tn_lcon_w=_tn_lcon_w, tn_lcon_pc=_tn_lcon_pc, cwp=_cwp, cwp_rng=_cwp_rng, rs_sa=_rs_sa, rs_rw=_rs_rw, rs_bw=_rs_bw, pt_r=_pt_r, pt_g=_pt_g, pt_b=_pt_b, pt_rng_low=_pt_rng_low, pt_rng_high=_pt_rng_high, ptl_enable=_ptl_enable, ptm_enable=_ptm_enable, ptm_low=_ptm_low, ptm_low_st=_ptm_low_st, ptm_high=_ptm_high, ptm_high_st=_ptm_high_st, brl_enable=_brl_enable, brl_r=_brl_r, brl_g=_brl_g, brl_b=_brl_b, brl_c=_brl_c, brl_m=_brl_m, brl_y=_brl_y, brl_rng=_brl_rng, hs_rgb_enable=_hs_rgb_enable, hs_r=_hs_r, hs_g=_hs_g, hs_b=_hs_b, hs_rgb_rng=_hs_rgb_rng, hs_cmy_enable=_hs_cmy_enable, hs_c=_hs_c, hs_m=_hs_m, hs_y=_hs_y, hc_enable=_hc_enable, hc_r=_hc_r, display_gamut=_display_gamut, eotf=_eotf;
 
   #else 
 
@@ -8278,15 +8308,15 @@ R"NODEONE(gh=_ptm_high, ptm_high_st=_ptm_high_st, brl_enable=_brl_enable, brl_r=
       tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 4.0f, tn_lcon = 1.0f, tn_lcon_w = 0.5f, tn_lcon_pc = 1.0f;
       tn_hcon_enable = 0; tn_lcon_enable = 1;
     }
-    cwp_rng = 0.5f + (cwp_rng - 0.5f)*look_amt;
+    cwp_rng = 0.5f + (cwp_rng -)NODEONE"
+R"NODEONE( 0.5f)*look_amt;
     rs_sa = 0.35f + (rs_sa - 0.35f)*look_amt;
     rs_rw = 0.25f + (rs_rw - 0.25f)*look_amt;
     rs_bw = 0.55f + (rs_bw - 0.55f)*look_amt;
     pt_r = 0.5f + (pt_r - 0.5f)*look_amt;
     pt_g = 2.0f + (pt_g - 2.0f)*look_amt;
     pt_b = 2.0f + (pt_b - 2.0f)*look_amt;
-    pt_rng_low = 0.2f + (pt_rng_low - )NODEONE"
-R"NODEONE(0.2f)*look_amt;
+    pt_rng_low = 0.2f + (pt_rng_low - 0.2f)*look_amt;
     pt_rng_high = 0.8f + (pt_rng_high - 0.8f)*look_amt;
     ptm_low = 0.2f + (ptm_low - 0.2f)*look_amt;
     ptm_low_st = 0.5f + (ptm_low_st - 0.5f)*look_amt;
@@ -8729,12 +8759,12 @@ R"NODEONE(0.2f)*look_amt;
     const float Tm = SKL_T*_powf(3.0f, (sk_soft_e - 0.5f)*2.0f);
     const float T1 = _fmaxf(Tm, SKL_K*_fabs(skin_mid - skin_sh));
     const float T2 = _fmaxf(Tm, SKL_K*_fabs(skin_hi - skin_mid));
-    skz_s1 = smootherstep(SKL_B1 - 0.5f*T1, SKL_B1 + 0.5f*T1, skz_x);
+    )NODEONE"
+R"NODEONE(skz_s1 = smootherstep(SKL_B1 - 0.5f*T1, SKL_B1 + 0.5f*T1, skz_x);
     skz_s2 = smootherstep(SKL_B2 - 0.5f*T2, SKL_B2 + 0.5f*T2, skz_x);
   }
   if ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && sk_wl_scene > 0.0f && !skin_light_bypass) {
-    const float sl = skin_sh*(1.0f - skz_s1) + skin_mid*(skz_s1 - skz)NODEONE"
-R"NODEONE(_s2) + skin_hi*skz_s2;
+    const float sl = skin_sh*(1.0f - skz_s1) + skin_mid*(skz_s1 - skz_s2) + skin_hi*skz_s2;
     rgb = rgb*_exp2f(SKL_A*sl*sk_wl_scene);
   }
   
@@ -9293,7 +9323,8 @@ R"NODEONE(_s2) + skin_hi*skz_s2;
       
       
       const float pt_lim = 0.500f + 0.500f*smootherstep(0.450f, 0.850f, hd_sat);
-      rgb *= print_tone(tsn/ts_y1, tone_id, tone_amt, pt_lim);
+      rgb *= print_tone(tsn/ts_y1, tone_id, )NODEONE"
+R"NODEONE(tone_amt, pt_lim);
     }
 
 
@@ -9317,8 +9348,7 @@ R"NODEONE(_s2) + skin_hi*skz_s2;
     
     
     
-    float sh_x =)NODEONE"
-R"NODEONE( tsn - sh_fl;
+    float sh_x = tsn - sh_fl;
     float sh_w = _fmaxf(sh_x, 0.0f)/sh_p;
     sh_w = 1.0f/(1.0f + sh_w*sh_w*sh_w);
     sh_w = smooth_relu((sh_w - sh_wg)/(1.0f - sh_wg), 0.05f);
@@ -9366,7 +9396,7 @@ R"NODEONE( tsn - sh_fl;
       float cl = crv_ach*ts_dsc;
       const float cg = trim_wroll > 0.0f ? trim_wroll_gain(cl, cy0, cy1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f), trim_wroll_pv) : 1.0f;
       cl *= cg;
-      const float ca = trim_blift_add(cl, cy0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+      const float ca = trim_blift_add(cl, cy0, cy1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
       crv_rgb = make_float3(crv_rgb.x*cg + ca, crv_rgb.y*cg + ca, crv_rgb.z*cg + ca);
     }
     
@@ -9438,7 +9468,7 @@ R"NODEONE( tsn - sh_fl;
   
   rgb *= tsn;
   if (tb_on && trim_blift > 0.0f) {
-    const float tb_a = trim_blift_add(tsn, tb_y0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+    const float tb_a = trim_blift_add(tsn, tb_y0, tb_y1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
     rgb = make_float3(rgb.x + tb_a, rgb.y + tb_a, rgb.z + tb_a);
   }
 
@@ -9707,15 +9737,15 @@ struct DctlDims { int width, height, rowFloatsSrc, rowFloatsDst, flipY, pad0, pa
 kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
                           const device float* src [[buffer(1)]],
                           device float* dst [[buffer(2)]],
-                          constant DctlDims& D [[buffer(3)]],
+                          consta)NODEONE"
+R"NODEONE(nt DctlDims& D [[buffer(3)]],
                           const device float* aux [[buffer(4)]],
                           const device half* film [[buffer(5)]],
                           uint2 gid [[thread_position_in_grid]])
 {
     const int W = D.width, H = D.height;
     if ((int)gid.x >= W || (int)gid.y >= H) return;
-    const i)NODEONE"
-R"NODEONE(nt x = (int)gid.x;
+    const int x = (int)gid.x;
     const int row = (int)gid.y;
     const int y = D.flipY ? (H - 1 - row) : row;
     DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4, film, D.pad0};

@@ -1787,11 +1787,26 @@ __DEVICE__ float trim_wroll_gain(float y, float y0, float y1, float d, float pv)
   const float s = smootherstep(l0, l1, _log2f(y));
   return 1.0f - d*s;
 }
-__DEVICE__ float trim_blift_add(float y, float y0, float b, float pv) {
-  if (b <= 0.0f) return 0.0f;
-  const float a = 0.15f*b*y0, h = 2.2f*a + _clampf(pv, 0.0f, 1.0f)*1.5f*y0;
-  const float q = h/(_fmaxf(y, 0.0f) + h);
-  return a*q*q;
+
+
+
+
+
+
+
+
+
+
+__DEVICE__ float trim_blift_add(float y, float y0, float y1, float b, float pv) {
+  if (b <= 0.0f || y1 <= 0.0f) return 0.0f;
+  const float cg0 = _powf(_fminf(y0/y1, 1.0f), 1.0f/2.4f);
+  const float cg = _powf(_fminf(y0*_exp2f(-2.0f + 3.0f*_clampf(pv, 0.0f, 1.0f))/y1, 1.0f), 1.0f/2.4f);
+  const float L = _fminf(0.18f*cg0*b*(0.5f + 0.5f*b), 0.225f*cg);
+  const float c = _powf(_fmaxf(y, 0.0f)/y1, 1.0f/2.4f);
+  if (c >= cg) return 0.0f;
+  const float u = 1.0f - c/cg;
+  const float c2 = c + L*u*u;
+  return y1*_powf(c2, 2.4f) - _fmaxf(y, 0.0f);
 }
 
 
@@ -4557,7 +4572,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
       float cl = crv_ach*ts_dsc;
       const float cg = trim_wroll > 0.0f ? trim_wroll_gain(cl, cy0, cy1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f), trim_wroll_pv) : 1.0f;
       cl *= cg;
-      const float ca = trim_blift_add(cl, cy0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+      const float ca = trim_blift_add(cl, cy0, cy1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
       crv_rgb = make_float3(crv_rgb.x*cg + ca, crv_rgb.y*cg + ca, crv_rgb.z*cg + ca);
     }
     
@@ -4629,7 +4644,7 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   rgb *= tsn;
   if (tb_on && trim_blift > 0.0f) {
-    const float tb_a = trim_blift_add(tsn, tb_y0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+    const float tb_a = trim_blift_add(tsn, tb_y0, tb_y1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
     rgb = make_float3(rgb.x + tb_a, rgb.y + tb_a, rgb.z + tb_a);
   }
 

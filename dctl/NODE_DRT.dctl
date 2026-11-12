@@ -270,11 +270,11 @@ DEFINE_UI_PARAMS(trim_piv, ⚖ Pivot, DCTLUI_SLIDER_FLOAT, 0.336, 0.0, 1.0, 0.00
 DEFINE_UI_PARAMS(trim_ovl, 🌗 Overlay, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(trim_ovl, "The Overlay composite mode of a node blended onto itself, ported from NODE_Composite2. Because source and backdrop are the same pixel it becomes a pure S-curve, and it runs in LOG, where its pivot sits about 2.3 stops above grey - so it bites into the top of the midtones rather than around grey, which is what gives it a different character from Log Contrast. Negative runs the operation backwards. It carries the chroma-gain limiter from the original: the operator works channel by channel, so it multiplies the gap between channels and therefore the chroma, and without the limiter a saturated colour lands far out of gamut for the render downstream to flatten. It is drawn on the Curve View, because unlike the highlight trims it does move a neutral.")
 DEFINE_UI_PARAMS(trim_blift, 🌑 Black_Lift, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(trim_blift, "Lifts the bottom of the curve, like the flare of a print: the black rises, the deep shadows open, and the lift fades out smoothly before grey (middle grey moves by under 2 percent at the top of the travel; white does not move). The light it adds is NEUTRAL, so the noise of the black is lifted as grey, never as colour. 1 = the black at about 15 percent of middle grey. Drawn on the Curve View. The curve can never step backwards.")
+DEFINE_UI_TOOLTIP(trim_blift, "Black lift (toe), in the perceptual domain like a grading Lift: the blacks rise and keep their modelling, the lift fades out before grey and white does not move. Neutral: the noise of the black rises as grey, never as colour. The curve keeps rising everywhere.")
 DEFINE_UI_PARAMS(trim_wroll, 🔆 White_Roll_Off, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(trim_wroll, "Lowers the top of the curve with a soft shoulder: from grey up, the highlights are brought down progressively - nothing below grey moves, the brightest white comes down the most - so white sits lower and the highlights roll into it instead of hitting the top of the display. 1 = white at 70 percent. Hue and saturation are kept (a gain on the level). Drawn on the Curve View. The curve keeps rising everywhere.")
 DEFINE_UI_PARAMS(trim_blift_pv, ⚖ Black_Lift_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(trim_blift_pv, "How high Black Lift reaches. 0 = only the deep blacks and the toe open up, grey does not move; 1 = the lift carries on smoothly up to the midtones (a softer, flatter print), grey rises a little. The curve keeps rising everywhere.")
+DEFINE_UI_TOOLTIP(trim_blift_pv, "Where Black Lift fades out: 0 = two stops under grey (blacks only), 1 = one stop above grey (a softer, flatter print).")
 DEFINE_UI_PARAMS(trim_wroll_pv, ⚖ White_Roll_Off_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, -2.0, 1.5, 0.001)
 DEFINE_UI_TOOLTIP(trim_wroll_pv, "Where the White Roll-Off shoulder starts, in stops from middle grey. 0 = from grey up; negative = it starts lower and brings the upper midtones down too; positive = it starts higher and only bends the top of the highlights. The shoulder always keeps at least 1.5 stops to reach white, so it stays soft and the curve keeps rising.")
 DEFINE_UI_PARAMS(trim_sh, 🌑 Shadows, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
@@ -1210,11 +1210,26 @@ __DEVICE__ float trim_wroll_gain(float y, float y0, float y1, float d, float pv)
   const float s = smootherstep(l0, l1, _log2f(y));
   return 1.0f - d*s;
 }
-__DEVICE__ float trim_blift_add(float y, float y0, float b, float pv) {
-  if (b <= 0.0f) return 0.0f;
-  const float a = 0.15f*b*y0, h = 2.2f*a + _clampf(pv, 0.0f, 1.0f)*1.5f*y0;
-  const float q = h/(_fmaxf(y, 0.0f) + h);
-  return a*q*q;
+// v2 (2e passe) : Black Lift releve le noir dans l'espace PERCEPTUEL (le code
+// d'affichage, y^(1/2.4)), comme le Lift d'un etalonneur, et non plus par
+// une lumiere ajoutee en lineaire : ajouter une constante en lineaire ecrasait
+// les noirs profonds les uns sur les autres (voile laiteux, modele perdu).
+//   c = (y/pic)^(1/2.4) ;  c' = c + L.(1 - c/cg)^2 sous cg, rien au-dessus.
+// Pente au noir 1 - 2L/cg >= 0.55 : les noirs gardent leur modele. cg = le
+// point ou le lift s'eteint : 2 stops sous le gris a Pivot 0, 1 stop
+// au-dessus a Pivot 1. L : 0 a 0.072 en code SDR (reponse b(0.5 + 0.5b), fine
+// en debut de course), mis a l'echelle du gris en HDR. Le blanc ne bouge pas.
+// L'ajout est rendu en lumiere NEUTRE (trois canaux) : le bruit monte en gris.
+__DEVICE__ float trim_blift_add(float y, float y0, float y1, float b, float pv) {
+  if (b <= 0.0f || y1 <= 0.0f) return 0.0f;
+  const float cg0 = _powf(_fminf(y0/y1, 1.0f), 1.0f/2.4f);
+  const float cg = _powf(_fminf(y0*_exp2f(-2.0f + 3.0f*_clampf(pv, 0.0f, 1.0f))/y1, 1.0f), 1.0f/2.4f);
+  const float L = _fminf(0.18f*cg0*b*(0.5f + 0.5f*b), 0.225f*cg);
+  const float c = _powf(_fmaxf(y, 0.0f)/y1, 1.0f/2.4f);
+  if (c >= cg) return 0.0f;
+  const float u = 1.0f - c/cg;
+  const float c2 = c + L*u*u;
+  return y1*_powf(c2, 2.4f) - _fmaxf(y, 0.0f);
 }
 
 
@@ -3981,7 +3996,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
       float cl = crv_ach*ts_dsc;
       const float cg = trim_wroll > 0.0f ? trim_wroll_gain(cl, cy0, cy1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f), trim_wroll_pv) : 1.0f;
       cl *= cg;
-      const float ca = trim_blift_add(cl, cy0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+      const float ca = trim_blift_add(cl, cy0, cy1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
       crv_rgb = make_float3(crv_rgb.x*cg + ca, crv_rgb.y*cg + ca, crv_rgb.z*cg + ca);
     }
     // Le meme clamp que l'image. Sans lui, un contraste negatif fait plonger
@@ -4053,7 +4068,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // Return from RGB ratios
   rgb *= tsn;
   if (tb_on && trim_blift > 0.0f) {
-    const float tb_a = trim_blift_add(tsn, tb_y0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
+    const float tb_a = trim_blift_add(tsn, tb_y0, tb_y1, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
     rgb = make_float3(rgb.x + tb_a, rgb.y + tb_a, rgb.z + tb_a);
   }
 

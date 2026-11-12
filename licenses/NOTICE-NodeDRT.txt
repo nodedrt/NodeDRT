@@ -1,8 +1,8 @@
 ================================================================================
-  NODE DRT — LICENCE AND ATTRIBUTION
+  NODE DRT v2 — LICENCE AND ATTRIBUTION
 ================================================================================
 
-Node DRT is an OpenFX plugin for DaVinci Resolve on macOS, by Samuel Drouin.
+Node DRT v2 is an OpenFX plugin for DaVinci Resolve on macOS, by Samuel Drouin.
 
 THIS ENTIRE PLUGIN IS FREE SOFTWARE, LICENSED UNDER THE GNU GENERAL PUBLIC
 LICENSE, VERSION 3 OR LATER. Not part of it — all of it.
@@ -43,28 +43,34 @@ not affiliated with him.
       renderings produced with spektrafilm by Andrea Volpato, licensed
       CC BY-SA 4.0 — https://github.com/andreavolpato/spektrafilm
       Each reference is a spectral simulation of one negative stock printed
-      on one print stock. NO LUT DATA IS EMBEDDED: what remains are fitted
-      parameter values belonging to this transform.
+      on one print stock. In v2 the tone curves of the looks were refitted
+      for a continuous highlight shoulder. NO LUT DATA IS EMBEDDED: what
+      remains are fitted parameter values belonging to this transform.
       Full text: SPEKTRAFILM_LICENSE.txt
+
+  Density
+      Density by zone and by colour, from RELIEF by Samuel Drouin (the same
+      author), under the same GPL licence.
+
+  Grain (the Texture group)
+      A model written for this plugin. Its strength per colour layer against
+      density and its ratios between film gauges were measured on
+      spektrafilm's grain model (Andrea Volpato, see above); its overall level
+      follows Kodak's published RMS granularity brought to the pixel of a 4K
+      scan. No code, LUT or data file of any other product is included.
 
   Subtractive saturation
       Model by Nikita Petrovich, MIT licence. Used by the Chroma control, by
-      Mid Purity and by Skin Saturation. It anchors on the strongest channel rather than on
-      luminance, so raising saturation lowers the weaker channels instead of
-      pushing the strongest one towards clipping — which is what a dye layer
-      does, and why a colour that saturates also darkens.
+      Mid Purity and by Skin Saturation. It anchors on the strongest channel
+      rather than on luminance, so raising saturation lowers the weaker
+      channels instead of pushing the strongest one towards clipping — which
+      is what a dye layer does, and why a colour that saturates also darkens.
       Full text: MIT-SubtractiveSaturation.txt
-
-  Grain and halation (the Texture group)
-      Models written for this plugin. Their constants - grain strength per
-      colour layer against density, layer correlation, grain kernels per
-      gauge, halation source curve, radial kernel and layer weights - were
-      fitted by measuring film-emulation renders. Only measured numbers are
-      used: no code, LUT or data file of any other product is included.
 
   Oklab
       Colour space by Bjorn Ottosson (public domain / MIT), used by Skin Line
-      to turn hue. Written here from the published formulas; no code copied.
+      and by Density to measure hue. Written here from the published formulas;
+      no code copied.
 
   OpenFX support library
       Academy Software Foundation, BSD 3-Clause.
@@ -114,6 +120,6 @@ Full licence text: GPL-3.0.txt
 
 
 ================================================================================
-  Node DRT — Samuel Drouin
+  Node DRT v2 — Samuel Drouin
   Derived from OpenDRT v1.0.1 by Jed Smith. GPLv3.
 ================================================================================

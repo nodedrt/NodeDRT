@@ -64,6 +64,9 @@ v2 fifth pass
   granularity (35mm 250D: ~0.06 stop RMS in the midtones at UHD).
   Density: Global Strength at the end of Colors; the global Bypass Density
   removed. Skin Saturation: softer response around 0.
+  Black Lift: rebuilt in the perceptual (display code) domain like a grading
+  Lift - gentler (black to ~0.06 code at full travel), deep blacks keep their
+  modelling; Pivot sets where it fades (2 stops under grey to 1 over).
 
 
 NODE_DRT 1.3 — what changed, and where it comes from
