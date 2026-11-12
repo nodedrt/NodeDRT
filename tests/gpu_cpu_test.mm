@@ -60,9 +60,11 @@ int main()
             "look_preset=1 trim_sh=1", "look_preset=4 trim_sh=-1", "look_preset=1 trim_con=-0.5 trim_ovl=-1",
             "look_preset=5 col_dens=1 col_weight=1", "look_preset=5 trim_br=-1",
             "look_preset=1 trim_skin=1 trim_skin_sat=-1 skin_mid=0.8",
-            "look_preset=1 trim_skin_sat=0.5 skin_hi=0.5 skin_minv=1 skin_mhc=0.6",
+            "look_preset=1 trim_skin_sat=0.5 skin_hi=0.5 skin_mhc=0.6",
             "look_preset=1 skin_zones=1 skin_mhc=-0.5 skin_medge=0.6",
             "look_preset=7 display_encoding_preset=3 tn_Lp=1000",
+            "look_preset=1 trim_blift=1 trim_wroll=1", "look_preset=4 trim_blift=0.5 trim_wroll=0.7 display_encoding_preset=3 tn_Lp=1000",
+            "look_preset=1 skin_zones=1 trim_skin_sat=0.4", "look_preset=1 skin_mid=0.6 skin_medge=1 crv_enable=1 trim_blift=1",
         };
         double worst = 0;
         for (const char* S : sc) {

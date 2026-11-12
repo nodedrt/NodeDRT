@@ -334,8 +334,8 @@ struct MetalScratch {
     id<MTLBuffer> tbl[3] = {nil, nil, nil};
     std::vector<float> tblData[3];
     // Density Pro: key, its blur ping-pong, the stage output
-    id<MTLBuffer> dens[4] = {nil, nil, nil, nil};
-    NSUInteger densBytes[4] = {0, 0, 0, 0};
+    id<MTLBuffer> dens[5] = {nil, nil, nil, nil, nil};
+    NSUInteger densBytes[5] = {0, 0, 0, 0, 0};
     // skin mask pre-pass: one W x H x 4 plane per look pass
     id<MTLBuffer> skin = nil;
     NSUInteger skinBytes = 0;
@@ -353,7 +353,7 @@ void metalScratchDestroy(MetalScratch* s)
         s->input = nil;
         for (int i = 0; i < 6; ++i) s->tex[i] = nil;
         for (int i = 0; i < 3; ++i) s->tbl[i] = nil;
-        for (int i = 0; i < 4; ++i) s->dens[i] = nil;
+        for (int i = 0; i < 5; ++i) s->dens[i] = nil;
         s->skin = nil;
     }
     delete s;
@@ -739,11 +739,11 @@ id<MTLBuffer> encodeDensity(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const De
     A.srcRow = srcRowFloats;
     A.dstRow = A.W * 4;
     const NSUInteger W = (NSUInteger)A.W, H = (NSUInteger)A.H;
-    id<MTLBuffer> K = densBuffer(dev, s, 0, W * H * 3 * sizeof(float));
-    id<MTLBuffer> T = A.blurR > 0 ? densBuffer(dev, s, 1, W * H * 3 * sizeof(float)) : K;
-    id<MTLBuffer> out = densBuffer(dev, s, 2, W * H * 4 * sizeof(float));
     const int Wl = (A.W - 1) / 2 + 2, Hl = (A.H - 1) / 2 + 2;
-    id<MTLBuffer> G = densBuffer(dev, s, 3, (NSUInteger)Wl * Hl * sizeof(float));
+    id<MTLBuffer> K = densBuffer(dev, s, 0, W * H * 3 * sizeof(float));
+    id<MTLBuffer> T = densBuffer(dev, s, 1, W * H * 3 * sizeof(float));     // ping-pong of K, and of G (smaller)
+    id<MTLBuffer> out = densBuffer(dev, s, 2, W * H * 4 * sizeof(float));
+    id<MTLBuffer> G = densBuffer(dev, s, 3, (NSUInteger)Wl * Hl * 3 * sizeof(float));
     if (!K || !T || !out || !G) return nil;
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
     [enc setComputePipelineState:ps.p[DP_KEY]];
@@ -751,32 +751,39 @@ id<MTLBuffer> encodeDensity(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const De
     [enc setBuffer:src offset:0 atIndex:1];
     [enc setBuffer:K offset:0 atIndex:2];
     dispatch2D(enc, ps.p[DP_KEY], A.W, A.H);
-    for (int pass = 0; A.blurR > 0 && pass < 3; ++pass) {
-        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-        {   // a threadgroup = a run of TW pixels of one row, read once into threadgroup memory
-            const NSUInteger TW = MIN((NSUInteger)256, ps.p[DP_BOXH].maxTotalThreadsPerThreadgroup);
-            const NSUInteger tg = ((NSUInteger)3 * (TW + 2 * (NSUInteger)A.blurR) * sizeof(float) + 15) & ~(NSUInteger)15;
-            [enc setComputePipelineState:ps.p[DP_BOXH]];
-            [enc setBytes:&A length:sizeof(A) atIndex:0];
-            [enc setBuffer:K offset:0 atIndex:1];
-            [enc setBuffer:T offset:0 atIndex:2];
-            [enc setThreadgroupMemoryLength:tg atIndex:0];
-            [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)A.W + TW - 1) / TW, (NSUInteger)A.H, 1)
-                threadsPerThreadgroup:MTLSizeMake(TW, 1, 1)];
+    // 3 x (horizontal + vertical) box passes of radius r over a BW x BH x 3 buffer
+    auto box3 = [&](id<MTLBuffer> B, int BW, int BH, int r) {
+        DensArgs Ab = A;
+        Ab.W = BW; Ab.H = BH; Ab.blurR = r;
+        for (int pass = 0; r > 0 && pass < 3; ++pass) {
+            [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+            {   // a threadgroup = a run of TW pixels of one row, read once into threadgroup memory
+                const NSUInteger TW = MIN((NSUInteger)256, ps.p[DP_BOXH].maxTotalThreadsPerThreadgroup);
+                const NSUInteger tg = ((NSUInteger)3 * (TW + 2 * (NSUInteger)r) * sizeof(float) + 15) & ~(NSUInteger)15;
+                [enc setComputePipelineState:ps.p[DP_BOXH]];
+                [enc setBytes:&Ab length:sizeof(Ab) atIndex:0];
+                [enc setBuffer:B offset:0 atIndex:1];
+                [enc setBuffer:T offset:0 atIndex:2];
+                [enc setThreadgroupMemoryLength:tg atIndex:0];
+                [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)BW + TW - 1) / TW, (NSUInteger)BH, 1)
+                    threadsPerThreadgroup:MTLSizeMake(TW, 1, 1)];
+            }
+            [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+            [enc setComputePipelineState:ps.p[DP_BOXV]];
+            [enc setBytes:&Ab length:sizeof(Ab) atIndex:0];
+            [enc setBuffer:T offset:0 atIndex:1];
+            [enc setBuffer:B offset:0 atIndex:2];
+            dispatch2D(enc, ps.p[DP_BOXV], BW * 3, (BH + 63) / 64);   // one thread per 64-row run of a float column
         }
-        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-        [enc setComputePipelineState:ps.p[DP_BOXV]];
-        [enc setBytes:&A length:sizeof(A) atIndex:0];
-        [enc setBuffer:T offset:0 atIndex:1];
-        [enc setBuffer:K offset:0 atIndex:2];
-        dispatch2D(enc, ps.p[DP_BOXV], A.W * 3, (A.H + 63) / 64);   // one thread per 64-row run of a float column
-    }
+    };
+    box3(K, A.W, A.H, A.blurR);
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     [enc setComputePipelineState:ps.p[DP_GRID]];
     [enc setBytes:&A length:sizeof(A) atIndex:0];
     [enc setBuffer:K offset:0 atIndex:1];
     [enc setBuffer:G offset:0 atIndex:2];
     dispatch2D(enc, ps.p[DP_GRID], Wl, Hl);
+    box3(G, Wl, Hl, A.fieldR);
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     [enc setComputePipelineState:ps.p[DP_APPLY]];
     [enc setBytes:&A length:sizeof(A) atIndex:0];

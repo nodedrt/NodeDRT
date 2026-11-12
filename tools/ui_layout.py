@@ -141,6 +141,13 @@ PLUGINS = [
             # calculee par le plugin sur l'image log d'entree, avant Texture et
             # avant le rendu. Tout a 0 : le plugin rend exactement comme avant.
             {'name': 'grp_density', 'label': 'Density', 'open': False, 'params': [
+                TP('dp_mask_soft', 'Mask Softness', 'float', 0.5, 0.0, 1.0, 0.01,
+                   hint='Softness of the colour and zone selections in the picture, like the blur of a qualifier: the selection is blurred over 1.5 to 15.5 pixels (of a 1080 frame) before it is applied, so an object is never cut into pieces and no edge shows a step. A neutral next to a coloured object never moves: each pixel still uses its own colour. 0 = tightest, 0.5 = default, 1 = very soft.'),
+                TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
+                   hint='Overall strength of all Density sliders: 0 = x1, 100 = x2, with a soft ceiling of 1.75 stops so a colour never goes to black.'),
+                TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 10.0, 1.0),
+                TP('dp_bypass', 'Bypass Density', 'bool', 0,
+                   hint='Skips the whole section. Its settings are kept.'),
                 SUB('grp_dp_zones', 'Zones', [
                     TP('dp_hi', 'Highlights Density', 'float', 0.0, -100.0, 100.0, 0.1,
                        hint='Density of colours in the highlights. Positive = denser (darker, richer), negative = lighter.'),
@@ -194,18 +201,13 @@ PLUGINS = [
                        hint='Skips the six colour sliders. Their settings are kept.'),
                     P('density_reset', 'Reset Density Color', synth='push', hint='Returns the Colors controls (the six colours and their ranges, Saturation Focus, view, bypass) to their default in one click, as a single undo step. The zones are not touched.'),
                 ]),
-                TP('dp_mask_soft', 'Mask Softness', 'float', 0.3, 0.0, 1.0, 0.01,
-                   hint='Softens the edges of the colour and zone selections in the picture (the selection is measured on a slightly softened copy of the image): no pixel breakup or noise in the masks. 0 = sharpest, 0.3 = default, 1 = very soft.'),
-                TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
-                   hint='Overall strength of all Density sliders: 0 = x1, 100 = x4.'),
-                TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 10.0, 1.0),
-                TP('dp_bypass', 'Bypass Density', 'bool', 0,
-                   hint='Skips the whole section. Its settings are kept.'),
             ]},
             {'name': 'grp_trims', 'label': 'Trims', 'open': False, 'params': [
                 SUB('grp_trims_con', 'Contrast', [
                     P('trim_con', 'Log Contrast'), P('trim_piv', 'Pivot'),
                     P('trim_ovl', 'Overlay'),
+                    P('trim_blift', 'Black Lift'),
+                    P('trim_wroll', 'White Roll-Off'),
                     P('trim_con_bypass', 'Bypass Contrast'),
                 ]),
                 SUB('grp_trims_hl', 'Shadows & Highlights', [
@@ -242,8 +244,7 @@ PLUGINS = [
                     P('skin_mhc', 'Mask Hue Center'),
                     P('skin_mrec', 'Mask Recovery'),
                     P('skin_medge', 'Mask Edge Softness'),
-                    P('skin_minv', 'Invert Mask'),
-                    P('skin_zones', 'Show Zones'),
+                    P('skin_zones', 'Show Mask'),
                     P('skin_mask_bypass', 'Bypass Mask'),
                 ]),
                 P('skin_reset', 'Reset Skin', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),

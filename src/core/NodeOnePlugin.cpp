@@ -307,7 +307,7 @@ private:
         s.focus = (float)dbl("dp_focus", t, 40.0);
         s.zpiv = (float)dbl("dp_zpiv", t, 0.0);
         s.zsoft = (float)dbl("dp_zsoft", t, 0.5);
-        s.maskSoft = (float)dbl("dp_mask_soft", t, 0.3);
+        s.maskSoft = (float)dbl("dp_mask_soft", t, 0.5);
         s.gamut = blockInt(block, "in_gamut", 15);
         s.oetf = blockInt(block, "in_oetf", 1);
         return s;

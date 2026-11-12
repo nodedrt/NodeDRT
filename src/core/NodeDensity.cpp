@@ -5,8 +5,11 @@
 //    1. key: the picture in DaVinci Intermediate, clamped to 0..1
 //    2. soft mask: 3 x (horizontal + vertical) box passes over the key, a close
 //       gaussian of the Mask Softness radius (RELIEF's softened selection)
-//    3. per pixel: colour / zone selection on the softened key, film density
-//       on the real pixel, only the change re-encoded
+//    3. the selection field (amount x saturation weight, saturation weight,
+//       skin protection) on the softened key, on a half-resolution grid
+//    4. the field blurred (3 x box passes, Mask Softness), at half resolution
+//    5. per pixel: smooth amount x the pixel's own saturation weight, film
+//       density on the real pixel, only the change re-encoded
 // =============================================================================
 // BUILD NOTE: this file is compiled inside NodeTexture.cpp's translation unit
 // (see the #include at the end of NodeTexture.cpp), so the build needs no new
@@ -161,6 +164,12 @@ void densityPlan(const DensitySettings& s, int W, int H, DensityPlan& plan)
     const float sigma = (0.5f + 6.0f * ms * std::sqrt(ms)) * (float)H / 1080.0f;
     a.blurR = (sigma < 0.3f || W < 2 || H < 2) ? 0
                                                : std::max(1, (int)std::floor(std::sqrt(12.0f * sigma * sigma / 3.0f + 1.0f) / 2.0f));
+    // v2: the selection FIELD is blurred too, wider: 1.5 px at 0, 8.5 px at
+    // 0.5 (default), 15.5 px at 1, in pixels of a 1080-line frame - on the
+    // half-resolution grid, hence the / 2.
+    const float sigF = 0.5f * (1.5f + 14.0f * ms) * (float)H / 1080.0f;
+    a.fieldR = (sigF < 0.3f || W < 2 || H < 2) ? 0
+                                               : std::max(1, (int)std::floor(std::sqrt(12.0f * sigF * sigF / 3.0f + 1.0f) / 2.0f));
 }
 
 void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, float* dst, ptrdiff_t dstRow)
@@ -176,49 +185,56 @@ void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, flo
             k[0] = dp_clamp01(c.r); k[1] = dp_clamp01(c.g); k[2] = dp_clamp01(c.b);
         }
     });
-    if (A.blurR > 0) {
-        // 3 x (horizontal + vertical) box passes, the same additions in the
-        // same order as the GPU: horizontal = direct sum of the 2r + 1
-        // neighbours, vertical = running sums over runs of 64 rows.
-        T.resize(K.size());
-        const int r = A.blurR, SEG = 64;
+    // 3 x (horizontal + vertical) box passes of radius r over a BW x BH x 3
+    // buffer, the same additions in the same order as the GPU: horizontal =
+    // direct sum of the 2r + 1 neighbours, vertical = running sums over runs
+    // of 64 rows.
+    auto box3 = [&](std::vector<float>& B, int BW, int BH, int r) {
+        if (r <= 0) return;
+        T.resize(B.size());
+        const int SEG = 64;
         const float inv = 1.0f / (float)(2 * r + 1);
         for (int pass = 0; pass < 3; ++pass) {
-            dpParallelRows(H, [&](int y) {
-                const float* s = &K[(size_t)y * W * 3];
-                float* d = &T[(size_t)y * W * 3];
-                for (int x = 0; x < W; ++x)
+            dpParallelRows(BH, [&](int y) {
+                const float* s = &B[(size_t)y * BW * 3];
+                float* d = &T[(size_t)y * BW * 3];
+                for (int x = 0; x < BW; ++x)
                     for (int c = 0; c < 3; ++c) {
                         float acc = 0.0f;
-                        for (int i = 0; i <= 2 * r; ++i) acc += s[dpClampi(x - r + i, 0, W - 1) * 3 + c];
+                        for (int i = 0; i <= 2 * r; ++i) acc += s[dpClampi(x - r + i, 0, BW - 1) * 3 + c];
                         d[x * 3 + c] = acc * inv;
                     }
             });
-            dpParallelRows((H + SEG - 1) / SEG, [&](int b) {
-                const int y0 = b * SEG, y1 = std::min(y0 + SEG, H);
-                for (int i = 0; i < W * 3; ++i) {
+            dpParallelRows((BH + SEG - 1) / SEG, [&](int b) {
+                const int y0 = b * SEG, y1 = std::min(y0 + SEG, BH);
+                for (int i = 0; i < BW * 3; ++i) {
                     float acc = 0.0f;
-                    for (int y = y0 - r; y <= y0 + r; ++y) acc += T[(size_t)dpClampi(y, 0, H - 1) * W * 3 + i];
+                    for (int y = y0 - r; y <= y0 + r; ++y) acc += T[(size_t)dpClampi(y, 0, BH - 1) * BW * 3 + i];
                     for (int y = y0; y < y1; ++y) {
-                        K[(size_t)y * W * 3 + i] = acc * inv;
-                        acc += T[(size_t)std::min(y + r + 1, H - 1) * W * 3 + i] - T[(size_t)std::max(y - r, 0) * W * 3 + i];
+                        B[(size_t)y * BW * 3 + i] = acc * inv;
+                        acc += T[(size_t)std::min(y + r + 1, BH - 1) * BW * 3 + i] - T[(size_t)std::max(y - r, 0) * BW * 3 + i];
                     }
                 }
             });
         }
-    }
-    // RELIEF's grid: the selection on every 2nd pixel of every 2nd row ...
+    };
+    box3(K, W, H, A.blurR);
+    // the selection field on every 2nd pixel of every 2nd row (RELIEF's grid) ...
     const int Wl = (W - 1) / 2 + 2, Hl = (H - 1) / 2 + 2;
-    std::vector<float> G((size_t)Wl * Hl);
+    std::vector<float> G((size_t)Wl * Hl * 3);
     dpParallelRows(Hl, [&](int ly) {
         const int y = std::min(ly * 2, H - 1);
         for (int lx = 0; lx < Wl; ++lx) {
             const int x = std::min(lx * 2, W - 1);
             const float* k = &K[((size_t)y * W + x) * 3];
-            G[(size_t)ly * Wl + lx] = dp_selValue(A, k[0], k[1], k[2]);
+            const DpField f = dp_field(A, k[0], k[1], k[2]);
+            float* g = &G[((size_t)ly * Wl + lx) * 3];
+            g[0] = f.f0; g[1] = f.f1; g[2] = f.f2;
         }
     });
-    // ... interpolated where its 4 values agree, measured exactly elsewhere.
+    // ... blurred (Mask Softness) ...
+    box3(G, Wl, Hl, A.fieldR);
+    // ... read back per pixel, times the pixel's own saturation weight.
     dpParallelRows(H, [&](int y) {
         const int ly = y / 2;
         const float wy = (float)(y - ly * 2) / 2.0f;
@@ -227,11 +243,15 @@ void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, flo
             float* d = dst + (ptrdiff_t)y * dstRow + (ptrdiff_t)x * 4;
             const int lx = x / 2;
             const float wx = (float)(x - lx * 2) / 2.0f;
-            const float g00 = G[(size_t)ly * Wl + lx], g01 = G[(size_t)ly * Wl + lx + 1];
-            const float g10 = G[(size_t)(ly + 1) * Wl + lx], g11 = G[(size_t)(ly + 1) * Wl + lx + 1];
-            float v;
-            if (dp_gridAgrees(g00, g01, g10, g11)) v = dp_gridLerp(g00, g01, g10, g11, wx, wy);
-            else { const float* k = &K[((size_t)y * W + x) * 3]; v = dp_selValue(A, k[0], k[1], k[2]); }
+            const float* g00 = &G[((size_t)ly * Wl + lx) * 3];
+            const float* g01 = g00 + 3;
+            const float* g10 = g00 + (size_t)Wl * 3;
+            const float* g11 = g10 + 3;
+            const float f0 = dp_gridLerp(g00[0], g01[0], g10[0], g11[0], wx, wy);
+            const float f1 = dp_gridLerp(g00[1], g01[1], g10[1], g11[1], wx, wy);
+            const float f2 = dp_gridLerp(g00[2], g01[2], g10[2], g11[2], wx, wy);
+            const float* k = &K[((size_t)y * W + x) * 3];
+            const float v = dp_finish(A, k[0], k[1], k[2], f0, f1, f2);
             DpRGB c; c.r = p[0]; c.g = p[1]; c.b = p[2];
             const DpRGB o = dp_apply_value(A, c, v);
             d[0] = o.r; d[1] = o.g; d[2] = o.b; d[3] = p[3];

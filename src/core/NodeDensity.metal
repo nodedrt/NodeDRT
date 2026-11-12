@@ -70,8 +70,9 @@ kernel void dp_boxv(constant DensArgs& A [[buffer(0)]], const device float* in [
     }
 }
 
-// 3. the selection (stops, or the Show Mask weight) on every 2nd pixel of every
-// 2nd row - RELIEF's grid: the expensive maths runs on a quarter of the pixels.
+// 3. the selection field on every 2nd pixel of every 2nd row - RELIEF's grid.
+// Three floats per point, so the box passes of step 2 blur it (step 4) with
+// A.W / A.H set to the grid size by the host.
 kernel void dp_grid(constant DensArgs& A [[buffer(0)]], const device float* K [[buffer(1)]],
                     device float* G [[buffer(2)]], uint2 gid [[thread_position_in_grid]])
 {
@@ -80,12 +81,13 @@ kernel void dp_grid(constant DensArgs& A [[buffer(0)]], const device float* K [[
     if (lx >= Wl || ly >= Hl) return;
     const int x = min(lx * 2, A.W - 1), y = min(ly * 2, A.H - 1);
     const device float* k = K + (y * A.W + x) * 3;
-    G[ly * Wl + lx] = dp_selValue(A, k[0], k[1], k[2]);
+    const DpField f = dp_field(A, k[0], k[1], k[2]);
+    device float* g = G + (ly * Wl + lx) * 3;
+    g[0] = f.f0; g[1] = f.f1; g[2] = f.f2;
 }
 
-// 4. per pixel: the selection interpolated from the grid where its 4 grid
-// values agree (within 0.02 stop), measured exactly where they do not (mask
-// edges, fine coloured detail); then film density on the real pixel.
+// 5. per pixel: the blurred field read back (bilinear), times this pixel's own
+// saturation weight, then film density on the real pixel.
 kernel void dp_apply(constant DensArgs& A [[buffer(0)]], const device float* src [[buffer(1)]],
                      device float* dst [[buffer(2)]], const device float* K [[buffer(3)]],
                      const device float* G [[buffer(4)]], uint2 gid [[thread_position_in_grid]])
@@ -93,14 +95,19 @@ kernel void dp_apply(constant DensArgs& A [[buffer(0)]], const device float* src
     const int x = (int)gid.x, y = (int)gid.y;
     if (x >= A.W || y >= A.H) return;
     const int Wl = (A.W - 1) / 2 + 2;
-    const device float* p = src + y * A.srcRow + x * 4;
-    device float* d = dst + y * A.dstRow + x * 4;
     const int lx = x / 2, ly = y / 2;
     const float wx = (float)(x - lx * 2) / 2.0f, wy = (float)(y - ly * 2) / 2.0f;
-    const float g00 = G[ly * Wl + lx], g01 = G[ly * Wl + lx + 1], g10 = G[(ly + 1) * Wl + lx], g11 = G[(ly + 1) * Wl + lx + 1];
-    float v;
-    if (dp_gridAgrees(g00, g01, g10, g11)) v = dp_gridLerp(g00, g01, g10, g11, wx, wy);
-    else { const device float* k = K + (y * A.W + x) * 3; v = dp_selValue(A, k[0], k[1], k[2]); }
+    const device float* g00 = G + (ly * Wl + lx) * 3;
+    const device float* g01 = g00 + 3;
+    const device float* g10 = g00 + Wl * 3;
+    const device float* g11 = g10 + 3;
+    const float f0 = dp_gridLerp(g00[0], g01[0], g10[0], g11[0], wx, wy);
+    const float f1 = dp_gridLerp(g00[1], g01[1], g10[1], g11[1], wx, wy);
+    const float f2 = dp_gridLerp(g00[2], g01[2], g10[2], g11[2], wx, wy);
+    const device float* p = src + y * A.srcRow + x * 4;
+    device float* d = dst + y * A.dstRow + x * 4;
+    const device float* k = K + (y * A.W + x) * 3;
+    const float v = dp_finish(A, k[0], k[1], k[2], f0, f1, f2);
     DpRGB c; c.r = p[0]; c.g = p[1]; c.b = p[2];
     const DpRGB o = dp_apply_value(A, c, v);
     d[0] = o.r; d[1] = o.g; d[2] = o.b; d[3] = p[3];

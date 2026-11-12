@@ -64,7 +64,8 @@ struct DensArgs {
     int show;            // Show Mask
     int maskFocus;       // -1 every active slider, 0..5 a colour, 6..8 a zone, 9 zone map, 10 every active colour
     int blurR;           // box radius of the soft mask (3 box passes ~ gaussian), 0 = none
-    int pad0, pad1, pad2;
+    int fieldR;          // box radius of the selection-field blur (3 box passes ~ gaussian), 0 = none
+    int pad1, pad2;
     float mIn[9];        // input gamut -> DaVinci Wide Gamut (row major)
     float mOut[9];       // its inverse
     float zone[3];       // shadows, midtones, highlights density (-100..100)
@@ -143,10 +144,13 @@ DP_FN DpRGB dp_oklabInv(float L, float a, float b)
 DP_CONST float DP_HC[6] = {29.2f, 109.8f, 142.5f, 194.8f, 264.1f, 328.4f};
 DP_FN float dp_hueW(float boostUI, float hueUI, float rangeUI, int k, float th)
 {
-    const float boost = 1.0f + 3.0f * DP_MIN(DP_MAX(boostUI, 0.0f), 100.0f) / 100.0f;
+    const float boost = 1.0f + 1.0f * DP_MIN(DP_MAX(boostUI, 0.0f), 100.0f) / 100.0f;
     const float st = DP_MIN(1.4f * boost * DP_FABS(hueUI) / 100.0f, 3.0f);
     const float r = DP_MIN(DP_MAX(rangeUI, 0.1f), 4.0f), core = 6.0f * r;
-    const float hw = core + DP_MAX(DP_MAX(14.0f * r, 10.0f), 7.5f * st);
+    // v2: the fade of a colour window is never shorter than 18 degrees, whatever
+    // the Range - a short fade made neighbouring pixels of one object flip in
+    // and out of the selection (broken edges when moving a colour slider).
+    const float hw = core + DP_MAX(DP_MAX(16.0f * r, 18.0f), 7.5f * st);
     const float ad = DP_FABS(dp_wrap180(th - DP_HC[k]));
     if (ad <= core) return 1.0f;
     if (ad >= hw) return 0.0f;
@@ -169,9 +173,11 @@ DP_FN void dp_zones(float zpiv, float zsoft, float st, DP_REF zs, DP_REF zm, DP_
 // blacks, near-white highlights, skin). ev: stops from middle grey.
 DP_FN float dp_shape(float boostUI, float amt, float ev, float skin)
 {
-    const float boost = 1.0f + 3.0f * DP_MIN(DP_MAX(boostUI, 0.0f), 100.0f) / 100.0f;
+    // v2: Global Strength x1..x2 (was x4) and a 1.75-stop soft ceiling (was 3):
+    // at the top of both sliders a saturated colour went to black.
+    const float boost = 1.0f + 1.0f * DP_MIN(DP_MAX(boostUI, 0.0f), 100.0f) / 100.0f;
     float stops = -1.4f * boost * amt / 100.0f;   // 100 % = 1.4 stops on a fully saturated colour
-    const float lim = 3.0f;
+    const float lim = 1.75f;
     stops = lim * DP_TANH(stops / lim);
     const float a = DP_FABS(stops);
     const float pb = dp_sstep(ev, -8.5f, -8.5f + DP_MAX(4.0f, 2.6f * a));
@@ -179,41 +185,49 @@ DP_FN float dp_shape(float boostUI, float amt, float ev, float skin)
     return stops * pb * ph * (1.0f - 0.55f * skin);
 }
 
-// ---- selection -> density change in stops -------------------------------------
-// q: DaVinci Intermediate key colour (clamped 0..1, measured on the softened
-// copy of the picture). Returns the change in stops; *showW the Show Mask
-// weight (selection of the focused slider x saturation weight).
-//   amount = sum_zones z_j a_j + sum_hues h_k b_k (in %), weighted by the
-//   saturation weight (neutrals never move); zones on DI luma in stops.
-struct DpSel { float stops; float showW; };
-#ifdef __METAL_VERSION__
-DP_FN DpSel dp_select(constant DensArgs& P, float q0, float q1, float q2)
-#else
-DP_FN DpSel dp_select(const DensArgs& P, float q0, float q1, float q2)
-#endif
+// ---- selection field ------------------------------------------------------------
+// v2: the selection is a FIELD that is blurred in the picture before it is
+// applied - like the blur of a pro qualifier - so a colour window never cuts an
+// object into pieces and an edge never shows a step.
+//   dp_field   (on the softened key, at half resolution: the field is smooth
+//              by construction): f0 = amount x saturation weight,
+//              f1 = saturation weight, f2 = skin protection x saturation weight;
+//   blur the three (Mask Softness), at half resolution;
+//   dp_finish  (per pixel): amount = f0b / f1b - the average amount of the
+//              COLOURED pixels around - times this pixel's own saturation
+//              weight. A neutral pixel next to a coloured object therefore
+//              never moves (no halo), and a coloured one gets the smooth amount.
+// Zone views (6..9) are tonal: f0 = the zone weight (or the tone in stops for
+// the map), f1 = 1.
+//   amount = sum_zones z_j a_j + sum_hues h_k b_k (in %); zones on DI luma.
+struct DpField { float f0, f1, f2; };
+DP_FN float dp_satW(float focus, float l0, float l1, float l2)
 {
-    DpSel out; out.stops = 0.0f; out.showW = 0.0f;
-    const float l0 = DP_MAX(dp_di2lin(q0), 0.0f), l1 = DP_MAX(dp_di2lin(q1), 0.0f), l2 = DP_MAX(dp_di2lin(q2), 0.0f);
     const float mx = DP_MAX(l0, DP_MAX(l1, l2)), mn = DP_MIN(l0, DP_MIN(l1, l2));
     const float sat = mx > 1e-6f ? (mx - mn) / mx : 0.0f;
-    const float gam = 0.6f + 1.8f * DP_MIN(DP_MAX(P.focus, 0.0f), 100.0f) / 100.0f;
-    const float Y = 0.2126f * l0 + 0.7152f * l1 + 0.0722f * l2;
-    const float sw = sat > 0.0f ? DP_EXP2(gam * DP_LOG2(DP_MIN(sat, 1.0f))) * dp_sstep(sat, 0.0f, 0.15f) : 0.0f;
-    if (sw <= 1e-6f && !P.show) return out;          // neutral: nothing to do
+    const float gam = 0.6f + 1.8f * DP_MIN(DP_MAX(focus, 0.0f), 100.0f) / 100.0f;
+    return sat > 0.0f ? DP_EXP2(gam * DP_LOG2(DP_MIN(sat, 1.0f))) * dp_sstep(sat, 0.0f, 0.15f) : 0.0f;
+}
+#ifdef __METAL_VERSION__
+DP_FN DpField dp_field(constant DensArgs& P, float q0, float q1, float q2)
+#else
+DP_FN DpField dp_field(const DensArgs& P, float q0, float q1, float q2)
+#endif
+{
+    DpField out; out.f0 = 0.0f; out.f1 = 0.0f; out.f2 = 0.0f;
+    const float l0 = DP_MAX(dp_di2lin(q0), 0.0f), l1 = DP_MAX(dp_di2lin(q1), 0.0f), l2 = DP_MAX(dp_di2lin(q2), 0.0f);
     const float Ld = 0.2126f * q0 + 0.7152f * q1 + 0.0722f * q2, st = (Ld - DP_PIV) / 0.07329248f;
     float zs = 0.0f, zm = 0.0f, zh = 0.0f;
     dp_zones(P.zpiv, P.zsoft, st, zs, zm, zh);
-    // Show Zones: the TONAL zones themselves (where the zone sliders reach),
-    // not weighted by saturation, so the zones can be placed on any picture.
-    //   6..8 one zone: its weight (1 inside, 0 outside, soft between);
-    //   9 the zone map: the value is the tone in stops (continuous, so the
-    //   grid interpolates it exactly), turned into the three zones by
-    //   dp_apply_value.
     if (P.show && P.maskFocus >= 6 && P.maskFocus <= 9) {
         const int f = P.maskFocus;
-        out.showW = f == 6 ? zs : (f == 7 ? zm : (f == 8 ? zh : st));
+        out.f0 = f == 6 ? zs : (f == 7 ? zm : (f == 8 ? zh : st));
+        out.f1 = 1.0f; out.f2 = 1.0f;
         return out;
     }
+    const float sw = dp_satW(P.focus, l0, l1, l2);
+    out.f1 = sw;
+    if (sw <= 1e-6f) return out;                       // neutral: nothing to add
     float amt = P.lam * (zs * P.zone[0] + zm * P.zone[1] + zh * P.zone[2]);
     float sel = DP_MAX(P.zone[0] != 0.0f ? zs : 0.0f, DP_MAX(P.zone[1] != 0.0f ? zm : 0.0f, P.zone[2] != 0.0f ? zh : 0.0f));
     const DpLab lab = dp_oklab(l0, l1, l2);
@@ -224,27 +238,67 @@ DP_FN DpSel dp_select(const DensArgs& P, float q0, float q1, float q2)
     if (C > 1e-6f)
         for (int k = 0; k < 6; ++k) { hw[k] = dp_hueW(P.boost, P.hue[k], P.range[k], k, h); if (P.hue[k] != 0.0f) hsum += hw[k]; }
     const float hn = 1.0f / DP_MAX(1.0f, hsum);
+    float hamt = 0.0f, hsel = 0.0f;
     for (int k = 0; k < 6; ++k)
-        if (P.hue[k] != 0.0f) { amt += P.hue[k] * hw[k] * hn; sel = DP_MAX(sel, hw[k] * hn); }
+        if (P.hue[k] != 0.0f) { hamt += P.hue[k] * hw[k] * hn; hsel = DP_MAX(hsel, hw[k] * hn); }
+    // v2: BETWEEN TWO ACTIVE NEIGHBOURS the hues in between are filled - the
+    // amount goes smoothly from one slider to the next - instead of falling
+    // back to zero in the gap between their windows (bands of untouched colour
+    // between, say, Red and Yellow both at 100). Engaged by the Ranges: none
+    // below 0.5, full from 1 (a precise Range keeps its colour on its own).
+    if (C > 1e-6f) {
+        for (int k = 0; k < 6; ++k) {
+            const int k2 = k == 5 ? 0 : k + 1;
+            if (P.hue[k] == 0.0f || P.hue[k2] == 0.0f) continue;
+            const float arc = dp_wrap180(DP_HC[k2] - DP_HC[k]);          // > 0, the arc from k to k2
+            const float pos = dp_wrap180(h - DP_HC[k]);
+            if (arc <= 0.0f || pos < 0.0f || pos > arc) continue;
+            const float t = dp_ss5(0.0f, 1.0f, pos / arc);
+            const float ff = dp_ss5(0.5f, 1.0f, DP_MIN(P.range[k], P.range[k2]));
+            hamt = hamt + ff * ((P.hue[k] * (1.0f - t) + P.hue[k2] * t) - hamt);
+            hsel = hsel + ff * (1.0f - hsel);
+        }
+    }
+    amt += hamt;
+    sel = DP_MAX(sel, hsel);
     if (P.show) {
         // the selection of the slider last touched (a colour: its own window,
-        // shared with the active neighbours; a zone; the three zones) or of
-        // every active slider
+        // shared with the active neighbours) or of every active colour / slider
         const int f = P.maskFocus;
         float s = sel;
         if (f >= 0 && f <= 5) { const float s2 = hsum + (P.hue[f] != 0.0f ? 0.0f : hw[f]); s = hw[f] / DP_MAX(1.0f, s2); }
-        else if (f == 10) {   // every active colour (the zones left out)
-            s = 0.0f;
-            for (int k = 0; k < 6; ++k) if (P.hue[k] != 0.0f) s = DP_MAX(s, hw[k] * hn);
-        }
-        out.showW = s * sw;
+        else if (f == 10) s = hsel;   // every active colour (the zones left out)
+        out.f0 = s * sw; out.f2 = sw;
         return out;
     }
-    if (amt == 0.0f || sw <= 0.0f) return out;
+    // skin protection of RELIEF (orange hues of skin chroma keep 45 % of the
+    // change), carried in the field so the per-pixel pass needs no OKLab
     const float dh = DP_FABS(dp_wrap180(h - 50.0f));
     const float skin = (1.0f - dp_sstep(dh, 8.0f, 22.0f)) * dp_sstep(C, 0.02f, 0.05f) * (1.0f - dp_sstep(C, 0.12f, 0.18f));
-    out.stops = dp_shape(P.boost, amt * sw, DP_LOG2(DP_MAX(Y, 1e-10f) / 0.18f), skin);
+    out.f0 = amt * sw;
+    out.f2 = (1.0f - 0.55f * skin) * sw;
     return out;
+}
+
+// The value applied to one pixel: the change in stops, or with a view the
+// mask weight (the tone in stops for the zone map). q: the softened key at the
+// pixel; f0b / f1b / f2b: the blurred field at the pixel.
+#ifdef __METAL_VERSION__
+DP_FN float dp_finish(constant DensArgs& P, float q0, float q1, float q2, float f0b, float f1b, float f2b)
+#else
+DP_FN float dp_finish(const DensArgs& P, float q0, float q1, float q2, float f0b, float f1b, float f2b)
+#endif
+{
+    if (P.show && P.maskFocus >= 6 && P.maskFocus <= 9) return f0b;
+    q0 = dp_clamp01(q0); q1 = dp_clamp01(q1); q2 = dp_clamp01(q2);
+    const float l0 = DP_MAX(dp_di2lin(q0), 0.0f), l1 = DP_MAX(dp_di2lin(q1), 0.0f), l2 = DP_MAX(dp_di2lin(q2), 0.0f);
+    const float sw = dp_satW(P.focus, l0, l1, l2);
+    const float n = f1b > 1e-7f ? f0b / f1b : 0.0f;
+    if (P.show) return dp_clamp01(n) * sw;
+    if (n == 0.0f || sw <= 1e-6f) return 0.0f;
+    const float skf = f1b > 1e-7f ? f2b / f1b : 1.0f;
+    const float Y = 0.2126f * l0 + 0.7152f * l1 + 0.0722f * l2;
+    return dp_shape(P.boost, n * sw, DP_LOG2(DP_MAX(Y, 1e-10f) / 0.18f), 0.0f) * skf;
 }
 
 // Film density: like adding / removing dye, in OKLab. Lightness follows the
@@ -313,31 +367,13 @@ DP_FN DpRGB dp_fromWork(const DensArgs& A, DpRGB c)
     return o;
 }
 
-// The selection value of a key colour: the change in stops, or with Show Mask
-// the mask weight (what RELIEF's grid holds).
-#ifdef __METAL_VERSION__
-DP_FN float dp_selValue(constant DensArgs& A, float k0, float k1, float k2)
-#else
-DP_FN float dp_selValue(const DensArgs& A, float k0, float k1, float k2)
-#endif
-{
-    const DpSel s = dp_select(A, dp_clamp01(k0), dp_clamp01(k1), dp_clamp01(k2));
-    return A.show ? s.showW : s.stops;
-}
-// RELIEF's grid: below 0.02 stop (or mask weight) between the 4 grid values,
-// interpolating is the exact result; otherwise the pixel is measured itself.
-DP_FN bool dp_gridAgrees(float g00, float g01, float g10, float g11)
-{
-    const float lo = DP_MIN(DP_MIN(g00, g01), DP_MIN(g10, g11)), hi = DP_MAX(DP_MAX(g00, g01), DP_MAX(g10, g11));
-    return hi - lo <= 0.02f;
-}
+// Bilinear read of the half-resolution field.
 DP_FN float dp_gridLerp(float g00, float g01, float g10, float g11, float wx, float wy)
 {
     return (g00 * (1.0f - wx) + g01 * wx) * (1.0f - wy) + (g10 * (1.0f - wx) + g11 * wx) * wy;
 }
 
-// One pixel: p the input pixel (its encoding), v its selection value (see
-// dp_selValue). Returns the output pixel; an untouched pixel bit for bit.
+// One pixel: p the input pixel (its encoding), v its value (see dp_finish). Returns the output pixel; an untouched pixel bit for bit.
 #ifdef __METAL_VERSION__
 DP_FN DpRGB dp_apply_value(constant DensArgs& A, DpRGB p, float v)
 #else
@@ -379,12 +415,3 @@ DP_FN DpRGB dp_apply_value(const DensArgs& A, DpRGB p, float v)
     return o;
 }
 
-// One pixel measured on its own key (no grid): the reference behaviour.
-#ifdef __METAL_VERSION__
-DP_FN DpRGB dp_pixel(constant DensArgs& A, DpRGB p, float k0, float k1, float k2)
-#else
-DP_FN DpRGB dp_pixel(const DensArgs& A, DpRGB p, float k0, float k1, float k2)
-#endif
-{
-    return dp_apply_value(A, p, dp_selValue(A, k0, k1, k2));
-}
