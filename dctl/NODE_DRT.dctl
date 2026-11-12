@@ -294,8 +294,12 @@ DEFINE_UI_PARAMS(skin_mrec, 🧑 Mask_Recovery, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1
 DEFINE_UI_TOOLTIP(skin_mrec, "Recovers skin the mask lets go of because it is ALTERED - pale or washed out (overexposed, flat light, makeup, very fair skin), very saturated (sunburn, red light, a strong practical), or deep in shadow. It opens the mask to lower and higher chroma and lets it reach two stops further into the dark. Hue is untouched: that is Mask Hue Range. 0 = the mask measured on real faces.")
 DEFINE_UI_PARAMS(skin_medge, 🧑 Mask_Edge_Softness, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(skin_medge, "Softens the EDGES of the skin mask in the picture, like the blur of a pro qualifier: the mask is averaged over a wider area (up to three times the radius) and follows the image contours less strictly, so the correction fades out over a wider band around the face instead of stopping on its outline. Mask Softness, above, is the softness between the light zones and of the colour key; this one is the softness in space. 0 = the measured mask.")
+DEFINE_UI_PARAMS(skin_mhc, 🧑 Mask_Hue_Center, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(skin_mhc, "Moves the whole skin mask around the hue circle, up to 20 degrees each way, without widening it: right towards yellow-olive, left towards pink-red. For skin whose colour the light or the camera has pushed off to one side - the mask follows it instead of catching half the face. Mask Hue Range widens; this slides. Skin Line still aims at the true skin tone line. 0 = the mask measured on real faces.")
+DEFINE_UI_PARAMS(skin_minv, 🧑 Invert_Mask, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_TOOLTIP(skin_minv, "Inverts the skin mask for Light and Skin Saturation: they act on everything EXCEPT the skin, with the same soft edges - to desaturate or darken the set while faces stay untouched. Skin Line is never inverted: turning every other colour towards the skin line would make no sense. Show Zones paints the inverted mask.")
 DEFINE_UI_PARAMS(skin_mask_bypass, ↩ Bypass_Skin_Mask, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_TOOLTIP(skin_mask_bypass, "Returns the skin mask to the one measured on real faces in one click, without touching the slider values: Mask Softness back to its default, Mask Hue Range, Mask Recovery and Mask Edge Softness to zero. The skin corrections stay on - only the mask they use changes - so you can compare the widened mask with the measured one. Show Zones shows whichever mask is in use.")
+DEFINE_UI_TOOLTIP(skin_mask_bypass, "Returns the skin mask to the one measured on real faces in one click, without touching the slider values: Mask Softness back to its default, Mask Hue Range, Mask Hue Center, Mask Recovery and Mask Edge Softness to zero, Invert Mask off. The skin corrections stay on - only the mask they use changes - so you can compare the widened mask with the measured one. Show Zones shows whichever mask is in use.")
 DEFINE_UI_PARAMS(skin_zones, 🧑 Show_Zones, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_TOOLTIP(skin_zones, "Shows exactly where and how much each Light slider acts. Every skin pixel is painted with BLUE (Shadows), GREEN (Midtones) and YELLOW (Highlights) in the very proportion the three sliders apply there - a pure colour means one slider alone, a blend means a transition where two share the pixel - laid over the picture's own detail so the face stays readable. How strongly a pixel is coloured is the skin mask itself. Mask Softness widens both the blends and the edge of the mask, and Show Zones shows it. What is not skin is dark grey. With Legend on, a panel gives the middle of each transition in stops from 18 percent grey, Zone Pivot included. Set Zone Pivot until the lit cheek is green and the shadow side blue, then turn it OFF before you render.")
 DEFINE_UI_PARAMS(skin_col_bypass, ↩ Bypass_Skin_Colour, DCTLUI_CHECK_BOX, 0)
@@ -805,6 +809,38 @@ __DEVICE__ float con_scene(float x, float f, float pv) {
 }
 
 
+
+/* ---- GARDE DU NOIR (Node DRT v2) ------------------------------------------
+   Les operateurs de contraste amont (Log Contrast, Overlay) travaillent canal
+   par canal, en log. Dans le bruit du noir les trois canaux oscillent autour
+   de zero, chacun de son cote : une courbe log appliquee a chacun separement
+   ecarte leurs valeurs et fabrique des points de couleur que la scene n'a
+   pas - les artefacts colores des ombres. Sous 6 stops sous le gris,
+   l'operateur est donc applique au NIVEAU du pixel (canal le plus fort), pas
+   a chaque canal : il ecrase par un gain unique ou releve par une lumiere
+   neutre, et le noir garde la couleur qu'il avait. Au-dessus de 3 stops sous le
+   gris, l'operateur canal par canal est intact ; entre les deux, fondu lisse
+   sur le niveau en stops. */
+__DEVICE__ float bk_guard_w(float n) {
+  // 0 sous 0.18*2^-6, 1 au-dessus de 0.18*2^-3, smoothstep en stops
+  const float t = _clampf((_log2f(_fmaxf(n, 1.0e-9f)) - -8.4739f)/3.0f, 0.0f, 1.0f);
+  return t*t*(3.0f - 2.0f*t);
+}
+__DEVICE__ float3 bk_guard(float3 c, float3 pc, float n_out) {
+  // c : pixel d'entree ; pc : resultat canal par canal ; n_out : resultat de
+  // l'operateur sur le neutre de niveau n = max(c), n deja borne a >= 1e-6.
+  const float n = _fmaxf(_fmaxf(_fmaxf(c.x, c.y), c.z), 1.0e-6f);
+  const float w = bk_guard_w(n);
+  if (w >= 1.0f) return pc;
+  // Ecraser (n_out < n) : gain unique, qui ne peut que reduire la chroma.
+  // Relever (n_out > n) : la lumiere ajoutee est NEUTRE, comme un voile de
+  // tirage - la chroma absolue du noir ne grandit pas, donc le bruit colore
+  // du capteur n'est pas amplifie avec le niveau.
+  const float3 uc = n_out <= n ? make_float3(c.x*(n_out/n), c.y*(n_out/n), c.z*(n_out/n))
+                               : make_float3(c.x + (n_out - n), c.y + (n_out - n), c.z + (n_out - n));
+  return make_float3(uc.x + (pc.x - uc.x)*w, uc.y + (pc.y - uc.y)*w, uc.z + (pc.z - uc.z)*w);
+}
+
 /* ---- Overlay (self-blend) — porte de NODE_Composite2 (Samuel Drouin) -------
    Le mode composite Overlay d'un noeud melange sur lui-meme : source et
    backdrop sont le meme pixel, donc l'operateur devient une S-curve pure.
@@ -1197,9 +1233,18 @@ __DEVICE__ float3 density_pair(float3 rgb, float w, float dc) {
   const float g = _exp2f(dm);
   // Le decalage porte sur m, donc sur les trois canaux a l'identique : c'est un
   // gain en lineaire, et la teinte comme la chroma relative ne bougent pas.
-  return make_float3((rgb.x + DEN_FOG)*g - DEN_FOG,
-                     (rgb.y + DEN_FOG)*g - DEN_FOG,
-                     (rgb.z + DEN_FOG)*g - DEN_FOG);
+  // NODE DRT v2 : quand le gain ASSOMBRIT (g < 1), il porte sur le pixel nu,
+  // pas sur pixel + voile. Avant, (x + voile).g - voile envoyait sous zero
+  // tout canal plus faible que le voile : les noirs satures tombaient a zero
+  // pur sous le plancher du look, puis remontaient - un noir qui recule, et
+  // des canaux de signes melanges, donc des points de couleur dans les
+  // ombres (Color Density a +1, Color Weight). Maintenant zero reste zero
+  // et rien ne passe sous zero. Pour g > 1 la forme d'avant est gardee,
+  // raccord lisse entre les deux (aucun coude).
+  const float gk = 1.0f - smooth_relu(1.0f - g, 0.1f);
+  return make_float3((rgb.x + DEN_FOG)*g - DEN_FOG*gk,
+                     (rgb.y + DEN_FOG)*g - DEN_FOG*gk,
+                     (rgb.z + DEN_FOG)*g - DEN_FOG*gk);
 }
 
 /* ===========================================================================
@@ -2175,8 +2220,8 @@ __DEVICE__ float skin_win_s(float2 f, float hr, float rc) {
   const float phi = f.x, cr = f.y;
   const float ky = 1.0f + 1.5f*hr, km = 1.0f + 0.8f*hr;
   const float lo = 1.0f - 0.75f*rc, hi = 1.0f + HS_REC_HI*rc;
-  float w = smootherstep(0.015f*lo, 0.05f*lo, cr)*(1.0f - smootherstep(0.24f*hi, 0.34f*hi, cr));
-  w *= phi >= 0.0f ? 1.0f - smootherstep(0.0873f*ky, 0.5236f*ky, phi)
+  float w = smootherstep(0.03f*lo, 0.065f*lo, cr)*(1.0f - smootherstep(0.24f*hi, 0.34f*hi, cr));
+  w *= phi >= 0.0f ? 1.0f - smootherstep(0.1745f*ky, 0.5236f*ky, phi)
                    : 1.0f - smootherstep(0.6109f*km, 1.1345f*km, -phi);
   return w;
 }
@@ -2196,7 +2241,7 @@ __DEVICE__ float skin_win_l(float2 fe, float soft, float hr, float rc) {
   const float lo = 1.0f - 0.75f*rc, hi = 1.0f + 0.8f*rc;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
-  const float c0 = _fmaxf(0.0325f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0325f + 0.0175f*f;
+  const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
   const float c2 = 0.29f - 0.05f*f, c3 = 0.29f + 0.05f*f + 0.40f*h;
   const float y0 = _fmaxf(0.3054f - 0.2182f*f, 0.03f), y1 = 0.3054f + 0.2182f*f + 0.80f*h;
   const float m0 = _fmaxf(1.2654f - 0.3927f*f, 0.08f), m1 = 1.2654f + 0.3927f*f + 1.60f*h;
@@ -2410,7 +2455,7 @@ __DEVICE__ float3 skin_proxy_p3(float3 code, int tf, float3x3 pre, float rs_sa, 
 // NODEONE_SKIN_PREPASS / NODEONE_SKIN_FEAT plus bas. Dans Resolve et sur CPU,
 // rien ne change : il est calcule sur place.
 __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float3 rs_w, float gain,
-                           float soft, float hr, float rc, int need_s, int need_l) {
+                           float soft, float hr, float rc, float hc, int need_s, int need_l) {
   const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
   const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
@@ -2421,7 +2466,8 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float
     // Mask Recovery descend la porte du noir de 2 stops : la peau dans l'ombre.
     const float gate = smootherstep(-12.0f - 2.0f*rc, -7.5f - 2.0f*rc, _log2f(m));
     const float3 cn = c709*(0.5f/m);
-    const float2 fe = skin_feat(cn);
+    float2 fe = skin_feat(cn);
+    fe.x -= 0.3491f*hc;   // Mask Hue Center : la fenetre glisse de 20 degres au plus
     if (need_s) ts = skin_win_s(fe, hr, rc)*gate;
     if (need_l) tl = skin_win_l(fe, soft, hr, rc)*gate;
   }
@@ -2436,22 +2482,37 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float
 // rendu fait (il lit Look Intensity et Bypass Look avant de choisir).
 #define SKIN_TAP_AT(xx, yy) nodeone_skin_feat(tR, (xx), (yy), pass < NODEONE_SKIN_FEAT ? pass : NODEONE_SKIN_FEAT - 1)
 #else
-#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, rc, need_s, need_l)
+#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, rc, hc, need_s, need_l)
 #endif
 
 // .x = poids Skin Saturation / Skin Line, .y = poids Skin Light (Mask Softness)
 // Ce sont les POIDS qui sont moyennes, pas les couleurs : un bord de masque
 // ne peut pas etre plus raide que le noyau spatial lui-meme.
+// NODE DRT v2 : BORD DE MASQUE PROTEGE. La moyenne spatiale des poids lissait
+// les pores mais rongeait aussi le bord d'une peau : un pixel de peau dont la
+// moitie des voisins sont une feuille ou un mur tombait a 0.5, et le contour
+// du visage gardait un liseré a demi corrige (un anneau orange quand on
+// desature la peau). Un voisin dont le poids est PLUS BAS que celui du pixel
+// central compte donc moins (cloche rationnelle de l'ecart, largeur 0.3 - sans
+// exponentielle, elle est evaluee 17 a 33 fois par pixel) : la peau garde
+// son poids jusqu'a son vrai bord, qui suit le contour de l'image. Un voisin
+// plus HAUT compte pleinement : les trous - pores, reflets, cernes - restent
+// combles comme avant. Lisse partout : aucun seuil, aucun saut.
+__DEVICE__ float skm_protect(float wc, float wk) {
+  const float d = _fmaxf(wc - wk, 0.0f)*3.3333333f, d2 = d*d;
+  return 1.0f/(1.0f + d2*(0.5f + 0.5f*d2));
+}
+
 __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ tB,
                                     int X, int Y, int H, int tf, float3x3 pre,
                                     float rs_sa, float3 rs_w, float gain, float soft,
-                                    float hr, float rc, float ed,
+                                    float hr, float rc, float hc, float ed,
                                     int need_s, int need_l, int pass) {
   // Mask Edge Softness : rayon jusqu'a x3, guide de luminance jusqu'a x3 plus
   // tolerant (0.75 -> 2.25 stops) - le masque deborde doucement des contours.
   const float R = _fmaxf(1.0f, (float)H/360.0f)*(1.0f + 2.0f*ed);
   const float gsig = 0.75f*(1.0f + 2.0f*ed);
-  float ws = 0.0f, wl = 0.0f, gs = 0.0f, lyc = 0.0f;
+  float ws = 0.0f, wl = 0.0f, gss = 0.0f, gsl = 0.0f, lyc = 0.0f, wcs = 0.0f, wcl = 0.0f;
   for (int k = 0; k < SKM_TAPS; ++k) {
     // Directions des echantillons : table de constantes (cos, sin des
     // multiples de 45 degres, puis decales de 22.5), au lieu de 32 sinus et
@@ -2475,12 +2536,12 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
     const int xx = X + (int)_floorf(ox + 0.5f);
     const int yy = Y + (int)_floorf(oy + 0.5f);
     const float3 tp = SKIN_TAP_AT(xx, yy);
-    if (k == 0) lyc = tp.x;
+    if (k == 0) { lyc = tp.x; wcs = tp.y; wcl = tp.z; }
     const float dl = tp.x - lyc;
     const float g = gsp*_expf(-0.5f*dl*dl/(gsig*gsig));
-    ws += g*tp.y;
-    wl += g*tp.z;
-    gs += g;
+    const float gps = g*skm_protect(wcs, tp.y), gpl = g*skm_protect(wcl, tp.z);
+    ws += gps*tp.y; gss += gps;
+    wl += gpl*tp.z; gsl += gpl;
   }
   // Mask Edge Softness : avec un rayon agrandi, deux anneaux seuls laissent des
   // trous entre eux et un contour net ressortait en double (echo). Deux
@@ -2508,23 +2569,13 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
       const float3 tp = SKIN_TAP_AT(xx, yy);
       const float dl = tp.x - lyc;
       const float g = gsp*_expf(-0.5f*dl*dl/(gsig*gsig));
-      ws += g*tp.y;
-      wl += g*tp.z;
-      gs += g;
+      const float gps = g*skm_protect(wcs, tp.y), gpl = g*skm_protect(wcl, tp.z);
+      ws += gps*tp.y; gss += gps;
+      wl += gpl*tp.z; gsl += gpl;
     }
   }
-  return make_float2(ws/gs, wl/gs);
+  return make_float2(ws/gss, wl/gsl);
 }
-
-// FILM PRINT (Node DRT 1.3, plugin seulement) : les 7 looks sont rendus par
-// un vrai tirage - negatif puis papier, calcules par spektrafilm - au lieu des
-// modules parametres. Les tables vivent dans le plugin (NodeFilm) ; ce DCTL
-// lu seul dans Resolve garde les looks parametres d'avant.
-#ifdef NODEONE_FILM
-__DEVICE__ float film_lin2di(float x) {
-  return x <= 0.00262409f ? x*10.44426855f : (_log2f(_fmaxf(x + 0.0075f, 1.0e-10f)) + 7.0f)*0.07329248f;
-}
-#endif
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
@@ -2597,27 +2648,34 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     tn_Lg = 11.1f, tn_con = 1.4f, tn_sh = 0.5f, tn_toe = 0.003f, tn_off = 0.005f, tn_hcon_enable = 0, tn_hcon = 0.0f, tn_hcon_pv = 1.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 1.0f, tn_lcon_w = 0.5f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.35f, rs_rw = 0.25f, rs_bw = 0.55f, pt_r = 0.5f, pt_g = 2.0f, pt_b = 2.0f, pt_rng_low = 0.2f, pt_rng_high = 0.8f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.2f, ptm_low_st = 0.5f, ptm_high = -0.8f, ptm_high_st = 0.3f, brl_enable = 1, brl_r = -0.5f, brl_g = -0.4f, brl_b = -0.2f, brl_c = 0.0f, brl_m = 0.0f, brl_y = 0.0f, brl_rng = 0.66f, hs_rgb_enable = 1, hs_r = 0.35f, hs_g = 0.25f, hs_b = 0.5f, hs_rgb_rng = 0.6f, hs_cmy_enable = 1, hs_c = 0.2f, hs_m = 0.2f, hs_y = 0.2f, hc_enable = 1, hc_r = 0.6f;
   }
   else if (lk_sel==1) { // Vision3 250D / 2383 - negatif lumiere du jour sur tirage de diffusion - la reference
-    tn_Lg = 8.4827f, tn_con = 1.2968f, tn_sh = 0.0001f, tn_toe = 0.004f, tn_off = 0.0051f, tn_hcon_enable = 1, tn_hcon = -0.6264f, tn_hcon_pv = 3.9994f, tn_hcon_st = 3.9366f, tn_lcon_enable = 1, tn_lcon = 1.9209f, tn_lcon_w = 1.8948f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2486f, rs_rw = 0.0037f, rs_bw = 0.414f, pt_r = 0.4319f, pt_g = 0.5366f, pt_b = 1.5762f, pt_rng_low = 0.1694f, pt_rng_high = 0.2501f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.0855f, ptm_low_st = 0.6777f, ptm_high = -0.154f, ptm_high_st = 0.2319f, brl_enable = 1, brl_r = -0.6989f, brl_g = -0.7993f, brl_b = -0.6458f, brl_c = -0.1948f, brl_m = -0.5f, brl_y = 0.0928f, brl_rng = 0.9507f, hs_rgb_enable = 1, hs_r = 0.0012f, hs_g = 1.0f, hs_b = 0.6603f, hs_rgb_rng = 0.4191f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.0935f, hs_y = 0.99f, hc_enable = 1, hc_r = 1.0f, tone_id = 1, look_exp = 1.19317f;
+    tn_Lg = 8.3038f, tn_con = 1.2833f, tn_sh = 0.9522f, tn_toe = 0.0013f, tn_off = 0.0035f, tn_hcon_enable = 1, tn_hcon = 0.8919f, tn_hcon_pv = 3.1708f, tn_hcon_st = 1.6839f, tn_lcon_enable = 1, tn_lcon = 2.6764f, tn_lcon_w = 1.9976f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2486f, rs_rw = 0.0037f, rs_bw = 0.414f, pt_r = 0.4319f, pt_g = 0.5366f, pt_b = 1.5762f, pt_rng_low = 0.1694f, pt_rng_high = 0.2501f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.0855f, ptm_low_st = 0.6777f, ptm_high = -0.154f, ptm_high_st = 0.2319f, brl_enable = 1, brl_r = -0.6989f, brl_g = -0.7993f, brl_b = -0.6458f, brl_c = -0.1948f, brl_m = -0.5f, brl_y = 0.0928f, brl_rng = 0.9507f, hs_rgb_enable = 1, hs_r = 0.0012f, hs_g = 1.0f, hs_b = 0.6603f, hs_rgb_rng = 0.4191f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.0935f, hs_y = 0.99f, hc_enable = 1, hc_r = 1.0f, tone_id = 1, look_exp = 1.19317f;
   }
   else if (lk_sel==2) { // Vision3 250D / 2393 - meme negatif sur tirage haut contraste, noirs plus fermes
-    tn_Lg = 5.5795f, tn_con = 1.4533f, tn_sh = 0.0001f, tn_toe = 0.0026f, tn_off = 0.0104f, tn_hcon_enable = 1, tn_hcon = -0.4426f, tn_hcon_pv = 4.0f, tn_hcon_st = 3.9998f, tn_lcon_enable = 1, tn_lcon = 2.0959f, tn_lcon_w = 1.9998f, tn_lcon_pc = 0.9843f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.3234f, rs_rw = 0.0025f, rs_bw = 0.3174f, pt_r = 0.3304f, pt_g = 0.0981f, pt_b = 2.0144f, pt_rng_low = 0.1672f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.2765f, ptm_low_st = 0.5582f, ptm_high = -0.195f, ptm_high_st = 0.2268f, brl_enable = 1, brl_r = -0.7532f, brl_g = -0.9362f, brl_b = -0.6598f, brl_c = -0.1415f, brl_m = -0.5f, brl_y = 0.1549f, brl_rng = 1.0f, hs_rgb_enable = 1, hs_r = 0.0004f, hs_g = 1.0f, hs_b = 0.5629f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.0143f, hs_y = 0.9984f, hc_enable = 1, hc_r = 1.0f, tone_id = 2, look_exp = 1.47471f;
+    tn_Lg = 5.2217f, tn_con = 1.5996f, tn_sh = 0.9999f, tn_toe = 0.0003f, tn_off = 0.0079f, tn_hcon_enable = 1, tn_hcon = 0.8916f, tn_hcon_pv = 3.5042f, tn_hcon_st = 1.6391f, tn_lcon_enable = 1, tn_lcon = 2.5553f, tn_lcon_w = 2.0f, tn_lcon_pc = 0.9843f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.3234f, rs_rw = 0.0025f, rs_bw = 0.3174f, pt_r = 0.3304f, pt_g = 0.0981f, pt_b = 2.0144f, pt_rng_low = 0.1672f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.2765f, ptm_low_st = 0.5582f, ptm_high = -0.195f, ptm_high_st = 0.2268f, brl_enable = 1, brl_r = -0.7532f, brl_g = -0.9362f, brl_b = -0.6598f, brl_c = -0.1415f, brl_m = -0.5f, brl_y = 0.1549f, brl_rng = 1.0f, hs_rgb_enable = 1, hs_r = 0.0004f, hs_g = 1.0f, hs_b = 0.5629f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.0143f, hs_y = 0.9984f, hc_enable = 1, hc_r = 1.0f, tone_id = 2, look_exp = 1.47471f;
   }
   else if (lk_sel==3) { // Vision3 500T / 2383 - negatif tungstene rapide sur tirage de diffusion
-    tn_Lg = 12.7219f, tn_con = 1.2137f, tn_sh = 0.0005f, tn_toe = 0.0222f, tn_off = 0.02f, tn_hcon_enable = 1, tn_hcon = -0.5094f, tn_hcon_pv = 3.7592f, tn_hcon_st = 3.8482f, tn_lcon_enable = 1, tn_lcon = 2.2614f, tn_lcon_w = 1.5425f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2681f, rs_rw = 0.0001f, rs_bw = 0.8f, pt_r = 0.2429f, pt_g = 3.7646f, pt_b = 0.0005f, pt_rng_low = 0.1724f, pt_rng_high = 0.3997f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.5889f, ptm_low_st = 0.1995f, ptm_high = -0.0001f, ptm_high_st = 0.2889f, brl_enable = 1, brl_r = -0.7098f, brl_g = -0.6936f, brl_b = -0.8106f, brl_c = -0.0644f, brl_m = -0.5f, brl_y = -0.0827f, brl_rng = 1.0f, hs_rgb_enable = 1, hs_r = 0.0622f, hs_g = 1.0f, hs_b = 0.4495f, hs_rgb_rng = 0.9893f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2457f, hs_y = 1.0f, hc_enable = 1, hc_r = 1.0f, tone_id = 3, look_exp = 0.94893f;
+    tn_Lg = 12.8027f, tn_con = 1.0714f, tn_sh = 0.9639f, tn_toe = 0.0252f, tn_off = 0.0091f, tn_hcon_enable = 1, tn_hcon = 0.919f, tn_hcon_pv = 2.6993f, tn_hcon_st = 1.7069f, tn_lcon_enable = 1, tn_lcon = 2.8034f, tn_lcon_w = 1.6479f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.2681f, rs_rw = 0.0001f, rs_bw = 0.8f, pt_r = 0.2429f, pt_g = 3.7646f, pt_b = 0.0005f, pt_rng_low = 0.1724f, pt_rng_high = 0.3997f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.5889f, ptm_low_st = 0.1995f, ptm_high = -0.0001f, ptm_high_st = 0.2889f, brl_enable = 1, brl_r = -0.7098f, brl_g = -0.6936f, brl_b = -0.8106f, brl_c = -0.0644f, brl_m = -0.5f, brl_y = -0.0827f, brl_rng = 1.0f, hs_rgb_enable = 1, hs_r = 0.0622f, hs_g = 1.0f, hs_b = 0.4495f, hs_rgb_rng = 0.9893f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2457f, hs_y = 1.0f, hc_enable = 1, hc_r = 1.0f, tone_id = 3, look_exp = 0.94893f;
   }
   else if (lk_sel==4) { // Portra 400 / Endura - negatif portrait sur papier portrait - le plus doux
-    tn_Lg = 24.9919f, tn_con = 1.3699f, tn_sh = 0.0001f, tn_toe = 0.0164f, tn_off = 0.0495f, tn_hcon_enable = 1, tn_hcon = 0.9994f, tn_hcon_pv = 1.1745f, tn_hcon_st = 0.7505f, tn_lcon_enable = 1, tn_lcon = 2.9999f, tn_lcon_w = 2.0f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1453f, rs_rw = 0.0013f, rs_bw = 0.3907f, pt_r = 0.0533f, pt_g = 0.1374f, pt_b = 1.7251f, pt_rng_low = 0.1591f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1916f, ptm_low_st = 0.5528f, ptm_high = 0.0f, ptm_high_st = 0.2364f, brl_enable = 1, brl_r = -0.5927f, brl_g = -0.612f, brl_b = -0.3952f, brl_c = -0.249f, brl_m = -0.4958f, brl_y = -0.0275f, brl_rng = 0.9291f, hs_rgb_enable = 1, hs_r = 0.0f, hs_g = 1.0f, hs_b = 0.6186f, hs_rgb_rng = 0.747f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2956f, hs_y = 0.9997f, hc_enable = 1, hc_r = 1.0f, tone_id = 4, look_exp = 0.62644f;
+    tn_Lg = 25.7752f, tn_con = 1.2723f, tn_sh = 0.7539f, tn_toe = 0.0f, tn_off = 0.0126f, tn_hcon_enable = 1, tn_hcon = 0.9987f, tn_hcon_pv = 1.8117f, tn_hcon_st = 1.4587f, tn_lcon_enable = 1, tn_lcon = 2.819f, tn_lcon_w = 1.0697f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1453f, rs_rw = 0.0013f, rs_bw = 0.3907f, pt_r = 0.0533f, pt_g = 0.1374f, pt_b = 1.7251f, pt_rng_low = 0.1591f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1916f, ptm_low_st = 0.5528f, ptm_high = 0.0f, ptm_high_st = 0.2364f, brl_enable = 1, brl_r = -0.5927f, brl_g = -0.612f, brl_b = -0.3952f, brl_c = -0.249f, brl_m = -0.4958f, brl_y = -0.0275f, brl_rng = 0.9291f, hs_rgb_enable = 1, hs_r = 0.0f, hs_g = 1.0f, hs_b = 0.6186f, hs_rgb_rng = 0.747f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.2956f, hs_y = 0.9997f, hc_enable = 1, hc_r = 1.0f, tone_id = 4, look_exp = 0.62644f;
   }
   else if (lk_sel==5) { // Ektar 100 / Ultra Endura - negatif fin et sature sur papier vif - le plus colore
-    tn_Lg = 25.0f, tn_con = 1.5164f, tn_sh = 1.0f, tn_toe = 0.0f, tn_off = 0.0012f, tn_hcon_enable = 1, tn_hcon = -0.9945f, tn_hcon_pv = 4.0f, tn_hcon_st = 4.0f, tn_lcon_enable = 1, tn_lcon = 2.2505f, tn_lcon_w = 2.0f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.125f, rs_rw = 0.0f, rs_bw = 0.5458f, pt_r = 0.0095f, pt_g = 0.0097f, pt_b = 2.0243f, pt_rng_low = 0.2384f, pt_rng_high = 0.2702f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.3887f, ptm_low_st = 0.9385f, ptm_high = -0.0598f, ptm_high_st = 0.2382f, brl_enable = 1, brl_r = -0.7634f, brl_g = -0.7468f, brl_b = -0.3492f, brl_c = -0.2396f, brl_m = -0.4972f, brl_y = -0.1009f, brl_rng = 0.9867f, hs_rgb_enable = 1, hs_r = 0.0143f, hs_g = 1.0f, hs_b = 0.7485f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.8949f, hs_y = 1.0f, hc_enable = 1, hc_r = 1.0f, tone_id = 5, look_exp = 0.64703f;
+    tn_Lg = 27.0219f, tn_con = 1.4951f, tn_sh = 0.9194f, tn_toe = 0.0f, tn_off = 0.0013f, tn_hcon_enable = 1, tn_hcon = 0.852f, tn_hcon_pv = 1.5089f, tn_hcon_st = 0.8925f, tn_lcon_enable = 1, tn_lcon = 2.977f, tn_lcon_w = 1.9946f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.125f, rs_rw = 0.0f, rs_bw = 0.5458f, pt_r = 0.0095f, pt_g = 0.0097f, pt_b = 2.0243f, pt_rng_low = 0.2384f, pt_rng_high = 0.2702f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.3887f, ptm_low_st = 0.9385f, ptm_high = -0.0598f, ptm_high_st = 0.2382f, brl_enable = 1, brl_r = -0.7634f, brl_g = -0.7468f, brl_b = -0.3492f, brl_c = -0.2396f, brl_m = -0.4972f, brl_y = -0.1009f, brl_rng = 0.9867f, hs_rgb_enable = 1, hs_r = 0.0143f, hs_g = 1.0f, hs_b = 0.7485f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.8949f, hs_y = 1.0f, hc_enable = 1, hc_r = 1.0f, tone_id = 5, look_exp = 0.64703f;
   }
   else if (lk_sel==6) { // Pro 400H / Crystal Archive - negatif a rendu pastel sur papier cristal, dose au quart
-    tn_Lg = 24.8586f, tn_con = 1.9766f, tn_sh = 0.0011f, tn_toe = 0.0051f, tn_off = 0.02f, tn_hcon_enable = 1, tn_hcon = -0.3466f, tn_hcon_pv = 2.4442f, tn_hcon_st = 3.9832f, tn_lcon_enable = 1, tn_lcon = 1.7653f, tn_lcon_w = 2.0f, tn_lcon_pc = 0.999f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.248f, rs_rw = 0.0055f, rs_bw = 0.3635f, pt_r = 0.1008f, pt_g = 0.1629f, pt_b = 0.4179f, pt_rng_low = 0.176f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1172f, ptm_low_st = 0.4472f, ptm_high = -0.3404f, ptm_high_st = 0.2744f, brl_enable = 1, brl_r = -0.648f, brl_g = -0.8557f, brl_b = -0.5961f, brl_c = 0.0262f, brl_m = -0.4999f, brl_y = 0.4995f, brl_rng = 0.8901f, hs_rgb_enable = 1, hs_r = 0.0f, hs_g = 0.9056f, hs_b = 0.7554f, hs_rgb_rng = 0.2501f, hs_cmy_enable = 1, hs_c = 0.7671f, hs_m = 0.5511f, hs_y = 0.8805f, hc_enable = 1, hc_r = 1.0f, tone_id = 6, look_exp = 0.61052f;
+    tn_Lg = 25.7094f, tn_con = 1.7074f, tn_sh = 0.682f, tn_toe = 0.0f, tn_off = 0.0054f, tn_hcon_enable = 1, tn_hcon = 0.176f, tn_hcon_pv = 2.451f, tn_hcon_st = 3.8061f, tn_lcon_enable = 1, tn_lcon = 1.9403f, tn_lcon_w = 1.0454f, tn_lcon_pc = 0.999f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.248f, rs_rw = 0.0055f, rs_bw = 0.3635f, pt_r = 0.1008f, pt_g = 0.1629f, pt_b = 0.4179f, pt_rng_low = 0.176f, pt_rng_high = 0.25f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1172f, ptm_low_st = 0.4472f, ptm_high = -0.3404f, ptm_high_st = 0.2744f, brl_enable = 1, brl_r = -0.648f, brl_g = -0.8557f, brl_b = -0.5961f, brl_c = 0.0262f, brl_m = -0.4999f, brl_y = 0.4995f, brl_rng = 0.8901f, hs_rgb_enable = 1, hs_r = 0.0f, hs_g = 0.9056f, hs_b = 0.7554f, hs_rgb_rng = 0.2501f, hs_cmy_enable = 1, hs_c = 0.7671f, hs_m = 0.5511f, hs_y = 0.8805f, hc_enable = 1, hc_r = 1.0f, tone_id = 6, look_exp = 0.61052f;
   }
   else if (lk_sel==7) { // Gold 200 / Supra Endura - negatif grand public chaud sur papier neutre
-    tn_Lg = 24.7549f, tn_con = 1.6841f, tn_sh = 0.0007f, tn_toe = 0.0023f, tn_off = 0.0445f, tn_hcon_enable = 1, tn_hcon = -0.7392f, tn_hcon_pv = 3.9535f, tn_hcon_st = 0.0003f, tn_lcon_enable = 1, tn_lcon = 2.932f, tn_lcon_w = 2.0f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1679f, rs_rw = 0.0005f, rs_bw = 0.4037f, pt_r = 0.0675f, pt_g = 0.1077f, pt_b = 2.427f, pt_rng_low = 0.2204f, pt_rng_high = 0.3794f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1325f, ptm_low_st = 0.6234f, ptm_high = -0.0262f, ptm_high_st = 0.2234f, brl_enable = 1, brl_r = -0.5478f, brl_g = -0.5678f, brl_b = -0.4139f, brl_c = -0.1189f, brl_m = -0.2142f, brl_y = 0.0035f, brl_rng = 0.9518f, hs_rgb_enable = 1, hs_r = 0.0763f, hs_g = 1.0f, hs_b = 0.4187f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.0022f, hs_y = 0.9972f, hc_enable = 1, hc_r = 1.0f, tone_id = 7, look_exp = 0.6463f;
+    tn_Lg = 25.6262f, tn_con = 1.5078f, tn_sh = 0.7698f, tn_toe = 0.0f, tn_off = 0.0126f, tn_hcon_enable = 1, tn_hcon = 0.9994f, tn_hcon_pv = 2.0683f, tn_hcon_st = 1.2319f, tn_lcon_enable = 1, tn_lcon = 2.565f, tn_lcon_w = 1.2503f, tn_lcon_pc = 1.0f, cwp = 0, cwp_rng = 0.5f, rs_sa = 0.1679f, rs_rw = 0.0005f, rs_bw = 0.4037f, pt_r = 0.0675f, pt_g = 0.1077f, pt_b = 2.427f, pt_rng_low = 0.2204f, pt_rng_high = 0.3794f, ptl_enable = 1, ptm_enable = 1, ptm_low = 0.1325f, ptm_low_st = 0.6234f, ptm_high = -0.0262f, ptm_high_st = 0.2234f, brl_enable = 1, brl_r = -0.5478f, brl_g = -0.5678f, brl_b = -0.4139f, brl_c = -0.1189f, brl_m = -0.2142f, brl_y = 0.0035f, brl_rng = 0.9518f, hs_rgb_enable = 1, hs_r = 0.0763f, hs_g = 1.0f, hs_b = 0.4187f, hs_rgb_rng = 1.0f, hs_cmy_enable = 1, hs_c = 1.0f, hs_m = 0.0022f, hs_y = 0.9972f, hc_enable = 1, hc_r = 1.0f, tone_id = 7, look_exp = 0.6463f;
   }
 
+  // NODE DRT v2 : les courbes des 7 looks sont refaites pour l'epaule. Avant,
+  // un genou dur vers +2 stops puis un ecretage net vers +6 : des hautes
+  // lumieres plates qui cassent d'un coup. Maintenant l'epaule descend en
+  // continu jusqu'au blanc (+8 stops et au-dela, sans ecretage), le contraste
+  // au gris monte d'environ 7 pour cent et les noirs laiteux (Portra, Gold,
+  // 400H, 500T) sont plus denses. Gris 18 pour cent tenu au millieme, couleur
+  // des looks inchangee (seuls les tn_* bougent, look_exp aussi).
   /*----------- TONESCALE INTENSITY : la courbe du look, gardee -----------------
     Copie AVANT que le menu ne l'ecrase : c'est la courbe A du melange, la
     courbe du menu est la courbe B. Un module desactive est remplace par sa
@@ -3004,9 +3062,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   if (trim_con != 0.0f && !trim_con_bypass) {
     const float con_f = _fmaxf(0.0f, 1.0f + trim_con);
     const float con_pv = clampf(trim_piv, 0.001f, 0.999f);
+    const float3 con_c = rgb;
     rgb.x = con_scene(rgb.x, con_f, con_pv);
     rgb.y = con_scene(rgb.y, con_f, con_pv);
     rgb.z = con_scene(rgb.z, con_f, con_pv);
+    const float con_n = _fmaxf(_fmaxf(_fmaxf(con_c.x, con_c.y), con_c.z), 1.0e-6f);
+    if (bk_guard_w(con_n) < 1.0f) rgb = bk_guard(con_c, rgb, con_scene(con_n, con_f, con_pv));
   }
 
   /*----------- TRIM : Overlay -----------------
@@ -3015,8 +3076,13 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     l'un n'interfere pas avec la courbure de l'autre. A zero le bloc est saute :
     bypass exact, au bit pres.
   -------------------------------------------*/
-  if (trim_ovl != 0.0f && !trim_con_bypass)
+  if (trim_ovl != 0.0f && !trim_con_bypass) {
+    const float3 ovl_c = rgb;
     rgb = overlay_scene(rgb, trim_ovl, OVL_CGAIN);
+    const float ovl_n = _fmaxf(_fmaxf(_fmaxf(ovl_c.x, ovl_c.y), ovl_c.z), 1.0e-6f);
+    if (bk_guard_w(ovl_n) < 1.0f)
+      rgb = bk_guard(ovl_c, rgb, overlay_scene(make_float3(ovl_n, ovl_n, ovl_n), trim_ovl, OVL_CGAIN).x);
+  }
 
   /*----------- COLOR : Weight et Density -----------------
     Poses ICI, en lumiere de scene et avant le rendu, parce que ce sont des
@@ -3060,7 +3126,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   -------------------------------------------*/
   const float TS_LG[10][8] = {
     {0.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f},
-    {0.0000f, 8.2412f, 12.8172f, 5.1995f, 25.9942f, 26.0770f, 25.7316f, 25.6292f},
+    {0.0000f, 8.0468f, 12.9115f, 4.8554f, 26.9608f, 28.2658f, 26.7846f, 26.6567f},
     {0.0000f, 9.5543f, 12.3120f, 7.6504f, 20.0309f, 18.0989f, 18.3826f, 19.2027f},
     {0.0000f, 7.8474f, 10.9680f, 5.6533f, 20.1857f, 18.5869f, 18.8505f, 19.3240f},
     {0.0000f, 8.2423f, 10.8463f, 6.4548f, 18.3555f, 16.9961f, 17.0692f, 17.6663f},
@@ -3123,6 +3189,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   const float sk_mhue_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mhue, 0.0f, 1.0f);
   const float sk_mrec_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mrec, 0.0f, 1.0f);
   const float sk_medge_e = skin_mask_bypass ? 0.0f : _clampf(skin_medge, 0.0f, 1.0f);
+  const float sk_mhc_e   = skin_mask_bypass ? 0.0f : _clampf(skin_mhc, -1.0f, 1.0f);
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
   if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
@@ -3140,14 +3207,23 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // ainsi dans Resolve ni sur CPU.
     if (lk_pass == NODEONE_SKIN_PREPASS)
       return skin_tap(make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
-                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_mrec_e, sk_need_s, sk_need_l);
+                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_mrec_e, sk_mhc_e, sk_need_s, sk_need_l);
 #endif
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
                                          rs_sa, rs_w, look_exp, sk_soft_e,
-                                         sk_mhue_e, sk_mrec_e, sk_medge_e,
+                                         sk_mhue_e, sk_mrec_e, sk_mhc_e, sk_medge_e,
                                          sk_need_s, sk_need_l, lk_pass);
     sk_w_scene = skm.x;
     sk_wl_scene = skm.y;
+  }
+  // Skin Line garde le masque droit ; Invert Mask retourne celui de Light et
+  // de Skin Saturation (et ce que peint Show Zones). Le poids retourne reste
+  // lu dans la scene, lisse dans l'image : memes bords doux, meme garantie de
+  // monotonie que le masque droit.
+  const float sk_w_line = sk_w_scene;
+  if (skin_minv == 1 && !skin_mask_bypass) {
+    sk_w_scene = 1.0f - _clampf(sk_w_scene, 0.0f, 1.0f);
+    sk_wl_scene = 1.0f - _clampf(sk_wl_scene, 0.0f, 1.0f);
   }
 
   /*----------- SKIN : Light -----------------
@@ -3197,40 +3273,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     rgb = rgb*_exp2f(SKL_A*sl*sk_wl_scene);
   }
   // Entree de la courbe, gardee pour la courbe A de Tonescale Intensity.
-#ifdef NODEONE_FILM
-  /*----------- FILM PRINT -----------------
-    Look 1 a 7 : l'image de scene (balance, contraste, densite, peau deja
-    appliques au-dessus) passe dans le tirage : DaVinci Wide Gamut /
-    Intermediate -> negatif -> papier -> affichage, blanc du papier = 1.
-    En HDR, le gris suit celui du rendu HDR et le haut du papier s'etire
-    doucement jusqu'au pic : meme tirage, des blancs qui respirent. Look
-    Intensity reste un melange avec Default (passe 1).
-  -------------------------------------------*/
-  const int film_on = (look_preset >= 1 && look_preset <= 7 && look_amt > 0.5f && nodeone_film_ok(p_TexR)) ? 1 : 0;
-  float3 film_disp = make_float3(0.0f, 0.0f, 0.0f);
-  if (film_on) {
-    float3 sc = rgb;
-    if (rs_sa != 1.0f) {   // le tirage veut la scene sans la desaturation de l'espace de rendu
-      const float sl = sc.x*rs_w.x + sc.y*rs_w.y + sc.z*rs_w.z;
-      sc = (sl*rs_sa - sc)/(rs_sa - 1.0f);
-    }
-    sc = sc/look_exp;
-    sc = vdot(mat3_inv(matrix_davinciwg_to_xyz), vdot(matrix_p3d65_to_xyz, sc));
-    float3 F = nodeone_film(p_TexR, look_preset, make_float3(film_lin2di(sc.x), film_lin2di(sc.y), film_lin2di(sc.z)));
-    F = clampminf3(F, 0.0f);
-    const float f_base = ts_y0/(tn_Lg/100.0f);   // 1 en SDR
-    const float f_peak = tn_Lp/100.0f;
-    if (f_peak > f_base) {
-      const float Yb = _fminf(1.0f, 0.2126f*F.x + 0.7152f*F.y + 0.0722f*F.z);
-      const float y2 = Yb*Yb;
-      F = F*(f_base + (f_peak - f_base)*y2*y2*Yb);
-    } else {
-      F = F*f_base;
-    }
-    if (display_gamut >= 1) F = vdot(matrix_xyz_to_p3d65, vdot(matrix_rec709_to_xyz, F));
-    film_disp = F*ts_dsc;
-  }
-#endif
   const float3 tsk_in = rgb;
   const float3 tsk_crv_in = crv_val;
 
@@ -3540,7 +3582,13 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
       l'axe neutre. A +1 l'effet disparait et les rouges satures cessent de
       s'assombrir; a -1 il double et la couleur gagne en densite.
     -------------------------------------------------*/
-    if (trim_br != 0.0f && !trim_hl_bypass) brl_f = 1.0f + (brl_f - 1.0f)*(1.0f - trim_br);
+    // NODE DRT v2 : dose en EXPOSANT (en stops) et non en ecart lineaire. A -1
+    // l'ecart doublait : 1 + 2(f - 1) passait sous zero sur une couleur deja
+    // assombrie par le look, et la protection d'en dessous l'ecrasait a zero -
+    // une couleur saturee qui tombait au noir puis remontait (19 codes 10 bits
+    // de recul sur Ektar). f^(1 - trim) double l'effet en stops, reste
+    // strictement positif, vaut 1 sur un neutre et 1 partout a +1.
+    if (trim_br != 0.0f && !trim_hl_bypass) brl_f = _exp2f(_log2f(_fmaxf(brl_f, 1.0e-6f))*(1.0f - trim_br));
 
     brl_f = _fmaxf(0.0f, _fminf(2.0f, brl_f)); // protect for shadow grain
   }
@@ -3808,7 +3856,17 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     float sh_w = _fmaxf(sh_x, 0.0f)/sh_p;
     sh_w = 1.0f/(1.0f + sh_w*sh_w*sh_w);
     sh_w = smooth_relu((sh_w - sh_wg)/(1.0f - sh_wg), 0.05f);
-    tsn = sh_fl + sh_x*_exp2f(1.5f*trim_sh*sh_w);
+    // NODE DRT v2 : le gain ne s'applique plus SOUS le plancher du noir. Le
+    // bruit du noir (scene negative) donnait un tsn sous le plancher ; le gain
+    // l'enfoncait sous zero, et un tsn negatif multiplie par les ratios RGB du
+    // bruit - eux-memes de signes melanges - rallumait des points de couleur
+    // dans le noir : les artefacts colores de Shadows. Le gain porte
+    // maintenant sur la partie AU-DESSUS du plancher seulement (raccord lisse
+    // sur 1 pour cent du gris), donc sous le plancher l'image est exactement
+    // celle sans trim, et au-dessus elle ne peut jamais repasser sous le
+    // plancher, quel que soit le reglage : en ecrasant, tsn >= plancher + G x.
+    const float sh_pos = smooth_relu(sh_x, 0.01f*ts_y0_e);
+    tsn = tsn + sh_pos*(_exp2f(1.5f*trim_sh*sh_w) - 1.0f);
   }
   tsn *= ts_dsc; // scale for display encoding
 
@@ -3834,7 +3892,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
       float shc_w = _fmaxf(shc_x, 0.0f)/shc_p;
       shc_w = 1.0f/(1.0f + shc_w*shc_w*shc_w);
       shc_w = smooth_relu((shc_w - shc_wg)/(1.0f - shc_wg), 0.05f);
-      crv_ach = sh_fl + shc_x*_exp2f(1.5f*trim_sh*shc_w);
+      crv_ach = crv_ach + smooth_relu(shc_x, 0.01f*ts_y0_e)*(_exp2f(1.5f*trim_sh*shc_w) - 1.0f);
     }
     crv_rgb = crv_rt*crv_ach*ts_dsc;
     // Le meme clamp que l'image. Sans lui, un contraste negatif fait plonger
@@ -3912,7 +3970,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     const float sk_pk = ts_y1*ts_dsc;   // ramene au pic : meme comportement en SDR et en HDR
     const int sk_p3 = display_gamut >= 1;
     float3 sk = rgb/sk_pk;
-    if (trim_skin > 0.0f) sk = skin_line(sk, sk_p3, trim_skin, sk_w_scene);
+    if (trim_skin > 0.0f) sk = skin_line(sk, sk_p3, trim_skin, sk_w_line);
     /*----------- TRIM : Skin Saturation -----------------
       Le modele de saturation soustractive de Nikita Petrovich (MIT), le MEME
       que le reglage Chroma du groupe Color : ancre sur le canal le plus fort,
@@ -3935,9 +3993,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   }
 
   // Clamp
-#ifdef NODEONE_FILM
-  if (film_on) rgb = film_disp;
-#endif
   if (out_clamp) rgb = clampf3(rgb, 0.0f, 1.0f);
 
   // Rec.2020 (P3 Limited)

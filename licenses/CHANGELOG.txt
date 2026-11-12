@@ -1,3 +1,35 @@
+NODE DRT v2 — what changed (installs next to Node DRT 1.x)
+==========================================================
+
+Looks 1-7
+  The parametric looks of 1.2 are back (the 1.3 print tables are not used).
+  Their curves are rebuilt for the shoulder: no more hard knee near +2 stops
+  and clip near +6 - the highlights roll off continuously into white beyond
+  +8 stops; about 7 % more contrast at grey; denser blacks on the milky
+  looks (Portra, Gold, 400H, 500T). Grey and colour of each look unchanged.
+
+Trims and Color: no colour artifacts in the shadows
+  - Shadows: the gain no longer applies below the black floor (negative
+    noise was pushed below zero and lit up as colour specks).
+  - Log Contrast / Overlay: in the deep shadows they act on the pixel's
+    level (neutral lift, single gain) instead of each channel.
+  - Color Density / Color Weight: darkening never sends a channel below zero.
+  - Brilliance: dosed in stops; at -1 saturated colours no longer drop to
+    black and come back.
+
+Density (was Density Pro)
+  Show Zones (one zone, or a map of the three) and Show Colors, mutually
+  exclusive; Bypass Zones, Bypass Colors; Reset Zones, Reset Density Color.
+
+Skin
+  Mask: protected edges (no half-corrected rim around faces), beige walls and
+  low-chroma backgrounds left out, pale skin kept; Mask Hue Center (new);
+  Invert Mask (Light and Skin Saturation); Skin Line corrects olive skin more
+  fully at 1.
+
+Grain: Bypass Grain.
+
+
 NODE_DRT 1.3 — what changed, and where it comes from
 ====================================================
 

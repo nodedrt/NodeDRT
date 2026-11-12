@@ -140,7 +140,7 @@ PLUGINS = [
             # DENSITY PRO (de RELIEF) : densite film par zone et par couleur,
             # calculee par le plugin sur l'image log d'entree, avant Texture et
             # avant le rendu. Tout a 0 : le plugin rend exactement comme avant.
-            {'name': 'grp_density', 'label': 'Density Pro', 'open': False, 'params': [
+            {'name': 'grp_density', 'label': 'Density', 'open': False, 'params': [
                 SUB('grp_dp_zones', 'Zones', [
                     TP('dp_hi', 'Highlights Density', 'float', 0.0, -100.0, 100.0, 0.1,
                        hint='Density of colours in the highlights. Positive = denser (darker, richer), negative = lighter.'),
@@ -151,7 +151,14 @@ PLUGINS = [
                     TP('dp_zpiv', 'Zones Pivot', 'float', 0.0, -3.0, 3.0, 0.01,
                        hint='Moves the three zones in stops: negative = the highlights zone starts lower (more of the image is highlights), positive = higher.'),
                     TP('dp_zsoft', 'Zones Softness', 'float', 0.5, 0.0, 1.0, 0.01,
-                       hint='Overlap between the zones: 0 = separate zones (0.75 stop transitions), 0.5 = default, 1 = very blended (4.5 stops). Use Show Mask to see them.'),
+                       hint='Overlap between the zones: 0 = separate zones (0.75 stop transitions), 0.5 = default, 1 = very blended (4.5 stops). Use Show Zones to see them.'),
+                    TP('dp_show_zones', 'Show Zones', 'bool', 0,
+                       hint='Smart view of the zones. Touch a zone slider: only that zone is shown, the rest of the picture turns grey. '
+                            'Touch Show Zones itself, Zones Pivot or Zones Softness: the map of the three zones, Shadows blue, Midtones green, '
+                            'Highlights orange, with their soft overlaps. Turning it on turns Show Colors off. View only: nothing is rendered with it.'),
+                    TP('dp_zones_bypass', 'Bypass Zones', 'bool', 0,
+                       hint='Skips the three zone sliders. Their settings are kept.'),
+                    P('dp_zones_reset', 'Reset Zones', synth='push', hint='Returns the Zones controls (densities, pivot, softness, view, bypass) to their default in one click, as a single undo step. The colours are not touched.'),
                 ]),
                 SUB('grp_dp_colors', 'Colors', [
                     TP('dp_red', 'Red Density', 'float', 0.0, -100.0, 100.0, 0.1,
@@ -178,21 +185,22 @@ PLUGINS = [
                        hint='Density on magenta hues. Positive = denser (darker, richer), negative = lighter.'),
                     TP('dp_magenta_rng', 'Magenta Range', 'float', 1.0, 0.1, 4.0, 0.01,
                        hint='Width of the colour zone. 1 = precise (full effect within 6 deg of hue, fades out at 20 deg). Lower = even narrower, higher = wider, up to the neighbouring colours at 4.'),
-                ]),
-                SUB('grp_dp_mask', 'Mask', [
                     TP('dp_focus', 'Saturation Focus', 'float', 40.0, 0.0, 100.0, 0.1,
                        hint='0 = also acts on softly coloured areas, 100 = only on strongly saturated colours. Neutrals never move.'),
-                    TP('dp_mask_soft', 'Mask Softness', 'float', 0.3, 0.0, 1.0, 0.01,
-                       hint='Softens the edges of the colour and zone selections in the picture (the selection is measured on a slightly softened copy of the image): no pixel breakup or noise in the masks. 0 = sharpest, 0.3 = default, 1 = very soft.'),
-                    TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
-                       hint='Overall strength of all Density Pro sliders: 0 = x1, 100 = x4.'),
-                    TP('dp_show', 'Show Mask', 'bool', 0,
-                       hint='Shows the selection of the slider you last touched (a colour or its Range: that colour only; a zone: that zone). Touch Show Mask again to see every active slider.'),
-                    TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 9.0, 1.0),
+                    TP('dp_show', 'Show Colors', 'bool', 0,
+                       hint='Smart view of the colours. Touch a colour or its Range: only that colour is shown, the rest of the picture turns grey. '
+                            'Touch Show Colors itself or Saturation Focus: every active colour. Turning it on turns Show Zones off. View only.'),
+                    TP('dp_colors_bypass', 'Bypass Colors', 'bool', 0,
+                       hint='Skips the six colour sliders. Their settings are kept.'),
+                    P('density_reset', 'Reset Density Color', synth='push', hint='Returns the Colors controls (the six colours and their ranges, Saturation Focus, view, bypass) to their default in one click, as a single undo step. The zones are not touched.'),
                 ]),
-                TP('dp_bypass', 'Bypass Density Pro', 'bool', 0,
+                TP('dp_mask_soft', 'Mask Softness', 'float', 0.3, 0.0, 1.0, 0.01,
+                   hint='Softens the edges of the colour and zone selections in the picture (the selection is measured on a slightly softened copy of the image): no pixel breakup or noise in the masks. 0 = sharpest, 0.3 = default, 1 = very soft.'),
+                TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
+                   hint='Overall strength of all Density sliders: 0 = x1, 100 = x4.'),
+                TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 10.0, 1.0),
+                TP('dp_bypass', 'Bypass Density', 'bool', 0,
                    hint='Skips the whole section. Its settings are kept.'),
-                P('density_reset', 'Reset Density Pro', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},
             {'name': 'grp_trims', 'label': 'Trims', 'open': False, 'params': [
                 SUB('grp_trims_con', 'Contrast', [
@@ -231,8 +239,10 @@ PLUGINS = [
                 SUB('grp_skin_mask', 'Mask', [
                     P('skin_soft', 'Mask Softness'),
                     P('skin_mhue', 'Mask Hue Range'),
+                    P('skin_mhc', 'Mask Hue Center'),
                     P('skin_mrec', 'Mask Recovery'),
                     P('skin_medge', 'Mask Edge Softness'),
+                    P('skin_minv', 'Invert Mask'),
                     P('skin_zones', 'Show Zones'),
                     P('skin_mask_bypass', 'Bypass Mask'),
                 ]),
@@ -267,6 +277,8 @@ PLUGINS = [
                        hint='A new grain pattern every frame, like film. Off: one still pattern.'),
                     TP('tx_gr_seed', 'Seed', 'float', 0.0, 0.0, 999.0, 1.0,
                        hint='Changes the random pattern of the grain.'),
+                    TP('tx_gr_bypass', 'Bypass Grain', 'bool', 0,
+                       hint='Skips the grain while keeping every setting, to compare with and without. Same as unticking Enable Grain, but your choice stays visible.'),
                 ]),
                 P('texture_reset', 'Reset Texture', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},

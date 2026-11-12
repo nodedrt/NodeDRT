@@ -79,14 +79,9 @@ if ! build/metal_check gen/drt.metal gen/texture.metal gen/density.metal 2>&1 | 
   echo "METAL CHECK FAILED — see $LOG"; exit 1
 fi
 
-# Film print tables of the 7 looks (Node DRT 1.3): carried in the bundle.
-if [ -f resources/film/film_tables.bin ]; then
-  mkdir -p build/NodeDRT.ofx.bundle/Contents/Resources/Film
-  cp resources/film/film_tables.bin build/NodeDRT.ofx.bundle/Contents/Resources/Film/
-  chmod 644 build/NodeDRT.ofx.bundle/Contents/Resources/Film/film_tables.bin   # Resolve reads it as the user
-else
-  echo "  note: resources/film/film_tables.bin missing - the looks fall back to the parametric versions"
-fi
+# Node DRT v2 renders its looks with the parametric engine (the 1.3 film print
+# tables are not shipped): drop any copy left by an earlier build.
+rm -rf build/NodeDRT.ofx.bundle/Contents/Resources/Film
 
 # NODE DRT v2: its own plugin, installed NEXT TO Node DRT 1.x (never over it).
 # Own bundle, binary and identifiers, so Resolve lists both and old grades keep

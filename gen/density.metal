@@ -308,7 +308,7 @@ struct DensArgs {
     int oetf;            // input log curve (DCTL in_oetf)
     int direct;          // 1 = input already is DWG / DaVinci Intermediate: used as is
     int show;            // Show Mask
-    int maskFocus;       // -1 every active slider, 0..5 a colour, 6..8 a zone, 9 the zones
+    int maskFocus;       // -1 every active slider, 0..5 a colour, 6..8 a zone, 9 zone map, 10 every active colour
     int blurR;           // box radius of the soft mask (3 box passes ~ gaussian), 0 = none
     int pad0, pad1, pad2;
     float mIn[9];        // input gamut -> DaVinci Wide Gamut (row major)
@@ -449,6 +449,17 @@ DP_FN DpSel dp_select(const DensArgs& P, float q0, float q1, float q2)
     const float Ld = 0.2126f * q0 + 0.7152f * q1 + 0.0722f * q2, st = (Ld - DP_PIV) / 0.07329248f;
     float zs = 0.0f, zm = 0.0f, zh = 0.0f;
     dp_zones(P.zpiv, P.zsoft, st, zs, zm, zh);
+    // Show Zones: the TONAL zones themselves (where the zone sliders reach),
+    // not weighted by saturation, so the zones can be placed on any picture.
+    //   6..8 one zone: its weight (1 inside, 0 outside, soft between);
+    //   9 the zone map: the value is the tone in stops (continuous, so the
+    //   grid interpolates it exactly), turned into the three zones by
+    //   dp_apply_value.
+    if (P.show && P.maskFocus >= 6 && P.maskFocus <= 9) {
+        const int f = P.maskFocus;
+        out.showW = f == 6 ? zs : (f == 7 ? zm : (f == 8 ? zh : st));
+        return out;
+    }
     float amt = P.lam * (zs * P.zone[0] + zm * P.zone[1] + zh * P.zone[2]);
     float sel = DP_MAX(P.zone[0] != 0.0f ? zs : 0.0f, DP_MAX(P.zone[1] != 0.0f ? zm : 0.0f, P.zone[2] != 0.0f ? zh : 0.0f));
     const DpLab lab = dp_oklab(l0, l1, l2);
@@ -468,10 +479,10 @@ DP_FN DpSel dp_select(const DensArgs& P, float q0, float q1, float q2)
         const int f = P.maskFocus;
         float s = sel;
         if (f >= 0 && f <= 5) { const float s2 = hsum + (P.hue[f] != 0.0f ? 0.0f : hw[f]); s = hw[f] / DP_MAX(1.0f, s2); }
-        else if (f == 6) s = zs;
-        else if (f == 7) s = zm;
-        else if (f == 8) s = zh;
-        else if (f == 9) s = DP_MAX(P.zone[0] != 0.0f ? zs : 0.0f, DP_MAX(P.zone[1] != 0.0f ? zm : 0.0f, P.zone[2] != 0.0f ? zh : 0.0f));
+        else if (f == 10) {   // every active colour (the zones left out)
+            s = 0.0f;
+            for (int k = 0; k < 6; ++k) if (P.hue[k] != 0.0f) s = DP_MAX(s, hw[k] * hn);
+        }
         out.showW = s * sw;
         return out;
     }
@@ -582,7 +593,22 @@ DP_FN DpRGB dp_apply_value(const DensArgs& A, DpRGB p, float v)
     if (!A.show && v == 0.0f) return p;
     const DpRGB c = dp_toWork(A, p.r, p.g, p.b);
     DpRGB n;
-    if (A.show) {   // pixels outside the selection turn grey
+    if (A.show && A.maskFocus == 9) {
+        // Zone map: the picture in grey, tinted by zone - Shadows blue,
+        // Midtones green, Highlights orange - with soft transitions exactly
+        // where the zones overlap. Its own tone is kept, so the picture stays
+        // readable.
+        float zs = 0.0f, zm = 0.0f, zh = 0.0f;
+        dp_zones(A.zpiv, A.zsoft, v, zs, zm, zh);
+        const float t = DP_MAX(zs + zm + zh, 1e-6f);
+        // tone flattened around grey (half the contrast), so the blue of the
+        // shadows stays readable in the dark parts of the picture
+        const float Ld = DP_PIV + 0.5f * (0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b - DP_PIV);
+        const float k = 0.12f / t;
+        n.r = Ld + k * (-0.55f * zs - 0.30f * zm + 0.60f * zh);
+        n.g = Ld + k * (-0.05f * zs + 0.45f * zm + 0.05f * zh);
+        n.b = Ld + k * ( 0.75f * zs - 0.30f * zm - 0.85f * zh);
+    } else if (A.show) {   // pixels outside the selection turn grey
         n.r = DP_PIV + v * (c.r - DP_PIV);
         n.g = DP_PIV + v * (c.g - DP_PIV);
         n.b = DP_PIV + v * (c.b - DP_PIV);

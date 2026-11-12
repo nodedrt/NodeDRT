@@ -190,10 +190,14 @@ private:
         if (name.size() > 6 && name.compare(name.size() - 6, 6, "_reset") == 0) {
             if (resetGroupOf(name)) return;
         }
-        // DENSITY PRO : Show Mask suit le reglage que l'on touche (comme dans
-        // RELIEF) - une couleur ou sa Range : cette couleur seule ; une zone :
-        // cette zone ; Pivot / Softness : les trois zones ; Show Mask lui-meme :
-        // tous les reglages actifs.
+        // DENSITY : deux cases "intelligentes", comme dans RELIEF.
+        //   Show Zones  : la zone du curseur de zone que l'on touche ; la case
+        //                 elle-meme, Pivot ou Softness : la carte des 3 zones.
+        //   Show Colors : la couleur (ou sa Range) que l'on touche ; la case
+        //                 elle-meme ou Saturation Focus : toutes les couleurs
+        //                 actives.
+        // Les deux cases s'excluent : en cocher une decoche l'autre. Le
+        // reglage touche est retenu dans dp_mask_focus (secret).
         if (args.reason == OFX::eChangeUserEdit && name.compare(0, 3, "dp_") == 0) {
             if (OFX::Param* fp = paramByName("dp_mask_focus")) {
                 static const char* const hues[6] = {"red", "yellow", "green", "cyan", "blue", "magenta"};
@@ -204,9 +208,16 @@ private:
                 if (k == "sh") f = 6;
                 else if (k == "mid") f = 7;
                 else if (k == "hi") f = 8;
-                else if (k == "zpiv" || k == "zsoft") f = 9;
-                else if (k == "show") f = -1;
+                else if (k == "zpiv" || k == "zsoft" || k == "show_zones") f = 9;
+                else if (k == "show" || k == "focus") f = 10;
                 if (f != -2) static_cast<OFX::DoubleParam*>(fp)->setValue((double)f);
+            }
+            if (name == "dp_show" || name == "dp_show_zones") {
+                OFX::Param* me = paramByName(name.c_str());
+                OFX::Param* other = paramByName(name == "dp_show" ? "dp_show_zones" : "dp_show");
+                bool on = false;
+                if (me) static_cast<OFX::BooleanParam*>(me)->getValue(on);
+                if (on && other) static_cast<OFX::BooleanParam*>(other)->setValue(false);
             }
         }
         if (name != kLutChoice || !_lutChoice || !_lutName) {
@@ -253,7 +264,7 @@ private:
     {
         TextureSettings s;
         if (!paramByName("tx_gr_on")) return s;
-        s.grainOn = bln("tx_gr_on", t, false);
+        s.grainOn = bln("tx_gr_on", t, false) && !bln("tx_gr_bypass", t, false);
         s.gauge = chc("tx_gr_gauge", t, 1);
         s.amount = (float)dbl("tx_gr_amt", t, 1.0);
         s.size = (float)dbl("tx_gr_size", t, 1.0);
@@ -278,14 +289,20 @@ private:
         DensitySettings s;
         if (!paramByName("dp_bypass")) return s;
         s.on = !bln("dp_bypass", t, false);
-        s.show = bln("dp_show", t, false);
-        s.maskFocus = (int)std::lround(dbl("dp_mask_focus", t, -1.0));
-        s.zone[0] = (float)dbl("dp_sh", t, 0.0);
-        s.zone[1] = (float)dbl("dp_mid", t, 0.0);
-        s.zone[2] = (float)dbl("dp_hi", t, 0.0);
+        // Les cases : Show Zones montre une zone (6..8) ou la carte (9),
+        // Show Colors une couleur (0..5) ou toutes les couleurs actives (10).
+        // Le dernier reglage touche n'est suivi que s'il est du bon cote.
+        const bool showZ = bln("dp_show_zones", t, false), showC = bln("dp_show", t, false);
+        const int mf = (int)std::lround(dbl("dp_mask_focus", t, -1.0));
+        s.show = showZ || showC;
+        s.maskFocus = showZ ? ((mf >= 6 && mf <= 9) ? mf : 9) : ((mf >= 0 && mf <= 5) || mf == 10 ? mf : 10);
+        const bool zonesOn = !bln("dp_zones_bypass", t, false), coloursOn = !bln("dp_colors_bypass", t, false);
+        s.zone[0] = zonesOn ? (float)dbl("dp_sh", t, 0.0) : 0.0f;
+        s.zone[1] = zonesOn ? (float)dbl("dp_mid", t, 0.0) : 0.0f;
+        s.zone[2] = zonesOn ? (float)dbl("dp_hi", t, 0.0) : 0.0f;
         static const char* const hn[6] = {"dp_red", "dp_yellow", "dp_green", "dp_cyan", "dp_blue", "dp_magenta"};
         static const char* const rn[6] = {"dp_red_rng", "dp_yellow_rng", "dp_green_rng", "dp_cyan_rng", "dp_blue_rng", "dp_magenta_rng"};
-        for (int k = 0; k < 6; ++k) { s.hue[k] = (float)dbl(hn[k], t, 0.0); s.range[k] = (float)dbl(rn[k], t, 1.0); }
+        for (int k = 0; k < 6; ++k) { s.hue[k] = coloursOn ? (float)dbl(hn[k], t, 0.0) : 0.0f; s.range[k] = (float)dbl(rn[k], t, 1.0); }
         s.boost = (float)dbl("dp_boost", t, 0.0);
         s.focus = (float)dbl("dp_focus", t, 40.0);
         s.zpiv = (float)dbl("dp_zpiv", t, 0.0);
