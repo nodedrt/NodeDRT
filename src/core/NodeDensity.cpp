@@ -164,11 +164,11 @@ void densityPlan(const DensitySettings& s, int W, int H, DensityPlan& plan)
     a.blurR = (sigma < 0.3f || W < 2 || H < 2) ? 0
                                                : std::max(1, (int)std::floor(std::sqrt(12.0f * sigma * sigma / 3.0f + 1.0f) / 2.0f));
     // v2: Mask Smoothness of each sub-section: the selection field blurred over
-    // 10 px (slider at 0, the default) to 40 px (at 1), of a 1080 frame - on
+    // 10 px (slider at 0, the default) to 60 px (at 1), of a 1080 frame - on
     // the half-resolution grid, hence the / 2.
     auto fieldRadius = [&](float sm) {
         sm = std::min(std::max(sm, 0.0f), 1.0f);
-        const float sg = 0.5f * (10.0f + 30.0f * sm) * (float)H / 1080.0f;
+        const float sg = 0.5f * (10.0f + 50.0f * sm) * (float)H / 1080.0f;
         return (sg < 0.3f || W < 2 || H < 2) ? 0 : std::max(1, (int)std::floor(std::sqrt(12.0f * sg * sg / 3.0f + 1.0f) / 2.0f));
     };
     a.fieldR = fieldRadius(s.colorsSmooth);
@@ -201,6 +201,19 @@ void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, flo
             dpParallelRows(BH, [&](int y) {
                 const float* s = &B[(size_t)y * BW * 3];
                 float* d = &T[(size_t)y * BW * 3];
+                if (r > 8) {   // running sums over runs of 64 pixels (as dp_boxh_run)
+                    for (int x0 = 0; x0 < BW; x0 += SEG)
+                        for (int c = 0; c < 3; ++c) {
+                            const int x1 = std::min(x0 + SEG, BW);
+                            float acc = 0.0f;
+                            for (int x = x0 - r; x <= x0 + r; ++x) acc += s[dpClampi(x, 0, BW - 1) * 3 + c];
+                            for (int x = x0; x < x1; ++x) {
+                                d[x * 3 + c] = acc * inv;
+                                acc += s[std::min(x + r + 1, BW - 1) * 3 + c] - s[std::max(x - r, 0) * 3 + c];
+                            }
+                        }
+                    return;
+                }
                 for (int x = 0; x < BW; ++x)
                     for (int c = 0; c < 3; ++c) {
                         float acc = 0.0f;

@@ -61,6 +61,10 @@ def vector(color, key, dens, sat, hs, ht):
         ]}
 
 
+# Bulles d'aide : courtes et simples, une phrase (v2). Appliquees a la fin du
+# fichier sur chaque reglage, elles remplacent les textes longs du DCTL.
+SHORT_HINTS = {'in_gamut': 'Colour space of your footage.', 'in_oetf': 'Log curve of your footage.', 'display_encoding_preset': 'Your monitor or delivery format.', 'tn_Lp': 'Peak brightness of the display, in nits.', 'tn_gb': 'Brightens middle grey in HDR.', 'pt_hdr': 'How much colour bright HDR highlights keep.', 'out_clamp': 'Keeps the output inside the display range.', 'wb_preset': 'Light source of the shot.', 'wb_kelvin': 'Colour temperature of the light.', 'wb_temp': 'Warmer or cooler.', 'wb_tint': 'Greener or more magenta.', 'wb_bypass': 'Turns the white balance off.', '_cwp': 'Colour of white in the final image.', '_cwp_rng': 'How far down the creative white reaches.', 'cw_bypass': 'Turns the creative white off.', 'white_reset': 'Resets the White section.', 'look_preset': 'Film look.', 'look_intensity': 'Amount of the look.', 'look_bypass': 'Turns the look off.', 'print_tone_sel': 'Colour cast of the print.', 'tone_intensity': 'Amount of the toning.', 'tone_bypass': 'Turns the toning off.', 'tonescale_preset': 'Contrast curve.', 'ts_intensity': 'Amount of the contrast curve.', 'tone_curve_bypass': 'Uses the curve of the look.', 'look_reset': 'Resets the Look section.', 'col_chroma': 'Overall saturation.', 'col_ptw': 'How fast bright colours turn white.', 'col_onset': 'Where colours start turning white.', 'col_weight': 'Makes saturated colours darker and richer.', 'col_dens': 'Darker shadows, brighter highlights, in colour.', 'col_bypass': 'Turns the Color section off.', 'color_reset': 'Resets the Color section.', 'dp_boost': 'Makes every colour slider stronger.', 'dp_bypass': 'Turns Density off.', 'dp_hi': 'Richer or lighter colours in the highlights.', 'dp_mid': 'Richer or lighter colours in the midtones.', 'dp_sh': 'Richer or lighter colours in the shadows.', 'dp_zpiv': 'Moves the three zones darker or brighter.', 'dp_zsoft': 'How much the zones blend into each other.', 'dp_zones_smooth': 'Softens the zone mask in the image.', 'dp_show_zones': 'Shows the zones. Touch a zone slider to see only that zone.', 'dp_zones_bypass': 'Turns the zones off.', 'dp_zones_reset': 'Resets the zones.', 'dp_red': 'Richer or lighter reds.', 'dp_yellow': 'Richer or lighter yellows.', 'dp_green': 'Richer or lighter greens.', 'dp_cyan': 'Richer or lighter cyans.', 'dp_blue': 'Richer or lighter blues.', 'dp_magenta': 'Richer or lighter magentas.', 'dp_red_rng': 'How wide the red selection is.', 'dp_yellow_rng': 'How wide the yellow selection is.', 'dp_green_rng': 'How wide the green selection is.', 'dp_cyan_rng': 'How wide the cyan selection is.', 'dp_blue_rng': 'How wide the blue selection is.', 'dp_magenta_rng': 'How wide the magenta selection is.', 'dp_focus': 'Right: only strong colours. Left: soft colours too.', 'dp_colors_smooth': 'Softens the colour mask in the image.', 'dp_show': 'Shows the colour mask. Touch a colour to see only that one.', 'dp_colors_bypass': 'Turns the colours off.', 'density_reset': 'Resets the colours.', 'trim_crv': 'Shows the curve on the image. Same as Curve View in Scopes.', 'trim_con': 'More or less contrast.', 'trim_piv': 'Brightness the contrast turns around.', 'trim_ovl': 'Punchier upper midtones.', 'trim_blift': 'Lifts the blacks.', 'trim_blift_pv': 'How high the black lift reaches.', 'trim_wroll': 'Brings the whites down softly.', 'trim_wroll_pv': 'Where the white roll-off starts.', 'trim_sh': 'Opens or closes the shadows.', 'trim_con_bypass': 'Turns the Contrast trims off.', 'trim_hp': 'How much colour the highlights keep.', 'trim_hd': 'Darker, richer bright colours.', 'trim_hs': 'Saturation of the highlights.', 'trim_br': 'Brightness of saturated colours.', 'trim_hl_bypass': 'Turns the Highlights trims off.', 'trim_mp': 'Saturation of the midtones.', 'trim_mp_pv': 'Brightness the midtone saturation centres on.', 'trim_mid_bypass': 'Turns the Midtones trims off.', 'trim_reset': 'Resets the Trims section.', 'skin_zones': 'Shows the skin selection in cyan.', 'skin_mhc': 'Slides the selection towards yellow or pink.', 'skin_mhue': 'Wider or narrower range of skin hues.', 'skin_msl': 'Right: pale skin too. Left: drops beige walls.', 'skin_msx': 'Right: strong skin colours too. Left: drops reds and oranges.', 'skin_mdk': 'How far into the dark the selection goes.', 'skin_soft': 'Softer or harder colour edges of the selection.', 'skin_medge': 'Blurs the selection in the image.', 'skin_mask_reset': 'Resets the mask.', 'trim_skin': 'Brings skin onto the skin tone line.', 'trim_skin_sat': 'Skin saturation.', 'skin_col_bypass': 'Turns Skin Color off.', 'skin_hi': 'Brightness of skin highlights.', 'skin_mid': 'Brightness of skin midtones.', 'skin_sh': 'Brightness of skin shadows.', 'skin_piv': 'Moves the skin zones darker or brighter.', 'skin_light_bypass': 'Turns Skin Light off.', 'skin_reset': 'Resets the Skin section.', 'tx_gr_on': 'Adds film grain.', 'tx_gr_gauge': 'Film size: smaller film, bigger grain.', 'tx_gr_amt': 'Amount of grain.', 'tx_gr_size': 'Size of the grain.', 'tx_gr_col': '0: black and white grain. 1: film colour grain.', 'tx_gr_sh': 'Grain in the shadows.', 'tx_gr_md': 'Grain in the midtones.', 'tx_gr_hi': 'Grain in the highlights.', 'tx_gr_anim': 'New grain on every frame.', 'tx_gr_seed': 'Changes the grain pattern.', 'tx_gr_bypass': 'Turns the grain off.', 'texture_reset': 'Resets the Texture section.', 'crv_enable': 'Shows the curve on the image. Same as Curve View in Trims.', 'crv_size': 'Size of the curve.', 'fc_overlay': 'Shows exposure in stops, in colours.', 'skin_check': 'Shows how far skin is from the skin tone line.', 'legend': 'Shows the legend of the active view.', 'credits': 'Credits and licences.'}
+
 PLUGINS = [
     dict(
         key='drt', file='NODE_DRT.dctl',
@@ -141,8 +145,6 @@ PLUGINS = [
             # calculee par le plugin sur l'image log d'entree, avant Texture et
             # avant le rendu. Tout a 0 : le plugin rend exactement comme avant.
             {'name': 'grp_density', 'label': 'Density', 'open': False, 'params': [
-                TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
-                   hint='Overall strength of all Density sliders: 0 = x1, 100 = x2, with a soft ceiling of 1.75 stops so a colour never goes to black.'),
                 TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 10.0, 1.0),
                 TP('dp_bypass', 'Bypass Density', 'bool', 0,
                    hint='Skips the whole section. Its settings are kept.'),
@@ -194,6 +196,8 @@ PLUGINS = [
                        hint='Width of the colour zone. 1 = precise (full effect within 6 deg of hue, fades out at 20 deg). Lower = even narrower, higher = wider, up to the neighbouring colours at 4.'),
                     TP('dp_focus', 'Saturation Focus', 'float', 40.0, 0.0, 100.0, 0.1,
                        hint='0 = also acts on softly coloured areas, 100 = only on strongly saturated colours. Neutrals never move.'),
+                    TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
+                       hint='Overall strength of all Density sliders: 0 = x1, 100 = x2, with a soft ceiling of 1.75 stops so a colour never goes to black.'),
                     TP('dp_colors_smooth', 'Mask Smoothness', 'float', 0.0, 0.0, 1.0, 0.01,
                        hint='Softness of the colour selection in the picture, like the blur of a qualifier: blurred over 10 px at 0 (the default, already smooth) up to 40 px at 1, of a 1080 frame. An object is never cut into pieces, no edge shows a step, and a neutral next to a coloured object never moves.'),
                     TP('dp_show', 'Show Colors', 'bool', 0,
@@ -205,6 +209,7 @@ PLUGINS = [
                 ]),
             ]},
             {'name': 'grp_trims', 'label': 'Trims', 'open': False, 'params': [
+                TP('trim_crv', 'Curve View', 'bool', 0),
                 SUB('grp_trims_con', 'Contrast', [
                     P('trim_con', 'Log Contrast'), P('trim_piv', 'Pivot'),
                     P('trim_ovl', 'Overlay'),
@@ -311,3 +316,18 @@ PLUGINS = [
     ),
 ]
 
+
+
+def _apply_short_hints(items):
+    for it in items:
+        if isinstance(it, dict) and it.get('sub'):
+            _apply_short_hints(it['params'])
+        elif isinstance(it, dict) and it.get('name') in SHORT_HINTS:
+            it['hint'] = SHORT_HINTS[it['name']]
+        elif isinstance(it, str) and False:
+            pass
+
+
+for _pl in PLUGINS:
+    for _g in _pl['groups']:
+        _apply_short_hints(_g['params'])

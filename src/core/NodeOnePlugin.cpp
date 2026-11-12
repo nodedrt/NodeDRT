@@ -186,6 +186,18 @@ private:
 
     void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) override
     {
+        // CURVE VIEW : la case de Trims et celle de Scopes sont la MEME : cocher
+        // ou decocher l'une met l'autre a la meme valeur (Reset compris).
+        if ((name == "trim_crv" || name == "crv_enable") && !_crvSync) {
+            OFX::Param* a = paramByName(name.c_str());
+            OFX::Param* b = paramByName(name == "trim_crv" ? "crv_enable" : "trim_crv");
+            if (a && b) {
+                bool v = false, w = false;
+                static_cast<OFX::BooleanParam*>(a)->getValue(v);
+                static_cast<OFX::BooleanParam*>(b)->getValue(w);
+                if (v != w) { _crvSync = true; static_cast<OFX::BooleanParam*>(b)->setValue(v); _crvSync = false; }
+            }
+        }
         // Tout bouton dont le nom finit par _reset remet son propre groupe a zero.
         if (name.size() > 6 && name.compare(name.size() - 6, 6, "_reset") == 0) {
             if (resetGroupOf(name)) return;
@@ -208,8 +220,10 @@ private:
                 if (k == "sh") f = 6;
                 else if (k == "mid") f = 7;
                 else if (k == "hi") f = 8;
-                else if (k == "zpiv" || k == "zsoft" || k == "show_zones" || k == "zones_smooth") f = 9;
-                else if (k == "show" || k == "focus" || k == "colors_smooth") f = 10;
+                else if (k == "zpiv" || k == "zsoft" || k == "show_zones") f = 9;
+                else if (k == "show") f = 10;
+                // Mask Smoothness, Saturation Focus, Global Strength : la vue reste
+                // celle du dernier curseur touche, pour voir ce qu'ils font sur elle.
                 if (f != -2) static_cast<OFX::DoubleParam*>(fp)->setValue((double)f);
             }
             if (name == "dp_show" || name == "dp_show_zones") {
@@ -473,6 +487,7 @@ private:
     std::vector<OFX::Param*> _params;
     OFX::ChoiceParam* _lutChoice = nullptr;
     OFX::StringParam* _lutName = nullptr;
+    bool _crvSync = false;   // Curve View : synchronisation Trims <-> Scopes en cours
     std::vector<float> _lutTmp;
     MetalScratch* _scratch = nullptr;
 };
