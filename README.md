@@ -1,12 +1,15 @@
-# Node DRT
+# Node DRT v2
 
-A display rendering transform for DaVinci Resolve on macOS, built as an OpenFX
-plugin. Free software under the **GNU General Public License, version 3 or
-later** — all of it, not part of it.
+**A film-look display rendering transform (DRT) for DaVinci Resolve Studio on
+macOS**, built as an OpenFX plugin. One node at the end of your tree turns
+camera log into a finished, screen-ready image.
 
-This repository is the **complete corresponding source** for the
-`NodeDRT.ofx.bundle` that is distributed. Nothing has been left out: what is
-here builds the binary that ships, with the same compiler flags.
+**Get the built, signed plugin:** <https://node-drt.lemonsqueezy.com>
+
+Free software under the **GNU General Public License, version 3 or later** —
+all of it, not part of it. This repository is the **complete corresponding
+source** of the `NodeDRT2.ofx.bundle` that is distributed: what is here builds
+the binary that ships, with the same compiler flags.
 
 ---
 
@@ -23,9 +26,8 @@ Node DRT — this OpenFX plugin, built from that DCTL
 ```
 
 Because the middle step modifies Jed Smith's work, his licence covers
-everything downstream of it, this plugin included. That is not a technicality
-worked around here — it is the condition OpenDRT was given away under, and it
-travels on.
+everything downstream of it, this plugin included. That is the condition
+OpenDRT was given away under, and it travels on.
 
 **The rendering itself is his work.** The tonescale, the rendering space, the
 purity compression, the brilliance and the hue modules come from OpenDRT. He is
@@ -34,20 +36,48 @@ with him. <https://github.com/jedypod/open-display-transform>
 
 ---
 
+## What it does
+
+- **Input**: 16 camera gamuts and 10 log curves (Sony, ARRI, RED, Panasonic,
+  Fujifilm, Blackmagic, ACES…). **Output**: Rec.709, sRGB, Display P3, HDR PQ
+  and HLG. 18 % grey lands at the same level on every look.
+- **Seven film looks**, parameter sets fitted against spectral simulations of
+  negative and print stocks (spektrafilm). In v2 their curves have a continuous
+  shoulder into white, more contrast at grey and denser blacks.
+- **Color**: chroma, path to white, subtractive saturation, colour density.
+- **Density**: print-style density by zone (shadows, midtones, highlights) and
+  by colour (six hues). The selection is a field blurred in the picture, like a
+  qualifier, and re-weighted by each pixel's own colour, so edges never step
+  and neutrals never move. Smart Show Zones / Show Colors views.
+- **Trims**: Log Contrast, Overlay, Black Lift and White Roll-Off with their
+  pivots, Shadows; Highlights (purity, density, saturation, brilliance); Mid
+  Purity. Curve View draws the curve over the picture.
+- **Skin**: a qualifier-style skin matte (hue centre and width, saturation
+  limits, shadows reach, softness, edge blur, Show Mask), Skin Line, Skin
+  Saturation, and zone-by-zone face lighting.
+- **Grain**: film grain for 65, 35, 16 and 8mm as seen on a 4K scan.
+- **Instruments**: False Color (stops), Skin Check, Curve View.
+- **Never breaks the picture**: every control is swept across its range on
+  ramps and footage — no NaN, no gradient stepping backwards, no colour specks
+  in the blacks. GPU and CPU agree to under 0.1 of a 10-bit code value.
+
+Metal on Apple Silicon and Intel (universal binary). macOS 11+, DaVinci
+Resolve **Studio** 18+ (the free Resolve does not load OpenFX plugins).
+Node DRT v2 has its own plugin identifier and installs **next to** Node DRT 1.x.
+
+---
+
 ## Building
 
-macOS, Xcode Command Line Tools (`xcode-select --install`). Python 3 optional.
+macOS, Xcode Command Line Tools (`xcode-select --install`), Python 3.
 
 ```sh
-./build.sh            # build build/NodeDRT.ofx.bundle
-./build.sh install    # ...and copy it to /Library/OFX/Plugins
+./build.sh            # build build/NodeDRT2.ofx.bundle
+./build.sh install    # ...and copy it to /Library/OFX/Plugins (asks for your password)
 ./build.sh clean
 ```
 
-Restart Resolve. The effect appears under **OpenFX > Node_One > Node DRT**.
-
-`make` alone works too. The build is universal (arm64 + x86_64) and falls back
-to this Mac's architecture if the other SDK slice is missing.
+Restart Resolve. The effect appears under **OpenFX > Node_One > Node DRT v2**.
 
 ---
 
@@ -59,118 +89,16 @@ to this Mac's architecture if the other SDK slice is missing.
 | `tools/dctl2ofx.py` | turns the DCTL into `gen/drt.cpp` (CPU) and `gen/drt.metal` (GPU) |
 | `tools/ui_layout.py` | the Inspector layout, group order and tooltips |
 | `gen/` | generated; derived from the DCTL, never edited by hand |
-| `src/core/` | the OFX plugin layer: parameters, render, Metal backend, LUT stage |
-| `src/core/NodeTexture*` | the Texture stage (grain, halation): shared maths, CPU path, Metal kernels |
-| `tests/` | texture checks: `texture_test.cpp` (CPU, any OS), `texture_gpu_test.mm` (GPU vs CPU on a Mac) |
-| `src/bundle_drt_main.cpp` | plugin registration |
+| `src/core/NodeOnePlugin.cpp` | the OFX layer: parameters, render, smart views, resets |
+| `src/core/NodeOneMetal.mm` | the Metal backend: specialised kernels, skin pre-pass, stages |
+| `src/core/NodeDensity*` | the Density stage: shared maths, CPU path, Metal kernels |
+| `src/core/NodeTexture*` | the Grain stage: shared maths, CPU path, Metal kernels |
+| `tests/` | GPU vs CPU checks (`gpu_cpu_test.mm`, `density_gpu_test.mm`, `texture_gpu_test.mm`) and benchmarks |
 | `openfx/` | the OpenFX headers and support library (ASWF, BSD 3-Clause), vendored |
-| `licenses/` | every licence and attribution that applies |
+| `licenses/` | every licence and attribution that applies, and `CHANGELOG.txt` |
 
-**Edit the DCTL, not `gen/`.** One file describes the transform; the CPU and GPU
-paths are generated from it, so they cannot disagree — a whole class of bug that
-simply does not exist here.
-
----
-
-## The plugin
-
-80 controls in eight groups: Input / Output, White, Look / Toning / Tone,
-Color, Trims, Skin, Texture, Scopes. Groups are
-split into collapsible sub-sections, each with its own bypass, and every
-creative group has a one-click Reset.
-
-- **Skin Mask** (version 1.2, 28 October 2026): a *Mask* sub-section in
-  Skin with three controls, all at 0 by default (mask identical to the bit):
-  *Mask Hue Range* widens the key towards yellow-orange and pink-magenta (skin
-  shifted by tungsten, LED, sunset light); *Mask Recovery* takes back altered
-  skin - pale or washed out, very saturated, or deep in shadow (two stops
-  further into the dark); *Mask Edge Softness* feathers the mask in the
-  picture, up to three times its radius, with two extra sample rings so a
-  sharp outline does not echo. All three feed Skin Line, Skin Saturation and
-  the Light zones. Mask Softness, Show Zones and a Bypass Mask (back to the
-  measured mask without touching the sliders) sit in the same sub-section.
-- **False Color Stops** (version 1.2, 28 October 2026): exposure in stops
-  from 18 % grey, on the true scene luminance - the input decoded by its Log
-  Curve, Y of its Gamut - before white balance and the look, so it reads what
-  the camera recorded, the same on every look and every colour. Fifteen zones
-  of exactly one stop, -7 to +7, each centred on its whole stop (boundaries
-  at the half stops), with a numbered legend along the bottom painted by the
-  same function as the picture. Checked: a grey 0.49 stop from a whole stop
-  lands in that stop's zone, 0.51 in the next. (It replaces the former
-  Color-Analyzer reading, which used the luma of the log code values: exact on
-  greys, but up to 0.7 stop off on saturated colours.)
-- **Texture** (version 1.1, 28 October 2026): film **Grain** and
-  **Halation**, two sub-sections of one group, both off by default — with them
-  off the plugin renders bit for bit as before.
-  - *Grain*: 65mm or 35mm. Strength per colour layer against density,
-    correlation between the layers and grain size per gauge are measured;
-    Amount, Size, Color (mono to colourful), Shadows / Midtones /
-    Highlights, Animated, Seed. The size follows the frame height, so a
-    proxy or HD render looks like the UHD one.
-  - *Halation*: the red-orange glow around bright lights. Source threshold,
-    radial spread and layer weights are measured; Strength, Size, Threshold,
-    Softness, Warmth. Softness diffuses the halo with a normalised gaussian:
-    the halo's total light is kept, only its profile opens into a smooth glow. Only light from brighter surroundings is added, so a flat
-    highlight keeps its colour and the halo spreads out of it.
-  - Both run in a native stage (`src/core/NodeTexture*`, CPU and Metal, the
-    same formulas compiled twice) on the log image before the DCTL: decode the
-    input log curve, add halation then grain, re-encode only the change.
-    GPU and CPU agree to 3e-6.
-- **Seven film looks**, each a set of parameter values fitted numerically
-  against a spectral simulation of one negative stock printed on one print
-  stock, measured over several thousand colours - refitted on 9 October 2026
-  with the current engine, under constraints that hold 18% grey exactly and
-  forbid any gradient, neutral, coloured or neon, from stepping backwards.
-- **Sixteen input gamuts** and **ten log curves**.
-- **SDR and HDR** output: Rec.1886, sRGB, Display P3, Rec.2100 PQ and HLG.
-- 18 % grey lands at the same level on all eight looks, so changing look does
-  not move your camera exposure.
-- **Skin**, its own section: Skin Line pulls skin onto the vectorscope skin
-  tone line (the line Skin Check reads) with luminance held exactly; Skin
-  Saturation doses skin colour with the subtractive saturation model.
-  Highlights, Midtones and Shadows relight the face zone by zone, each up to
-  one stop; Zone Pivot places the three zones on the face you are grading,
-  Mask Softness sets how gradually the skin mask ends, and Show Zones paints
-  the zones with a legend of their limits in stops. The three lights are
-  exposures on scene light, before the curve, so a brightened highlight rolls
-  into the look's shoulder instead of clipping, and they are monotone whatever
-  the settings: a gradient across a face never steps backwards. Skin is found
-  on the scene colour, so the selection does not move when the exposure
-  changes.
-- **Look Intensity** is exactly linear: between 0 and 1 the picture is
-  rendered with the full look and with Default and the two outputs are mixed,
-  so 0.50 is precisely half way, pixel by pixel. In between, rendering costs
-  twice as much; at 0 and 1 it costs the same as before.
-- **Tonescale Intensity**: doses the curve picked in the Tonescale menu against
-  the look's own curve by mixing the outputs of the two curves, so it is
-  linear too.
-- **No control breaks the picture** (audit of 26 October 2026). Every slider
-  was swept across its whole range on real footage and on dense colour ramps:
-  no NaN, no gradient that steps backwards, no isolated kink.
-  - The skin mask (Skin Line, Skin Saturation, Skin Light) is **smoothed in
-    the image**, like a professional qualifier: each pixel averages the mask
-    over 17 samples (radius = height/360, so the same size at any
-    resolution), weighted by scene-luminance similarity so it follows the
-    edges of the picture. Grain, pores and blemishes no longer get a dose
-    different from their neighbours. Its hue window is centred on skin as it
-    is in the SCENE (measured on nine S-Log3 faces), where it is evaluated.
-  - Skin Line turns hue with a Gaussian profile: monotone for any setting,
-    no fold, no corner.
-  - Highlight Density is monotone by construction (it used to step backwards
-    above 0.7); Highlight Purity, negative Log Contrast and the OpenDRT
-    purity-compression limit no longer have an infinite slope or a corner;
-    Chroma, Mid Purity, Shadows and Highlight Saturation no longer change
-    slope where two channels cross or where a scale reaches zero.
-  - With every control at rest the render matches the previous build to
-    within 0.5/255 (most pixels to the bit).
-- **About 2.4 times faster on the GPU** (26 October 2026): pow, exp, log and
-  the cube root use the GPU's fast functions (exact IEEE handling kept for
-  zero, negatives and NaN; sin, cos and atan2 stay precise), the skin mask
-  uses constant sample directions and a polynomial atan2. Measured on 4K and
-  HD frames over every group of controls: 2.0 to 2.8 times faster, at most
-  0.13/255 from the previous build, never a non-finite value. The effect
-  accepts reduced render scales again (viewer, proxies), so Resolve no longer
-  has to compute it at full resolution.
+**Edit the DCTL, not `gen/`.** The CPU and GPU paths are generated from one
+file, so they cannot disagree.
 
 ---
 
@@ -181,10 +109,12 @@ this, and it ships inside the bundle.
 
 - **OpenDRT v1.0.1, Jed Smith, GPLv3** — the rendering engine.
 - **Film look presets** fitted against [spektrafilm](https://github.com/andreavolpato/spektrafilm)
-  references by Andrea Volpato, CC BY-SA 4.0. **No LUT data is embedded**: what
-  remains are fitted parameter values belonging to this transform.
-- **Oklab** (Bjorn Ottosson, public domain / MIT) — the colour space Skin Line
-  turns hue in, written here from the published formulas.
+  references by Andrea Volpato, CC BY-SA 4.0. **No LUT data is embedded.**
+- **Grain**: strengths and gauge ratios measured on spektrafilm's grain model;
+  overall level from Kodak's published RMS granularity.
+- **Density**: from RELIEF, by the same author, same licence.
+- **Oklab** (Bjorn Ottosson, public domain / MIT), written from the published
+  formulas.
 - **Subtractive saturation** — Nikita Petrovich, MIT.
 - **OpenFX support library** — Academy Software Foundation, BSD 3-Clause.
 - **Film stock names** are trademarks of their owners, used descriptively. See
@@ -194,11 +124,11 @@ this, and it ships inside the bundle.
 
 ## Your rights
 
-Use, study, modify and redistribute it, including commercially and including
-free of charge. The conditions are that anyone you give a binary to can obtain
-this source under the same licence, and that the notices travel with it.
+Use, study, modify and redistribute it, including commercially. The conditions
+are that anyone you give a binary to can obtain this source under the same
+licence, and that the notices travel with it.
 
-If you received a compiled `NodeDRT.ofx.bundle` and want the source, you are
+If you received a compiled `NodeDRT2.ofx.bundle` and want the source, you are
 looking at it. It is also the source referred to by the written offer inside the
 bundle, in `Contents/Resources/NOTICE-NodeDRT.txt`.
 
