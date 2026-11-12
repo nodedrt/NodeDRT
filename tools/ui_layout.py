@@ -246,17 +246,17 @@ PLUGINS = [
             {'name': 'grp_texture', 'label': 'Texture', 'open': False, 'params': [
                 SUB('grp_tex_grain', 'Grain', [
                     TP('tx_gr_on', 'Enable Grain', 'bool', 0,
-                       hint='Film grain, modelled by measurement on film renders: strength per channel against density, '
-                            'grain size per gauge, the correlation between the colour layers. Added to the log image '
+                       hint='Film grain from the physical grain model of spektrafilm (silver-halide particles per colour layer): '
+                            'strength per channel against density, grain size per gauge, independent colour layers. Added to the log image '
                             'before the display rendering, so it rolls off with the picture like real grain.'),
-                    TP('tx_gr_gauge', 'Format', 'choice', 1, options=['65mm', '35mm'],
-                       hint='Film gauge. 65mm: fine, tight grain. 35mm: the classic cinema grain, larger and more visible.'),
+                    TP('tx_gr_gauge', 'Format', 'choice', 1, options=['65mm', '35mm', '16mm', '8mm'],
+                       hint='Film gauge: the same film on a smaller frame shows bigger grain. 65mm: fine and tight. 35mm: the classic cinema grain. 16mm: documentary, clearly visible. 8mm: home movie, heavy.'),
                     TP('tx_gr_amt', 'Amount', 'float', 1.0, 0.0, 3.0, 0.01,
-                       hint='Grain strength. 1 = the base film grain for the chosen format, set for a natural, true-to-film presence.'),
+                       hint='Grain strength. 1 = the film grain as modelled for the chosen format, true to film at any resolution.'),
                     TP('tx_gr_size', 'Size', 'float', 1.0, 0.5, 2.0, 0.01,
-                       hint='Grain scale. 1 = the base grain size for the chosen format, the same at any resolution.'),
+                       hint='Grain particle size. 1 = the film as modelled; 2 = particles twice as large (coarser and stronger).'),
                     TP('tx_gr_col', 'Color', 'float', 1.0, 0.0, 2.0, 0.01,
-                       hint='0 = monochrome grain, 1 = the measured colour grain of the film, 2 = more colourful.'),
+                       hint='0 = monochrome grain, 1 = the colour grain of the film (independent colour layers), 2 = more colourful.'),
                     TP('tx_gr_sh', 'Shadows', 'float', 1.0, 0.0, 2.0, 0.01,
                        hint='Grain amount in the shadows (below about 1 stop under middle grey).'),
                     TP('tx_gr_md', 'Midtones', 'float', 1.0, 0.0, 2.0, 0.01,
@@ -280,10 +280,10 @@ PLUGINS = [
         hidden=['credits', 'trial_mark'],
         about=['NODE_DRT by Samuel Drouin.',
                'Modified OpenDRT v1.0.1 by Jed Smith, licensed GPLv3 — github.com/jedypod/open-display-transform. The rendering engine is his work; this plugin is a modified version and is distributed under the same licence, source included.',
-               'Look presets fitted against spektrafilm references by Andrea Volpato, CC BY-SA 4.0 — github.com/andreavolpato/spektrafilm. No LUT data is embedded; what remains are fitted parameter values.',
+               'Looks 1-7 (1.3): real prints - negative, then print paper - computed with spektrafilm by Andrea Volpato (GPLv3, github.com/andreavolpato/spektrafilm) and carried as tables in the plugin (tools/film/gen_film_tables.py rebuilds them). The DCTL alone keeps the earlier parametric looks.',
                'Subtractive saturation model by Nikita Petrovich, MIT licence — the Chroma control in the Color group. See MIT-SubtractiveSaturation.txt.',
                'Skin Line turns hue in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.',
-               'Texture (Grain): computed by the plugin on the log image before the display rendering. Grain is a model fitted by measurement on film-emulation renders - curves, kernels and weights only; no code or data of another product is included.',
+               'Texture (Grain, 1.3): computed by the plugin on the log image before the display rendering, from the grain model of spektrafilm (Andrea Volpato, GPLv3), measured per gauge at the UHD pixel pitch. No code or data of another product is included.',
                'Density Pro: from RELIEF by Samuel Drouin - density by zone and by colour, with hue windows in Oklab by Bjorn Ottosson (public domain / MIT), written from the published formulas.',
                'OpenFX support library: Academy Software Foundation, BSD 3-Clause.'],
     ),

@@ -79,6 +79,14 @@ if ! build/metal_check gen/drt.metal gen/texture.metal gen/density.metal 2>&1 | 
   echo "METAL CHECK FAILED — see $LOG"; exit 1
 fi
 
+# Film print tables of the 7 looks (Node DRT 1.3): carried in the bundle.
+if [ -f resources/film/film_tables.bin ]; then
+  mkdir -p build/NodeDRT.ofx.bundle/Contents/Resources/Film
+  cp resources/film/film_tables.bin build/NodeDRT.ofx.bundle/Contents/Resources/Film/
+else
+  echo "  note: resources/film/film_tables.bin missing - the looks fall back to the parametric versions"
+fi
+
 step "4/4  Signing (ad-hoc)"
 codesign --force --deep --sign - build/NodeDRT.ofx.bundle >> "$LOG" 2>&1 \
   || { echo "codesign failed"; exit 1; }

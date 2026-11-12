@@ -25,6 +25,7 @@
 #include "NodeTexture.h"
 #include "texture_metal_src.h"
 #include "NodeDensity.h"
+#include "NodeFilm.h"
 #include "density_metal_src.h"
 
 #if !__has_feature(objc_arc)
@@ -169,6 +170,13 @@ std::string specKey(id<MTLDevice> dev, const PluginDef* def, const void* params,
     if (skinPrepass >= 0) {
         key += "|SKINPRE=" + std::to_string(skinPrepass);
         if (macros) macros[@"NODEONE_SKIN_PREPASS"] = [NSString stringWithFormat:@"%d", skinPrepass];
+    }
+    {   // film print tables: their presence is fixed for the session
+        int fn = 0; unsigned long fb = 0;
+        if (filmTablesHalf(fn, fb)) {
+            key += "|FILM";
+            if (macros) macros[@"NODEONE_FILM_OK"] = @"1";
+        }
     }
     if (skinFeat > 0) {
         key += "|SKINFEAT=" + std::to_string(skinFeat);
@@ -357,12 +365,32 @@ namespace {
 // Le noyau est minuscule et fixe, donc compile une fois et garde. S'il echoue,
 // on ne sonde pas - la mesure rendra simplement "rien d'exploitable" au lieu de
 // tomber.
+// FILM PRINT TABLES on this GPU (11 MB, float16), uploaded once per device.
+// nil with n = 0 when the plugin carries no tables.
+id<MTLBuffer> filmBuffer(id<MTLDevice> dev, int& n)
+{
+    static std::mutex m;
+    static std::map<unsigned long long, id<MTLBuffer>> cache;
+    unsigned long bytes = 0;
+    const void* data = filmTablesHalf(n, bytes);
+    if (!data || !dev) { n = 0; return nil; }
+    std::lock_guard<std::mutex> lock(m);
+    auto it = cache.find(dev.registryID);
+    if (it != cache.end()) return it->second;
+    id<MTLBuffer> b = [dev newBufferWithBytes:data length:bytes options:MTLResourceStorageModeShared];
+    if (!b) { n = 0; return nil; }
+    cache[dev.registryID] = b;
+    return b;
+}
+
 // Encodes one stage: input buffer -> output buffer, through that stage's kernel.
 void encodeStage(id<MTLCommandBuffer> cb, id<MTLComputePipelineState> pso, const void* params, size_t paramsSize,
                  id<MTLBuffer> in, int inRowFloats, id<MTLBuffer> out, int outRowFloats, int W, int H, int flipY,
                  id<MTLBuffer> aux = nil, NSUInteger outOffset = 0)
 {
-    KernelDims d = {W, H, inRowFloats, outRowFloats, flipY, 0, 0, 0};
+    int filmN = 0;
+    id<MTLBuffer> film = filmBuffer(pso.device, filmN);
+    KernelDims d = {W, H, inRowFloats, outRowFloats, flipY, filmN, 0, 0};
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBytes:params length:paramsSize atIndex:0];
@@ -370,6 +398,7 @@ void encodeStage(id<MTLCommandBuffer> cb, id<MTLComputePipelineState> pso, const
     [enc setBuffer:out offset:outOffset atIndex:2];
     [enc setBytes:&d length:sizeof(d) atIndex:3];
     [enc setBuffer:(aux ? aux : in) offset:0 atIndex:4];   // skin pre-pass values (unused otherwise)
+    [enc setBuffer:(film ? film : in) offset:0 atIndex:5]; // film print tables (filmN = 0: none)
     const NSUInteger tw = pso.threadExecutionWidth;
     const NSUInteger th = MAX((NSUInteger)1, pso.maxTotalThreadsPerThreadgroup / tw);
     const MTLSize tg = MTLSizeMake(tw, MIN(th, (NSUInteger)8), 1);

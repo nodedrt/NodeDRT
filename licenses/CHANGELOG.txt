@@ -1,3 +1,37 @@
+NODE_DRT 1.3 — what changed, and where it comes from
+====================================================
+
+Performance (same picture)
+  - Metal kernels specialised to the settings in use (menus, checkboxes,
+    sliders at exactly 0 or 1): default UHD render 57 -> 8 ms on an M2 Pro.
+  - Skin mask samples computed once per pixel (GPU pre-pass): 115 -> 17 ms.
+  - Grain noise drawn once per pixel (threadgroup memory), cached tables.
+
+Looks 1-7: real prints
+  Each look renders through a print: negative, then paper, computed with
+  spektrafilm (Andrea Volpato, GPLv3): Vision3 250D / 2383, Vision3 500T /
+  2383, Vision3 250D / 2393, Portra 400 / Endura, Ektar 100 / Ultra Endura,
+  Pro 400H / Crystal Archive, Gold 200 / Supra Endura. Darkroom choices of
+  this plugin: negative developed slightly longer (density curve x1.06), DIR
+  couplers x1.15, print flare 2 %, paper white = display white, grey printed
+  neutral by the printer lights, grey placed where Default places it, the top
+  of the print fading neutral into the paper. One 65^3 table per look, in the
+  bundle (Resources/Film); tools/film/gen_film_tables.py rebuilds them.
+  HDR: grey follows the HDR rendering, the top of the paper opens up to the
+  peak. Nothing is measured from another product.
+
+Grain
+  Strength per channel against density and grain kernel per gauge (65, 35,
+  16, 8 mm), measured on spektrafilm's grain model at the UHD pixel pitch
+  (tools/film/measure_grain.py); independent colour layers; scales
+  physically with the frame size. Replaces the 1.2 grain tables.
+
+Density Pro (from RELIEF, by the same author)
+  Density by zone and by colour, before Texture and the rendering.
+
+Halation removed from the Inspector.
+
+
 NODE_ONE — what was modelled, and how
 =====================================
 

@@ -118,7 +118,30 @@ struct Tex {
     ptrdiff_t rowFloats; // floats per buffer row (from OFX rowBytes)
     int w, h, ch;
     int flipY;           // 1: buffer row 0 is the bottom of the frame (OFX)
+    const float* film;   // film print tables (NodeFilm), or null
+    int filmN;           // grid size of one table (0: none)
 };
+// FILM PRINT TABLES - same lookup as the Metal prelude (nodeone_film).
+#define NODEONE_FILM 1
+static inline int nodeone_film_ok(const Tex& t) { return (t.film && t.filmN > 1) ? 1 : 0; }
+static inline float3 nodeone_film(const Tex& t, int look, float3 di) {
+    const int N = t.filmN;
+    const float* T = t.film + (size_t)(look - 1) * (size_t)N * N * N * 3;
+    const float fN = (float)(N - 1);
+    auto cl = [](float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); };
+    const float ur = cl(di.x) * fN, ug = cl(di.y) * fN, ub = cl(di.z) * fN;
+    const int r0 = std::min((int)ur, N - 2), g0 = std::min((int)ug, N - 2), b0 = std::min((int)ub, N - 2);
+    const float fr = ur - (float)r0, fg = ug - (float)g0, fb = ub - (float)b0;
+    float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    for (int k = 0; k < 8; ++k) {
+        const int dr = k >> 2, dg = (k >> 1) & 1, db = k & 1;
+        const float w = (dr ? fr : 1.0f - fr) * (dg ? fg : 1.0f - fg) * (db ? fb : 1.0f - fb);
+        const float* q = T + ((size_t)((r0 + dr) * N + (g0 + dg)) * N + (b0 + db)) * 3;
+        a0 += w * q[0]; a1 += w * q[1]; a2 += w * q[2];
+    }
+    return make_float3(1.04f / (1.0f + std::exp(-a0)) - 0.02f, 1.04f / (1.0f + std::exp(-a1)) - 0.02f,
+                       1.04f / (1.0f + std::exp(-a2)) - 0.02f);
+}
 static inline float _tex2D(const Tex& t, int x, int y) {
     x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
     y = y < 0 ? 0 : (y >= t.h ? t.h - 1 : y);

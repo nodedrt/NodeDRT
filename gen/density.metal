@@ -15,7 +15,7 @@ using namespace metal;
 //  (out = in + enc(new) - enc(old)), so with both effects off, or wherever an
 //  effect adds nothing, the picture is passed through bit for bit.
 //
-//  Grain and halation are modelled by measurement on film renders (grain:
+//  Grain: spektrafilm's grain model, measured (see the grain section). Halation (unused since 1.3) was modelled by measurement on film renders (grain:
 //  per-channel strength against density, spatial spectrum per gauge, channel
 //  correlation; halation: source curve, radial kernel and per-layer weights).
 // =============================================================================
@@ -65,7 +65,7 @@ struct TexArgs {
     unsigned int seed;   // grain pattern (per frame when animated)
     int srcRow, dstRow;  // row strides in floats
     int halSoftR;        // radius of the halo softening (0 = none)
-    int pad1;
+    int grGauge;         // 0 65mm, 1 35mm, 2 16mm, 3 8mm
     float halS, halThr, kw0, kw1, kw2;   // halation strength, threshold, per-channel weights
     float halNorm[6];                    // weight of each separable term
     float grScale, grSat, grSh, grMd, grHi;
@@ -157,25 +157,39 @@ TX_FN float tx_halAdd(float l, float add)
 }
 
 // ---- grain ------------------------------------------------------------------
-// Grain strength (std of the DaVinci Intermediate code value) per channel,
-// against the channel's own DI value - measured on grey patches.
+// GRAIN (Node DRT 1.3): measured on spektrafilm's grain model (Andrea Volpato,
+// GPLv3 - particles per layer, Kodak Vision3 250D), at the pixel pitch of a UHD
+// frame for each gauge: the grain of the negative's density, brought back to
+// the DaVinci Intermediate code through the negative's own slope. Strength
+// (std of the DI code) per channel against the channel's DI value; the three
+// colour layers are independent (spektrafilm's layers do not correlate).
+// Measured by tools/film/measure_grain.py; nothing comes from another product.
 TX_CONST float GX_D[9] = {0.10f, 0.20f, 0.28f, 0.336f, 0.40f, 0.48f, 0.56f, 0.64f, 0.72f};
-TX_CONST float GX_SIG[27] = {
-    0.0012f, 0.0058f, 0.0058f, 0.0058f, 0.0058f, 0.0060f, 0.0077f, 0.0087f, 0.0115f,
-    0.0008f, 0.0064f, 0.0066f, 0.0064f, 0.0063f, 0.0064f, 0.0087f, 0.0106f, 0.0166f,
-    0.0063f, 0.0187f, 0.0180f, 0.0180f, 0.0172f, 0.0167f, 0.0229f, 0.0278f, 0.0396f};
-// lower Cholesky factor of the measured channel correlation (RG .30, RB .25, GB .45)
-TX_CONST float GX_L[6] = {1.0f, 0.3f, 0.9539392f, 0.25f, 0.39310681f, 0.88485424f};
+TX_CONST float GX_SIG[108] = {   // [gauge 65 / 35 / 16 / 8 mm][channel][density]
+    0.0049f, 0.0052f, 0.0055f, 0.0055f, 0.0052f, 0.0050f, 0.0051f, 0.0052f, 0.0054f,   // 65mm R
+    0.0046f, 0.0049f, 0.0052f, 0.0052f, 0.0051f, 0.0050f, 0.0049f, 0.0050f, 0.0051f,   // 65mm G
+    0.0067f, 0.0073f, 0.0076f, 0.0076f, 0.0076f, 0.0075f, 0.0072f, 0.0073f, 0.0076f,   // 65mm B
+    0.0091f, 0.0097f, 0.0103f, 0.0102f, 0.0097f, 0.0094f, 0.0094f, 0.0097f, 0.0100f,   // 35mm R
+    0.0086f, 0.0092f, 0.0096f, 0.0097f, 0.0096f, 0.0092f, 0.0091f, 0.0092f, 0.0096f,   // 35mm G
+    0.0124f, 0.0135f, 0.0141f, 0.0141f, 0.0142f, 0.0139f, 0.0133f, 0.0135f, 0.0140f,   // 35mm B
+    0.0198f, 0.0213f, 0.0224f, 0.0222f, 0.0212f, 0.0205f, 0.0206f, 0.0213f, 0.0219f,   // 16mm R
+    0.0188f, 0.0201f, 0.0210f, 0.0213f, 0.0209f, 0.0202f, 0.0199f, 0.0202f, 0.0210f,   // 16mm G
+    0.0258f, 0.0283f, 0.0299f, 0.0301f, 0.0304f, 0.0300f, 0.0289f, 0.0292f, 0.0304f,   // 16mm B
+    0.0332f, 0.0364f, 0.0394f, 0.0402f, 0.0394f, 0.0387f, 0.0392f, 0.0405f, 0.0414f,   // 8mm R
+    0.0310f, 0.0339f, 0.0368f, 0.0384f, 0.0389f, 0.0383f, 0.0384f, 0.0389f, 0.0404f,   // 8mm G
+    0.0361f, 0.0402f, 0.0436f, 0.0454f, 0.0474f, 0.0482f, 0.0474f, 0.0486f, 0.0509f,   // 8mm B
+};
 
-TX_FN float tx_grainSig(int c, float d)
+TX_FN float tx_grainSig(int g, int c, float d)
 {
-    if (d <= GX_D[0]) return GX_SIG[c * 9];
+    const int o = (g * 3 + c) * 9;
+    if (d <= GX_D[0]) return GX_SIG[o];
     for (int j = 1; j < 9; ++j)
         if (d <= GX_D[j]) {
             const float f = (d - GX_D[j - 1]) / (GX_D[j] - GX_D[j - 1]);
-            return GX_SIG[c * 9 + j - 1] + (GX_SIG[c * 9 + j] - GX_SIG[c * 9 + j - 1]) * f;
+            return GX_SIG[o + j - 1] + (GX_SIG[o + j] - GX_SIG[o + j - 1]) * f;
         }
-    return GX_SIG[c * 9 + 8];
+    return GX_SIG[o + 8];
 }
 
 TX_FN unsigned int tx_hash(unsigned int x, unsigned int y, unsigned int s)
@@ -199,7 +213,7 @@ struct TxRGB { float r, g, b; };
 // One pixel through the whole texture stage. c: decoded linear pixel; S0 its
 // halation source, B the blurred source around it; z the three unit grain
 // fields. Halation first (light spreading in the emulsion), grain on top.
-TX_FN TxRGB tx_pixel(int halOn, float halS, float kw0, float kw1, float kw2, int grOn, float grScale, float grSat,
+TX_FN TxRGB tx_pixel(int halOn, float halS, float kw0, float kw1, float kw2, int grOn, int grGauge, float grScale, float grSat,
                      float grSh, float grMd, float grHi, float Yr, float Yg, float Yb, TxRGB c, float S0, float B,
                      float z0, float z1, float z2)
 {
@@ -212,20 +226,18 @@ TX_FN TxRGB tx_pixel(int halOn, float halS, float kw0, float kw1, float kw2, int
         c.b = tx_halAdd(c.b, kw2 * add);
     }
     if (grOn) {
-        // correlated channels, then the colour control blends towards mono
-        const float n0 = GX_L[0] * z0;
-        const float n1 = GX_L[1] * z0 + GX_L[2] * z1;
-        const float n2 = GX_L[3] * z0 + GX_L[4] * z1 + GX_L[5] * z2;
-        const float zm = (n0 + n1 + n2) * 0.44721360f;   // 1/sqrt(5): unit variance for these correlations
+        // independent layers, the colour control blends towards mono
+        const float n0 = z0, n1 = z1, n2 = z2;
+        const float zm = (n0 + n1 + n2) * 0.57735027f;   // 1/sqrt(3): unit variance
         const float Y = Yr * c.r + Yg * c.g + Yb * c.b;
         const float ev = TX_LOG2(TX_MAX(Y, 1e-10f) / 0.18f);
         const float wsh = 1.0f - tx_smooth(-4.0f, -1.0f, ev), whi = tx_smooth(1.0f, 4.0f, ev);
         const float f = grScale * (grSh * wsh + grHi * whi + grMd * TX_MAX(1.0f - wsh - whi, 0.0f));
         if (f > 0.0f) {
             const float dr = tx_di_enc(c.r), dg = tx_di_enc(c.g), db = tx_di_enc(c.b);
-            c.r = tx_di_dec(dr + f * tx_grainSig(0, dr) * (zm + grSat * (n0 - zm)));
-            c.g = tx_di_dec(dg + f * tx_grainSig(1, dg) * (zm + grSat * (n1 - zm)));
-            c.b = tx_di_dec(db + f * tx_grainSig(2, db) * (zm + grSat * (n2 - zm)));
+            c.r = tx_di_dec(dr + f * tx_grainSig(grGauge, 0, dr) * (zm + grSat * (n0 - zm)));
+            c.g = tx_di_dec(dg + f * tx_grainSig(grGauge, 1, dg) * (zm + grSat * (n1 - zm)));
+            c.b = tx_di_dec(db + f * tx_grainSig(grGauge, 2, db) * (zm + grSat * (n2 - zm)));
         }
     }
     return c;

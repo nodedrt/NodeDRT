@@ -91,6 +91,8 @@ struct DctlTex {
     int flipY;
     const device float* aux;   // per-pixel values precomputed by the plugin (skin mask), or the source
     int auxPlane;              // floats per plane of aux (one plane per look pass)
+    const device half* film;   // film print tables (NodeFilm), or a dummy
+    int filmN;                 // grid size of one table (0: no tables)
 };
 inline float _tex2D(DctlTex t, int x, int y) {
     x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
@@ -109,6 +111,35 @@ inline float3 nodeone_skin_feat(DctlTex t, int x, int y, int pass) {
     const int row = t.flipY ? (t.h - 1 - y) : y;
     const device float* p = t.aux + pass * t.auxPlane + (row * t.w + x) * 4;
     return float3(p[0], p[1], p[2]);
+}
+
+// FILM PRINT TABLES (Node DRT 1.3): negative -> print computed by spektrafilm,
+// one N^3 table per look, DaVinci Intermediate in, display-linear Rec.709 out
+// (paper white = 1), stored as logits: trilinear in logit space, then the
+// sigmoid - toe and shoulder stay smooth between grid points.
+#define NODEONE_FILM 1
+inline int nodeone_film_ok(DctlTex t) {
+#ifdef NODEONE_FILM_OK
+    return NODEONE_FILM_OK;
+#else
+    return t.filmN > 1 ? 1 : 0;
+#endif
+}
+inline float3 nodeone_film(DctlTex t, int look, float3 di) {
+    const int N = t.filmN;
+    const device half* T = t.film + (size_t)(look - 1) * (size_t)(N * N * N * 3);
+    const float fN = (float)(N - 1);
+    const float ur = metal::clamp(di.x, 0.0f, 1.0f) * fN, ug = metal::clamp(di.y, 0.0f, 1.0f) * fN, ub = metal::clamp(di.z, 0.0f, 1.0f) * fN;
+    const int r0 = metal::min((int)ur, N - 2), g0 = metal::min((int)ug, N - 2), b0 = metal::min((int)ub, N - 2);
+    const float fr = ur - (float)r0, fg = ug - (float)g0, fb = ub - (float)b0;
+    float3 acc = float3(0.0f);
+    for (int k = 0; k < 8; ++k) {
+        const int dr = k >> 2, dg = (k >> 1) & 1, db = k & 1;
+        const float w = (dr ? fr : 1.0f - fr) * (dg ? fg : 1.0f - fg) * (db ? fb : 1.0f - fb);
+        const device half* q = T + (((r0 + dr) * N + (g0 + dg)) * N + (b0 + db)) * 3;
+        acc += w * float3((float)q[0], (float)q[1], (float)q[2]);
+    }
+    return 1.04f / (1.0f + metal::exp(-acc)) - 0.02f;
 }
 
 #line 1 "node_one_params"
@@ -3026,6 +3057,16 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(ws/gs, wl/gs);
 }
 
+
+
+
+
+#ifdef NODEONE_FILM
+__DEVICE__ float film_lin2di(float x) {
+  return x <= 0.00262409f ? x*10.44426855f : (_log2f(_fmaxf(x + 0.0075f, 1.0e-10f)) + 7.0f)*0.07329248f;
+}
+#endif
+
 __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = NODEONE_PV_in_gamut; int in_oetf = NODEONE_PV_in_oetf; float tn_Lp = NODEONE_PV_tn_Lp; float tn_gb = NODEONE_PV_tn_gb; float pt_hdr = NODEONE_PV_pt_hdr; int out_clamp = NODEONE_PV_out_clamp; int crv_enable = NODEONE_PV_crv_enable; float crv_size = NODEONE_PV_crv_size; int fc_overlay = NODEONE_PV_fc_overlay; int skin_check = NODEONE_PV_skin_check; int legend = NODEONE_PV_legend; int look_preset = NODEONE_PV_look_preset; int look_bypass = NODEONE_PV_look_bypass; int print_tone_sel = NODEONE_PV_print_tone_sel; int tone_bypass = NODEONE_PV_tone_bypass; int wb_preset = NODEONE_PV_wb_preset; float wb_kelvin = NODEONE_PV_wb_kelvin; float wb_temp = NODEONE_PV_wb_temp; float wb_tint = NODEONE_PV_wb_tint; int wb_bypass = NODEONE_PV_wb_bypass; int cw_bypass = NODEONE_PV_cw_bypass; int _cwp = NODEONE_PV__cwp; float _cwp_rng = NODEONE_PV__cwp_rng; float col_weight = NODEONE_PV_col_weight; float col_dens = NODEONE_PV_col_dens; int col_bypass = NODEONE_PV_col_bypass; float col_chroma = NODEONE_PV_col_chroma; float col_ptw = NODEONE_PV_col_ptw; float col_onset = NODEONE_PV_col_onset; int trim_con_bypass = NODEONE_PV_trim_con_bypass; int trim_hl_bypass = NODEONE_PV_trim_hl_bypass; int trim_mid_bypass = NODEONE_PV_trim_mid_bypass; float trim_con = NODEONE_PV_trim_con; float trim_piv = NODEONE_PV_trim_piv; float trim_ovl = NODEONE_PV_trim_ovl; float trim_sh = NODEONE_PV_trim_sh; float trim_hp = NODEONE_PV_trim_hp; float trim_hd = NODEONE_PV_trim_hd; float trim_br = NODEONE_PV_trim_br; float trim_hs = NODEONE_PV_trim_hs; float trim_mp = NODEONE_PV_trim_mp; float trim_mp_pv = NODEONE_PV_trim_mp_pv; float trim_skin = NODEONE_PV_trim_skin; float trim_skin_sat = NODEONE_PV_trim_skin_sat; float skin_piv = NODEONE_PV_skin_piv; float skin_soft = NODEONE_PV_skin_soft; float skin_mhue = NODEONE_PV_skin_mhue; float skin_mrec = NODEONE_PV_skin_mrec; float skin_medge = NODEONE_PV_skin_medge; int skin_mask_bypass = NODEONE_PV_skin_mask_bypass; int skin_zones = NODEONE_PV_skin_zones; int skin_col_bypass = NODEONE_PV_skin_col_bypass; int skin_light_bypass = NODEONE_PV_skin_light_bypass; float skin_hi = NODEONE_PV_skin_hi; float skin_mid = NODEONE_PV_skin_mid; float skin_sh = NODEONE_PV_skin_sh; int tone_curve_bypass = NODEONE_PV_tone_curve_bypass; int tonescale_preset = NODEONE_PV_tonescale_preset; float ts_intensity = NODEONE_PV_ts_intensity; int credits = NODEONE_PV_credits; int trial_mark = NODEONE_PV_trial_mark; int display_encoding_preset = NODEONE_PV_display_encoding_preset; float look_intensity = NODEONE_PV_look_intensity; float tone_intensity = NODEONE_PV_tone_intensity; (void)0;
   
   
@@ -3696,6 +3737,40 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     rgb = rgb*_exp2f(SKL_A*sl*sk_wl_scene);
   }
   
+#ifdef NODEONE_FILM
+  
+
+
+
+
+
+
+
+  const int film_on = (look_preset >= 1 && look_preset <= 7 && look_amt > 0.5f && nodeone_film_ok(p_TexR)) ? 1 : 0;
+  float3 film_disp = make_float3(0.0f, 0.0f, 0.0f);
+  if (film_on) {
+    float3 sc = rgb;
+    if (rs_sa != 1.0f) {   
+      const float sl = sc.x*rs_w.x + sc.y*rs_w.y + sc.z*rs_w.z;
+      sc = (sl*rs_sa - sc)/(rs_sa - 1.0f);
+    }
+    sc = sc/look_exp;
+    sc = vdot(mat3_inv(matrix_davinciwg_to_xyz), vdot(matrix_p3d65_to_xyz, sc));
+    float3 F = nodeone_film(p_TexR, look_preset, make_float3(film_lin2di(sc.x), film_lin2di(sc.y), film_lin2di(sc.z)));
+    F = clampminf3(F, 0.0f);
+    const float f_base = ts_y0/(tn_Lg/100.0f);   
+    const float f_peak = tn_Lp/100.0f;
+    if (f_peak > f_base) {
+      const float Yb = _fminf(1.0f, 0.2126f*F.x + 0.7152f*F.y + 0.0722f*F.z);
+      const float y2 = Yb*Yb;
+      F = F*(f_base + (f_peak - f_base)*y2*y2*Yb);
+    } else {
+      F = F*f_base;
+    }
+    if (display_gamut >= 1) F = vdot(matrix_xyz_to_p3d65, vdot(matrix_rec709_to_xyz, F));
+    film_disp = F*ts_dsc;
+  }
+#endif
   const float3 tsk_in = rgb;
   const float3 tsk_crv_in = crv_val;
 
@@ -4400,6 +4475,9 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   }
 
   
+#ifdef NODEONE_FILM
+  if (film_on) rgb = film_disp;
+#endif
   if (out_clamp) rgb = clampf3(rgb, 0.0f, 1.0f);
 
   
@@ -4628,6 +4706,7 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
                           device float* dst [[buffer(2)]],
                           constant DctlDims& D [[buffer(3)]],
                           const device float* aux [[buffer(4)]],
+                          const device half* film [[buffer(5)]],
                           uint2 gid [[thread_position_in_grid]])
 {
     const int W = D.width, H = D.height;
@@ -4635,9 +4714,9 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
     const int x = (int)gid.x;
     const int row = (int)gid.y;
     const int y = D.flipY ? (H - 1 - row) : row;
-    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4};
-    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4};
-    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4};
+    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4, film, D.pad0};
+    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4, film, D.pad0};
+    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4, film, D.pad0};
     const device float* s = src + row * D.rowFloatsSrc + x * 4;
     device float* d = dst + row * D.rowFloatsDst + x * 4;
     const float3 o = dctl_transform(P, W, H, x, y, tr, tg, tb);

@@ -2516,6 +2516,16 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(ws/gs, wl/gs);
 }
 
+// FILM PRINT (Node DRT 1.3, plugin seulement) : les 7 looks sont rendus par
+// un vrai tirage - negatif puis papier, calcules par spektrafilm - au lieu des
+// modules parametres. Les tables vivent dans le plugin (NodeFilm) ; ce DCTL
+// lu seul dans Resolve garde les looks parametres d'avant.
+#ifdef NODEONE_FILM
+__DEVICE__ float film_lin2di(float x) {
+  return x <= 0.00262409f ? x*10.44426855f : (_log2f(_fmaxf(x + 0.0075f, 1.0e-10f)) + 7.0f)*0.07329248f;
+}
+#endif
+
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
   // Ce plugin ne lit que son propre pixel. Il a lu ses voisins pendant un
@@ -3187,6 +3197,40 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     rgb = rgb*_exp2f(SKL_A*sl*sk_wl_scene);
   }
   // Entree de la courbe, gardee pour la courbe A de Tonescale Intensity.
+#ifdef NODEONE_FILM
+  /*----------- FILM PRINT -----------------
+    Look 1 a 7 : l'image de scene (balance, contraste, densite, peau deja
+    appliques au-dessus) passe dans le tirage : DaVinci Wide Gamut /
+    Intermediate -> negatif -> papier -> affichage, blanc du papier = 1.
+    En HDR, le gris suit celui du rendu HDR et le haut du papier s'etire
+    doucement jusqu'au pic : meme tirage, des blancs qui respirent. Look
+    Intensity reste un melange avec Default (passe 1).
+  -------------------------------------------*/
+  const int film_on = (look_preset >= 1 && look_preset <= 7 && look_amt > 0.5f && nodeone_film_ok(p_TexR)) ? 1 : 0;
+  float3 film_disp = make_float3(0.0f, 0.0f, 0.0f);
+  if (film_on) {
+    float3 sc = rgb;
+    if (rs_sa != 1.0f) {   // le tirage veut la scene sans la desaturation de l'espace de rendu
+      const float sl = sc.x*rs_w.x + sc.y*rs_w.y + sc.z*rs_w.z;
+      sc = (sl*rs_sa - sc)/(rs_sa - 1.0f);
+    }
+    sc = sc/look_exp;
+    sc = vdot(mat3_inv(matrix_davinciwg_to_xyz), vdot(matrix_p3d65_to_xyz, sc));
+    float3 F = nodeone_film(p_TexR, look_preset, make_float3(film_lin2di(sc.x), film_lin2di(sc.y), film_lin2di(sc.z)));
+    F = clampminf3(F, 0.0f);
+    const float f_base = ts_y0/(tn_Lg/100.0f);   // 1 en SDR
+    const float f_peak = tn_Lp/100.0f;
+    if (f_peak > f_base) {
+      const float Yb = _fminf(1.0f, 0.2126f*F.x + 0.7152f*F.y + 0.0722f*F.z);
+      const float y2 = Yb*Yb;
+      F = F*(f_base + (f_peak - f_base)*y2*y2*Yb);
+    } else {
+      F = F*f_base;
+    }
+    if (display_gamut >= 1) F = vdot(matrix_xyz_to_p3d65, vdot(matrix_rec709_to_xyz, F));
+    film_disp = F*ts_dsc;
+  }
+#endif
   const float3 tsk_in = rgb;
   const float3 tsk_crv_in = crv_val;
 
@@ -3891,6 +3935,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   }
 
   // Clamp
+#ifdef NODEONE_FILM
+  if (film_on) rgb = film_disp;
+#endif
   if (out_clamp) rgb = clampf3(rgb, 0.0f, 1.0f);
 
   // Rec.2020 (P3 Limited)

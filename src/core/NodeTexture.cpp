@@ -25,17 +25,15 @@ namespace {
 static const int HX_R = 16;
 static const float HX_SV[6] = {0.04499572f, -0.01129527f, 0.00638589f, -0.00365030f, 0.00291850f, -0.00201647f};
 static const float HX_U[6][33] = {{-0.00069106f, -0.00869063f, -0.01574631f, -0.07226165f, -0.09530053f, -0.08771271f, -0.09482006f, -0.09091598f, -0.11639190f, -0.14176117f, -0.15933983f, -0.18640873f, -0.25409698f, -0.32047523f, -0.30770510f, -0.26921776f, -0.25381511f, -0.26921776f, -0.30770510f, -0.32047523f, -0.25409698f, -0.18640873f, -0.15933983f, -0.14176117f, -0.11639190f, -0.09091598f, -0.09482006f, -0.08771271f, -0.09530053f, -0.07226165f, -0.01574631f, -0.00869063f, -0.00069106f}, {-0.00556601f, -0.00299752f, -0.00830794f, -0.08851234f, 0.00732631f, 0.03515019f, -0.01049389f, 0.03223227f, -0.07588571f, -0.03486531f, -0.03511067f, -0.08092884f, -0.28712798f, -0.29881437f, 0.09977049f, 0.40186775f, 0.51318129f, 0.40186775f, 0.09977049f, -0.29881437f, -0.28712798f, -0.08092884f, -0.03511067f, -0.03486531f, -0.07588571f, 0.03223227f, -0.01049389f, 0.03515019f, 0.00732631f, -0.08851234f, -0.00830794f, -0.00299752f, -0.00556601f}, {-0.00026315f, -0.01804378f, -0.01641448f, -0.14486801f, -0.03224446f, 0.16729382f, 0.24003767f, 0.32021482f, 0.27503747f, 0.20760807f, 0.19200870f, 0.14651233f, -0.02130259f, -0.23488400f, -0.22550021f, -0.07474623f, -0.01371671f, -0.07474623f, -0.22550021f, -0.23488400f, -0.02130259f, 0.14651233f, 0.19200870f, 0.20760807f, 0.27503747f, 0.32021482f, 0.24003767f, 0.16729382f, -0.03224446f, -0.14486801f, -0.01641448f, -0.01804378f, -0.00026315f}, {0.00165634f, 0.01093185f, 0.04735590f, 0.09339239f, 0.26547678f, 0.41568884f, 0.31201552f, 0.08416967f, -0.09492325f, -0.24582540f, -0.21189631f, -0.14767719f, 0.00116404f, 0.05064965f, -0.00028234f, -0.03557905f, -0.04935249f, -0.03557905f, -0.00028234f, 0.05064965f, 0.00116404f, -0.14767719f, -0.21189631f, -0.24582540f, -0.09492325f, 0.08416967f, 0.31201552f, 0.41568884f, 0.26547678f, 0.09339239f, 0.04735590f, 0.01093185f, 0.00165634f}, {-0.00473417f, -0.01609186f, -0.02369543f, 0.08553591f, -0.27004710f, -0.16368626f, 0.17074151f, 0.23057834f, 0.23505608f, 0.06771039f, -0.19689481f, -0.32139195f, -0.17671434f, 0.14163822f, 0.22381675f, -0.01279406f, -0.11278064f, -0.01279406f, 0.22381675f, 0.14163822f, -0.17671434f, -0.32139195f, -0.19689481f, 0.06771039f, 0.23505608f, 0.23057834f, 0.17074151f, -0.16368626f, -0.27004710f, 0.08553591f, -0.02369543f, -0.01609186f, -0.00473417f}, {-0.00290427f, -0.06011274f, -0.04334197f, -0.23226841f, -0.46234333f, 0.03617514f, 0.23161326f, -0.02939956f, -0.18279428f, -0.24656451f, -0.07784830f, 0.21377711f, 0.14516690f, 0.03486485f, 0.01378479f, 0.03716793f, 0.04780332f, 0.03716793f, 0.01378479f, 0.03486485f, 0.14516690f, 0.21377711f, -0.07784830f, -0.24656451f, -0.18279428f, -0.02939956f, 0.23161326f, 0.03617514f, -0.46234333f, -0.23226841f, -0.04334197f, -0.06011274f, -0.00290427f}};
-// grain: separable 1-D factors of the measured grain kernels at UHD (unit L2)
-static const float GX_U65[5] = {-0.0045802f, 0.1398532f, 0.9802245f, 0.1398532f, -0.0045802f};
-static const float GX_U35[7] = {-0.0026214f, 0.0226864f, 0.4085475f, 0.8155580f, 0.4085475f, 0.0226864f, -0.0026214f};
-// BASE GRAIN (Amount 1, Size 1). The measured grain read too coarse and too
-// present on real footage: the base is set a little finer and quieter than the
-// measurement - 85 % of its size, 75 % of its strength. The spectrum shape, the
-// per-layer balance and the density dependence are unchanged.
-static const float GX_BASE_SIZE = 0.85f;
-static const float GX_BASE_AMOUNT = 0.75f;
-// grain amplitude at HD (1080 lines) relative to UHD, measured
-static const float GX_AHD[2] = {0.76f, 1.41f};
+// grain: separable 1-D kernel of spektrafilm's grain field at UHD, per gauge
+// (65 / 35 / 16 / 8 mm), unit L2 - measured with the strengths (NodeTextureMath.h)
+static const float GX_K[4][5] = {
+    {0.0082f, 0.2801f, 0.9181f, 0.2801f, 0.0082f},
+    {0.0081f, 0.2802f, 0.9181f, 0.2802f, 0.0081f},
+    {0.0090f, 0.2827f, 0.9165f, 0.2827f, 0.0090f},
+    {0.0324f, 0.3252f, 0.8868f, 0.3252f, 0.0324f},
+};
+// Amount 1 = spektrafilm's grain as measured, Size 1 = its particle size.
 
 const float kGamutY[16][3] = {
     {0.0f, 1.0f, 0.0f},                                   // XYZ
@@ -148,10 +146,10 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
     plan.grK.clear();
     a.grR = 0;
     if (a.grOn) {
-        const int g = s.gauge == 0 ? 0 : 1;
-        const float* U = g == 0 ? GX_U65 : GX_U35;
-        const int UR = g == 0 ? 2 : 3;
-        const float sc = GX_BASE_SIZE * std::min(std::max(s.size, 0.25f), 4.0f) * (float)H / 2160.0f;
+        const int g = std::min(std::max(s.gauge, 0), 3);
+        const float* U = GX_K[g];
+        const int UR = 2;
+        const float sc = std::min(std::max(s.size, 0.25f), 4.0f) * (float)H / 2160.0f;
         auto u = [&](float t) {
             t += UR;
             const int k = (int)std::floor(t);
@@ -161,21 +159,21 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
             if (k + 1 >= 0 && k + 1 <= 2 * UR) v += U[k + 1] * f;
             return v;
         };
-        // below UHD the film grain field is decimated (measured: white grain at
-        // HD for these gauges), hence point sampling of the kernel.
         const int R0 = std::max(0, (int)std::ceil((UR + 0.5f) * sc + 0.5f));
         std::vector<float> k0(2 * R0 + 1);
         for (int i = -R0; i <= R0; ++i) k0[i + R0] = u(i / sc);
-        const int R = R0;
         plan.grK = k0;
         double n2 = 0.0;
         for (float v : plan.grK) n2 += (double)v * v;
         const float nn = n2 > 0.0 ? (float)(1.0 / std::sqrt(n2)) : 1.0f;
         for (float& v : plan.grK) v *= nn;
-        const float t = std::min(std::max(std::log2((float)H / 2160.0f), -1.0f), 0.0f);   // 0 at UHD, -1 at HD
-        const float A = 1.0f + (GX_AHD[g] - 1.0f) * (-t);
-        a.grR = R;
-        a.grScale = GX_BASE_AMOUNT * s.amount * A;
+        // Physical scaling with the frame: the grain is a property of the film,
+        // not of the pixels. A pixel of a smaller frame covers more film and
+        // averages more grain (std in proportion to the pixel side).
+        const float A = std::min(std::max((float)H / 2160.0f, 0.25f), 2.0f) * std::min(std::max(s.size, 0.25f), 4.0f);
+        a.grR = R0;
+        a.grGauge = g;
+        a.grScale = s.amount * A;
         a.grSat = std::min(std::max(s.colour, 0.0f), 2.0f);
         a.grSh = std::max(s.shadows, 0.0f);
         a.grMd = std::max(s.midtones, 0.0f);
@@ -318,7 +316,7 @@ void textureCPU(const TexturePlan& plan, const float* src, ptrdiff_t srcRow, flo
                     z[ch] = a;
                 }
             if (A.halSoftR > 0) S0 = 0.0f;   // B already is the (diffused) halo
-            c = tx_pixel(A.halOn, A.halS, A.kw0, A.kw1, A.kw2, A.grOn, A.grScale, A.grSat, A.grSh, A.grMd, A.grHi,
+            c = tx_pixel(A.halOn, A.halS, A.kw0, A.kw1, A.kw2, A.grOn, A.grGauge, A.grScale, A.grSat, A.grSh, A.grMd, A.grHi,
                          A.Yr, A.Yg, A.Yb, c, S0, B, z[0], z[1], z[2]);
             d[0] = c.r == c0.r ? p[0] : p[0] + (tx_encode(A.oetf, c.r) - tx_encode(A.oetf, c0.r));
             d[1] = c.g == c0.g ? p[1] : p[1] + (tx_encode(A.oetf, c.g) - tx_encode(A.oetf, c0.g));
@@ -332,3 +330,5 @@ void textureCPU(const TexturePlan& plan, const float* src, ptrdiff_t srcRow, flo
 
 // Density Pro is compiled with this file (see NodeDensity.cpp).
 #include "NodeDensity.cpp"
+// Film print tables are loaded here too (see NodeFilm.cpp).
+#include "NodeFilm.cpp"

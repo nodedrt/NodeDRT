@@ -302,9 +302,9 @@ def params_block(params):
 def emit_metal(prelude, dctl_name, pblock, body, texture):
     if texture:
         call = 'dctl_transform(P, W, H, x, y, tr, tg, tb)'
-        setup = ('    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4};\n'
-                 '    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4};\n'
-                 '    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4};\n')
+        setup = ('    DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4, film, D.pad0};\n'
+                 '    DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4, film, D.pad0};\n'
+                 '    DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4, film, D.pad0};\n')
     else:
         call = 'dctl_transform(P, W, H, x, y, s[0], s[1], s[2])'
         setup = ''
@@ -316,6 +316,7 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
                           device float* dst [[buffer(2)]],
                           constant DctlDims& D [[buffer(3)]],
                           const device float* aux [[buffer(4)]],
+                          const device half* film [[buffer(5)]],
                           uint2 gid [[thread_position_in_grid]])
 {
     const int W = D.width, H = D.height;
@@ -335,9 +336,11 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
 
 def emit_cpu(ns, dctl_name, pblock, body, texture):
     if texture:
-        setup = ('    const ::dctl::Tex tr = {src, srcRowFloats, W, H, 0, flipY};\n'
-                 '    const ::dctl::Tex tg = {src, srcRowFloats, W, H, 1, flipY};\n'
-                 '    const ::dctl::Tex tb = {src, srcRowFloats, W, H, 2, flipY};\n')
+        setup = ('    int filmN = 0;\n'
+                 '    const float* film = ::nodeone::filmTablesCPU(filmN);\n'
+                 '    const ::dctl::Tex tr = {src, srcRowFloats, W, H, 0, flipY, film, filmN};\n'
+                 '    const ::dctl::Tex tg = {src, srcRowFloats, W, H, 1, flipY, film, filmN};\n'
+                 '    const ::dctl::Tex tb = {src, srcRowFloats, W, H, 2, flipY, film, filmN};\n')
         call = 'dctl_transform(P, W, H, x, y, tr, tg, tb)'
     else:
         setup = ''
@@ -495,6 +498,7 @@ def build_plugin(spec, prelude):
     cpp.append('#include <cstddef>')
     cpp.append('#include "dctl_cpu.h"')
     cpp.append('#include "plugin_def.h"')
+    cpp.append('#include "NodeFilm.h"')
     cpp.append('#if defined(__clang__)')
     cpp.append('#pragma clang diagnostic ignored "-Wunused-function"')
     cpp.append('#pragma clang diagnostic ignored "-Wunused-variable"')

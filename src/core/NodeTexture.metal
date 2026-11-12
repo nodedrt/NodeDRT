@@ -159,7 +159,7 @@ kernel void tx_final(constant TexArgs& A [[buffer(0)]], const device float* src 
         }
     }
     if (A.halSoftR > 0) S0 = 0.0f;   // B already is the (diffused) halo
-    c = tx_pixel(A.halOn, A.halS, A.kw0, A.kw1, A.kw2, A.grOn, A.grScale, A.grSat, A.grSh, A.grMd, A.grHi,
+    c = tx_pixel(A.halOn, A.halS, A.kw0, A.kw1, A.kw2, A.grOn, A.grGauge, A.grScale, A.grSat, A.grSh, A.grMd, A.grHi,
                  A.Yr, A.Yg, A.Yb, c, S0, B, z0, z1, z2);
     d[0] = c.r == c0.r ? p[0] : p[0] + (tx_encode(A.oetf, c.r) - tx_encode(A.oetf, c0.r));
     d[1] = c.g == c0.g ? p[1] : p[1] + (tx_encode(A.oetf, c.g) - tx_encode(A.oetf, c0.g));

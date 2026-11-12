@@ -91,6 +91,8 @@ struct DctlTex {
     int flipY;
     const device float* aux;   // per-pixel values precomputed by the plugin (skin mask), or the source
     int auxPlane;              // floats per plane of aux (one plane per look pass)
+    const device half* film;   // film print tables (NodeFilm), or a dummy
+    int filmN;                 // grid size of one table (0: no tables)
 };
 inline float _tex2D(DctlTex t, int x, int y) {
     x = x < 0 ? 0 : (x >= t.w ? t.w - 1 : x);
@@ -109,4 +111,33 @@ inline float3 nodeone_skin_feat(DctlTex t, int x, int y, int pass) {
     const int row = t.flipY ? (t.h - 1 - y) : y;
     const device float* p = t.aux + pass * t.auxPlane + (row * t.w + x) * 4;
     return float3(p[0], p[1], p[2]);
+}
+
+// FILM PRINT TABLES (Node DRT 1.3): negative -> print computed by spektrafilm,
+// one N^3 table per look, DaVinci Intermediate in, display-linear Rec.709 out
+// (paper white = 1), stored as logits: trilinear in logit space, then the
+// sigmoid - toe and shoulder stay smooth between grid points.
+#define NODEONE_FILM 1
+inline int nodeone_film_ok(DctlTex t) {
+#ifdef NODEONE_FILM_OK
+    return NODEONE_FILM_OK;
+#else
+    return t.filmN > 1 ? 1 : 0;
+#endif
+}
+inline float3 nodeone_film(DctlTex t, int look, float3 di) {
+    const int N = t.filmN;
+    const device half* T = t.film + (size_t)(look - 1) * (size_t)(N * N * N * 3);
+    const float fN = (float)(N - 1);
+    const float ur = metal::clamp(di.x, 0.0f, 1.0f) * fN, ug = metal::clamp(di.y, 0.0f, 1.0f) * fN, ub = metal::clamp(di.z, 0.0f, 1.0f) * fN;
+    const int r0 = metal::min((int)ur, N - 2), g0 = metal::min((int)ug, N - 2), b0 = metal::min((int)ub, N - 2);
+    const float fr = ur - (float)r0, fg = ug - (float)g0, fb = ub - (float)b0;
+    float3 acc = float3(0.0f);
+    for (int k = 0; k < 8; ++k) {
+        const int dr = k >> 2, dg = (k >> 1) & 1, db = k & 1;
+        const float w = (dr ? fr : 1.0f - fr) * (dg ? fg : 1.0f - fg) * (db ? fb : 1.0f - fb);
+        const device half* q = T + (((r0 + dr) * N + (g0 + dg)) * N + (b0 + db)) * 3;
+        acc += w * float3((float)q[0], (float)q[1], (float)q[2]);
+    }
+    return 1.04f / (1.0f + metal::exp(-acc)) - 0.02f;
 }
