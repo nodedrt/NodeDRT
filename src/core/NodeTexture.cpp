@@ -147,21 +147,15 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
     a.grR = 0;
     if (a.grOn) {
         const int g = std::min(std::max(s.gauge, 0), 3);
-        const float* U = GX_K[g];
-        const int UR = 2;
+        // v2: the grain field seen through the dye clouds and the scanner's
+        // optics: a gaussian of 0.7 px at UHD (scaled by Size and with the
+        // frame), unit L2 so the strengths stay per pixel. Before: almost no
+        // softening - a pixel-sharp, digital-looking noise.
         const float sc = std::min(std::max(s.size, 0.25f), 4.0f) * (float)H / 2160.0f;
-        auto u = [&](float t) {
-            t += UR;
-            const int k = (int)std::floor(t);
-            const float f = t - k;
-            float v = 0.0f;
-            if (k >= 0 && k <= 2 * UR) v += U[k] * (1.0f - f);
-            if (k + 1 >= 0 && k + 1 <= 2 * UR) v += U[k + 1] * f;
-            return v;
-        };
-        const int R0 = std::max(0, (int)std::ceil((UR + 0.5f) * sc + 0.5f));
+        const float sg = std::max(0.7f * sc, 0.35f);
+        const int R0 = std::max(1, (int)std::ceil(3.0f * sg));
         std::vector<float> k0(2 * R0 + 1);
-        for (int i = -R0; i <= R0; ++i) k0[i + R0] = u(i / sc);
+        for (int i = -R0; i <= R0; ++i) k0[i + R0] = std::exp(-0.5f * (float)(i * i) / (sg * sg));
         plan.grK = k0;
         double n2 = 0.0;
         for (float v : plan.grK) n2 += (double)v * v;
@@ -174,7 +168,7 @@ void texturePlan(const TextureSettings& s, int W, int H, TexturePlan& plan)
         a.grR = R0;
         a.grGauge = g;
         a.grScale = s.amount * A;
-        a.grSat = std::min(std::max(s.colour, 0.0f), 2.0f);
+        a.grSat = 0.5f * std::min(std::max(s.colour, 0.0f), 2.0f);   // 0 mono, 0.5 scan-true, 1 independent records
         a.grSh = std::max(s.shadows, 0.0f);
         a.grMd = std::max(s.midtones, 0.0f);
         a.grHi = std::max(s.highlights, 0.0f);

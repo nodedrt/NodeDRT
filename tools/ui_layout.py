@@ -146,8 +146,6 @@ PLUGINS = [
             # avant le rendu. Tout a 0 : le plugin rend exactement comme avant.
             {'name': 'grp_density', 'label': 'Density', 'open': False, 'params': [
                 TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 10.0, 1.0),
-                TP('dp_bypass', 'Bypass Density', 'bool', 0,
-                   hint='Skips the whole section. Its settings are kept.'),
                 SUB('grp_dp_zones', 'Zones', [
                     TP('dp_hi', 'Highlights Density', 'float', 0.0, -100.0, 100.0, 0.1,
                        hint='Density of colours in the highlights. Positive = denser (darker, richer), negative = lighter.'),
@@ -196,8 +194,6 @@ PLUGINS = [
                        hint='Width of the colour zone. 1 = precise (full effect within 6 deg of hue, fades out at 20 deg). Lower = even narrower, higher = wider, up to the neighbouring colours at 4.'),
                     TP('dp_focus', 'Saturation Focus', 'float', 40.0, 0.0, 100.0, 0.1,
                        hint='0 = also acts on softly coloured areas, 100 = only on strongly saturated colours. Neutrals never move.'),
-                    TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
-                       hint='Overall strength of all Density sliders: 0 = x1, 100 = x2, with a soft ceiling of 1.75 stops so a colour never goes to black.'),
                     TP('dp_colors_smooth', 'Mask Smoothness', 'float', 0.0, 0.0, 1.0, 0.01,
                        hint='Softness of the colour selection in the picture, like the blur of a qualifier: blurred over 10 px at 0 (the default, already smooth) up to 40 px at 1, of a 1080 frame. An object is never cut into pieces, no edge shows a step, and a neutral next to a coloured object never moves.'),
                     TP('dp_show', 'Show Colors', 'bool', 0,
@@ -206,6 +202,8 @@ PLUGINS = [
                     TP('dp_colors_bypass', 'Bypass Colors', 'bool', 0,
                        hint='Skips the six colour sliders. Their settings are kept.'),
                     P('density_reset', 'Reset Density Color', synth='push', hint='Returns the Colors controls (the six colours and their ranges, Saturation Focus, view, bypass) to their default in one click, as a single undo step. The zones are not touched.'),
+                    TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
+                       hint='Overall strength of all Density sliders: 0 = x1, 100 = x2, with a soft ceiling of 1.75 stops so a colour never goes to black.'),
                 ]),
             ]},
             {'name': 'grp_trims', 'label': 'Trims', 'open': False, 'params': [

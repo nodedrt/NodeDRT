@@ -4536,7 +4536,11 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     if (trim_skin_sat != 0.0f && sk_w_scene > 0.0f) {
-      const float3 sat = chroma_sub(sk, 1.0f + trim_skin_sat);
+      
+      
+      
+      const float sk_ss = trim_skin_sat*(0.4f + 0.6f*trim_skin_sat*trim_skin_sat);
+      const float3 sat = chroma_sub(sk, 1.0f + sk_ss);
       sk = sk + (sat - sk)*sk_w_scene;
     }
     rgb = sk*sk_pk;
@@ -4787,7 +4791,7 @@ static void cpu_render(const void* pv, const float* src, ptrdiff_t srcRowFloats,
 }
 } // namespace nodeone_drt
 
-#line 4791 "gen/drt.cpp"
+#line 4795 "gen/drt.cpp"
 namespace nodeone_drt {
 static const char* const kMetalSource =
 R"NODEONE(// =============================================================================
@@ -9465,7 +9469,11 @@ R"NODEONE( tsn - sh_fl;
     
     
     if (trim_skin_sat != 0.0f && sk_w_scene > 0.0f) {
-      const float3 sat = chroma_sub(sk, 1.0f + trim_skin_sat);
+      
+      
+      
+      const float sk_ss = trim_skin_sat*(0.4f + 0.6f*trim_skin_sat*trim_skin_sat);
+      const float3 sat = chroma_sub(sk, 1.0f + sk_ss);
       sk = sk + (sat - sk)*sk_w_scene;
     }
     rgb = sk*sk_pk;
@@ -9706,10 +9714,10 @@ kernel void node_one_main(constant DctlParams& P [[buffer(0)]],
 {
     const int W = D.width, H = D.height;
     if ((int)gid.x >= W || (int)gid.y >= H) return;
-    const int x = (int)gid.x;
+    const i)NODEONE"
+R"NODEONE(nt x = (int)gid.x;
     const int row = (int)gid.y;
-    const int y = D.flipY ? (H - 1 - row) : r)NODEONE"
-R"NODEONE(ow;
+    const int y = D.flipY ? (H - 1 - row) : row;
     DctlTex tr = {src, D.rowFloatsSrc, W, H, 0, D.flipY, aux, W * H * 4, film, D.pad0};
     DctlTex tg = {src, D.rowFloatsSrc, W, H, 1, D.flipY, aux, W * H * 4, film, D.pad0};
     DctlTex tb = {src, D.rowFloatsSrc, W, H, 2, D.flipY, aux, W * H * 4, film, D.pad0};
@@ -9792,7 +9800,6 @@ static const nodeone::ParamSpec kParams[] = {
     {"col_bypass", "Bypass Color", "Bypass Color.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 10, 100},
     {"color_reset", "Reset Color", "Reset Color.", nodeone::kParamPush, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 10, nodeone::kNoOffset},
     {"dp_mask_focus", "Mask Focus", nullptr, nodeone::kParamFloat, -1.0, -1.0, 10.0, 1.0, nullptr, 0, 11, nodeone::kPluginOnly},
-    {"dp_bypass", "Bypass Density", "Bypass Density.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 11, nodeone::kPluginOnly},
     {"dp_hi", "Highlights Density", "Highlight density.", nodeone::kParamFloat, 0.0, -100.0, 100.0, 0.1, nullptr, 0, 12, nodeone::kPluginOnly},
     {"dp_mid", "Midtones Density", "Midtone density.", nodeone::kParamFloat, 0.0, -100.0, 100.0, 0.1, nullptr, 0, 12, nodeone::kPluginOnly},
     {"dp_sh", "Shadows Density", "Shadow density.", nodeone::kParamFloat, 0.0, -100.0, 100.0, 0.1, nullptr, 0, 12, nodeone::kPluginOnly},
@@ -9815,11 +9822,11 @@ static const nodeone::ParamSpec kParams[] = {
     {"dp_magenta", "Magenta Density", "Magenta density.", nodeone::kParamFloat, 0.0, -100.0, 100.0, 0.1, nullptr, 0, 13, nodeone::kPluginOnly},
     {"dp_magenta_rng", "Magenta Range", "Magenta hue width.", nodeone::kParamFloat, 1.0, 0.1, 4.0, 0.01, nullptr, 0, 13, nodeone::kPluginOnly},
     {"dp_focus", "Saturation Focus", "Saturation threshold.", nodeone::kParamFloat, 40.0, 0.0, 100.0, 0.1, nullptr, 0, 13, nodeone::kPluginOnly},
-    {"dp_boost", "Global Strength", "Density gain, all colours.", nodeone::kParamFloat, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 13, nodeone::kPluginOnly},
     {"dp_colors_smooth", "Mask Smoothness", "Matte blur.", nodeone::kParamFloat, 0.0, 0.0, 1.0, 0.01, nullptr, 0, 13, nodeone::kPluginOnly},
     {"dp_show", "Show Colors", "Show colour matte.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 13, nodeone::kPluginOnly},
     {"dp_colors_bypass", "Bypass Colors", "Bypass colours.", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 13, nodeone::kPluginOnly},
     {"density_reset", "Reset Density Color", "Reset colour density.", nodeone::kParamPush, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 13, nodeone::kNoOffset},
+    {"dp_boost", "Global Strength", "Density gain, all colours.", nodeone::kParamFloat, 0.0, 0.0, 100.0, 0.1, nullptr, 0, 13, nodeone::kPluginOnly},
     {"trim_crv", "Curve View", "Curve overlay (linked to Scopes).", nodeone::kParamBool, 0.0, 0.0, 1.0, 1.0, nullptr, 0, 14, nodeone::kPluginOnly},
     {"trim_con", "Log Contrast", "Log contrast.", nodeone::kParamFloat, 0.0, -0.5, 1.0, 0.0001, nullptr, 0, 15, 128},
     {"trim_piv", "Pivot", "Contrast pivot.", nodeone::kParamFloat, 0.336, 0.0, 1.0, 0.001, nullptr, 0, 15, 132},
@@ -10027,7 +10034,7 @@ const PluginDef kPlugin_drt = {
     "NODE_DRT — display rendering transform. Modified OpenDRT v1.0.1 by Jed Smith, GPLv3, with film look presets fitted against spektrafilm references. Workflow: DaVinci YRGB (not Color Managed), timeline DaVinci Wide Gamut / Intermediate.",
     2, 0,
     nodeone_drt::kGroups, 25,
-    nodeone_drt::kParams, 118,
+    nodeone_drt::kParams, 117,
     sizeof(nodeone_drt::DctlParams),
     nodeone_drt::kMetalSource, "node_one_main",
     &nodeone_drt::cpu_render,

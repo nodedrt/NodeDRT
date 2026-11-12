@@ -4660,7 +4660,11 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     
     if (trim_skin_sat != 0.0f && sk_w_scene > 0.0f) {
-      const float3 sat = chroma_sub(sk, 1.0f + trim_skin_sat);
+      
+      
+      
+      const float sk_ss = trim_skin_sat*(0.4f + 0.6f*trim_skin_sat*trim_skin_sat);
+      const float3 sat = chroma_sub(sk, 1.0f + sk_ss);
       sk = sk + (sat - sk)*sk_w_scene;
     }
     rgb = sk*sk_pk;

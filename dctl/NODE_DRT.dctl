@@ -4084,7 +4084,11 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // que la lumiere ne montait - 13 marches arriere a +1 sur les rampes les
     // plus saturees. Dans la scene il est constant le long d'une rampe.
     if (trim_skin_sat != 0.0f && sk_w_scene > 0.0f) {
-      const float3 sat = chroma_sub(sk, 1.0f + trim_skin_sat);
+      // v2 : courbe de reponse douce au centre (pente 0.4 a 0, x(0.4 + 0.6x^2)) :
+      // les petits reglages, les plus utilises sur un visage, ont 2.5 fois plus
+      // de course a la souris ; -1 et +1 restent neutre et double.
+      const float sk_ss = trim_skin_sat*(0.4f + 0.6f*trim_skin_sat*trim_skin_sat);
+      const float3 sat = chroma_sub(sk, 1.0f + sk_ss);
       sk = sk + (sat - sk)*sk_w_scene;
     }
     rgb = sk*sk_pk;

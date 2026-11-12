@@ -177,16 +177,25 @@ TX_CONST float GX_SIG[108] = {   // [gauge 65 / 35 / 16 / 8 mm][channel][density
     0.0361f, 0.0402f, 0.0436f, 0.0454f, 0.0474f, 0.0482f, 0.0474f, 0.0486f, 0.0509f,   // 8mm B
 };
 
+// v2: the table above is spektrafilm's grain at the bare pixel, before any
+// optics. A real 4K scan of the negative sees it through the dye clouds and the
+// scanner's lens (the field is now softened by ~0.7 px, NodeTexture.cpp), and
+// at that point a 35mm Vision3 250D frame shows about 0.06 stop RMS in the
+// midtones of the green record - Kodak's published diffuse RMS granularity (5)
+// brought to the UHD pixel, through the negative's gamma and that MTF. GX_AMP
+// carries the table there; the ratios between gauges, records and densities
+// stay spektrafilm's.
+TX_CONST float GX_AMP = 0.45f;
 TX_FN float tx_grainSig(int g, int c, float d)
 {
     const int o = (g * 3 + c) * 9;
-    if (d <= GX_D[0]) return GX_SIG[o];
+    if (d <= GX_D[0]) return GX_AMP * GX_SIG[o];
     for (int j = 1; j < 9; ++j)
         if (d <= GX_D[j]) {
             const float f = (d - GX_D[j - 1]) / (GX_D[j] - GX_D[j - 1]);
-            return GX_SIG[o + j - 1] + (GX_SIG[o + j] - GX_SIG[o + j - 1]) * f;
+            return GX_AMP * (GX_SIG[o + j - 1] + (GX_SIG[o + j] - GX_SIG[o + j - 1]) * f);
         }
-    return GX_SIG[o + 8];
+    return GX_AMP * GX_SIG[o + 8];
 }
 
 TX_FN unsigned int tx_hash(unsigned int x, unsigned int y, unsigned int s)
@@ -223,8 +232,15 @@ TX_FN TxRGB tx_pixel(int halOn, float halS, float kw0, float kw1, float kw2, int
         c.b = tx_halAdd(c.b, kw2 * add);
     }
     if (grOn) {
-        // independent layers, the colour control blends towards mono
-        const float n0 = z0, n1 = z1, n2 = z2;
+        // v2: the three records of a SCANNED negative are not independent:
+        // the dye layers overlap in spectrum and the scanner's channels see
+        // each other, so the grain is mostly a luminance grain with a little
+        // colour (records correlated ~0.7). grSat = 0.5 x Color: Color 0 =
+        // mono, 1 = scan-true (s = 0.5, correlation 0.68), 2 = independent
+        // layers. Each record keeps unit variance (norm below).
+        const float s = grSat;
+        const float nrm = 1.0f / TX_SQRT((1.0f - s) * (1.0f - s) + s * s + 1.1547005f * s * (1.0f - s));
+        const float n0 = z0 * nrm, n1 = z1 * nrm, n2 = z2 * nrm;
         const float zm = (n0 + n1 + n2) * 0.57735027f;   // 1/sqrt(3): unit variance
         const float Y = Yr * c.r + Yg * c.g + Yb * c.b;
         const float ev = TX_LOG2(TX_MAX(Y, 1e-10f) / 0.18f);

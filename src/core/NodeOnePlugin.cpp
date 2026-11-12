@@ -301,8 +301,8 @@ private:
     DensitySettings densitySettings(double t, const std::vector<uint32_t>& block) const
     {
         DensitySettings s;
-        if (!paramByName("dp_bypass")) return s;
-        s.on = !bln("dp_bypass", t, false);
+        if (!paramByName("dp_hi")) return s;
+        s.on = true;   // v2 : plus de bypass global (Zones et Colors ont chacun le leur)
         // Les cases : Show Zones montre une zone (6..8) ou la carte (9),
         // Show Colors une couleur (0..5) ou toutes les couleurs actives (10).
         // Le dernier reglage touche n'est suivi que s'il est du bon cote.
