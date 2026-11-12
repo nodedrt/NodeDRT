@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Node DRT – Film Look DRT for DaVinci Resolve (OFX plugin for macOS)</title>
+<meta name="description" content="Node DRT is an OpenFX display rendering transform for DaVinci Resolve Studio on Mac: seven film looks, Density, Skin tools, film grain, SDR and HDR. Built on OpenDRT.">
+<link rel="canonical" href="https://nodedrt.github.io/NodeDRT/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Node DRT – Film Look DRT for DaVinci Resolve">
+<meta property="og:description" content="One node at the end of your tree turns camera log into a finished film image. OpenFX plugin for DaVinci Resolve Studio on macOS.">
+<meta property="og:image" content="https://nodedrt.github.io/NodeDRT/og.png">
+<meta property="og:url" content="https://nodedrt.github.io/NodeDRT/">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Node DRT","alternateName":["NODE_DRT","Node DRT v2"],
+ "applicationCategory":"MultimediaApplication","operatingSystem":"macOS 11 or later",
+ "description":"OpenFX display rendering transform (DRT) for DaVinci Resolve Studio: film looks, Density, Skin tools, film grain, SDR and HDR.",
+ "author":{"@type":"Person","name":"Samuel Drouin"},"softwareVersion":"2.0",
+ "offers":{"@type":"Offer","price":"29.99","priceCurrency":"EUR","url":"https://node-drt.lemonsqueezy.com"}}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0a0d;--card:#0e0e12;--line:#26262c;--fg:#f4f4f5;--dim:#8a8a93;--mute:#55555c}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{background:var(--bg)}
+  body{color:var(--fg);font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+  .mono{letter-spacing:.32em;text-transform:uppercase;font-size:12px}
+  header{display:flex;justify-content:space-between;align-items:center;padding:28px 0}
+  header .mono b{font-weight:600;color:var(--fg)} header .mono span{color:var(--dim)}
+  .corner{width:46px;height:46px;position:relative}
+  .corner i{position:absolute;right:0;border-top:1px solid #9a9aa3;border-left:1px solid #9a9aa3}
+  .corner i:nth-child(1){top:0;width:46px;height:46px}.corner i:nth-child(2){top:9px;width:37px;height:37px}.corner i:nth-child(3){top:18px;width:28px;height:28px}
+  .hero{min-height:72vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 0 80px}
+  h1{font-family:Montserrat,system-ui,sans-serif;font-weight:800;font-size:clamp(56px,13vw,168px);line-height:.95;letter-spacing:-.01em}
+  .rule{width:min(330px,50vw);height:2px;background:var(--fg);margin:36px auto 30px}
+  .tag{font-weight:600;font-size:clamp(11px,1.6vw,16px);letter-spacing:.38em}
+  .sub{color:var(--mute);margin-top:18px;font-size:clamp(10px,1.3vw,13px);letter-spacing:.34em}
+  .cta{display:inline-block;margin-top:52px;padding:16px 34px;border:1px solid var(--fg);color:var(--fg);text-decoration:none;font-weight:600;letter-spacing:.3em;font-size:13px;transition:.2s}
+  .cta:hover{background:var(--fg);color:var(--bg)}
+  .price{display:block;margin-top:14px;color:var(--dim);font-size:12px;letter-spacing:.25em}
+  section{border-top:1px solid var(--line);padding:72px 0}
+  h2{font-family:Montserrat,sans-serif;font-weight:800;font-size:clamp(26px,3.4vw,40px);margin-bottom:28px}
+  .lead{max-width:760px;color:#c9c9cf;font-size:15px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-top:40px}
+  .cell{background:var(--card);padding:28px}
+  .cell h3{font-size:12px;letter-spacing:.3em;text-transform:uppercase;margin-bottom:12px}
+  .cell p{color:var(--dim);font-size:13.5px}
+  .specs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px;margin-top:8px}
+  .specs div{border-left:1px solid var(--line);padding-left:16px}
+  .specs .k{color:var(--mute);font-size:11px;letter-spacing:.3em;text-transform:uppercase}
+  .specs .v{font-size:14px;margin-top:6px}
+  footer{border-top:1px solid var(--line);padding:36px 0 48px;display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;color:var(--mute);font-size:11px;letter-spacing:.25em;text-transform:uppercase}
+  footer a{color:var(--dim);text-decoration:none} footer a:hover{color:var(--fg)}
+  .credit{color:var(--dim);font-size:13px;max-width:760px;margin-top:20px}
+  .credit a{color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mono"><b>OpenFX</b> <span>plugin · v2</span></div>
+    <div class="corner" aria-hidden="true"><i></i><i></i><i></i></div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>NODE_DRT</h1>
+      <div class="rule"></div>
+      <p class="tag">SCENE-REFERRED → DISPLAY-REFERRED</p>
+      <p class="sub">7 FILM LOOKS · DENSITY · SKIN TOOLS · GRAIN · SDR / HDR · METAL GPU</p>
+      <a class="cta" href="https://node-drt.lemonsqueezy.com">GET NODE DRT</a>
+      <span class="price">€29.99 · MAC · DAVINCI RESOLVE STUDIO</span>
+    </div>
+
+    <section>
+      <h2>Cinematic rendering, right inside DaVinci Resolve.</h2>
+      <p class="lead">Node DRT is an OpenFX display rendering transform (DRT). It takes your camera log footage and turns it into a finished, screen-ready image, with the soft highlights and depth of a film render. One node at the end of your tree replaces your output CST and your rendering LUTs. 18% grey stays put on every look, so switching looks never moves your exposure.</p>
+      <div class="grid">
+        <div class="cell"><h3>Seven film looks</h3><p>Calibrated against simulations of real negative and print stocks. A continuous highlight roll-off into white, rich contrast, dense blacks. Dialable 0–100%.</p></div>
+        <div class="cell"><h3>Density</h3><p>Print-style density by zone and by colour, with masks smoothed like a qualifier and smart views of what is selected.</p></div>
+        <div class="cell"><h3>Trims</h3><p>Log contrast, overlay, Black Lift and White Roll-Off with pivots, shadows, highlight purity and density, brilliance. Curve View on the image.</p></div>
+        <div class="cell"><h3>Skin</h3><p>A qualifier-style skin matte, Skin Line to the skin tone line, skin saturation and zone-by-zone face lighting.</p></div>
+        <div class="cell"><h3>Film grain</h3><p>65, 35, 16 and 8mm grain as seen on a 4K scan: fine, organic, mostly luminance.</p></div>
+        <div class="cell"><h3>Never breaks the picture</h3><p>Every control tested across its full range: no gradient stepping backwards, no colour artifacts in the blacks. False Color, Skin Check, Curve View built in.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Specifications</h2>
+      <div class="specs">
+        <div><p class="k">Input</p><p class="v">16 gamuts · 10 log curves<br>Sony, ARRI, RED, Panasonic, Fujifilm, Blackmagic, ACES</p></div>
+        <div><p class="k">Output</p><p class="v">Rec.709 · sRGB · Display P3<br>HDR PQ · HLG</p></div>
+        <div><p class="k">System</p><p class="v">macOS 11+ · Apple Silicon + Intel<br>Metal GPU</p></div>
+        <div><p class="k">Host</p><p class="v">DaVinci Resolve Studio 18+<br>(the free Resolve does not load OFX)</p></div>
+      </div>
+      <p class="credit">Built on <a href="https://github.com/jedypod/open-display-transform">OpenDRT by Jed Smith</a>: the core rendering is his work; Node DRT is a modified version, not affiliated with him. Open source (GPLv3) — <a href="https://github.com/nodedrt/NodeDRT">source code on GitHub</a>. Film stock names are trademarks of their owners, used descriptively.</p>
+    </section>
+  </main>
+
+  <footer>
+    <span>Node DRT · Samuel Drouin</span>
+    <span><a href="https://node-drt.lemonsqueezy.com">Store</a> · <a href="https://github.com/nodedrt/NodeDRT">Source</a> · <a href="mailto:nodedrt@gmail.com">Contact</a></span>
+  </footer>
+</div>
+</body>
+</html>
