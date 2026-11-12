@@ -64,7 +64,7 @@ def vector(color, key, dens, sat, hs, ht):
 PLUGINS = [
     dict(
         key='drt', file='NODE_DRT.dctl',
-        id='com.nodeone.ofx.NodeDRT', label='Node DRT', version=(1, 2),
+        id='com.nodeone.ofx.NodeDRT2', label='Node DRT v2', version=(2, 0),
         description='NODE_DRT — display rendering transform. Modified OpenDRT v1.0.1 '
                     'by Jed Smith, GPLv3, with film look presets fitted against '
                     'spektrafilm references. ' + WORKFLOW,

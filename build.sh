@@ -88,21 +88,33 @@ else
   echo "  note: resources/film/film_tables.bin missing - the looks fall back to the parametric versions"
 fi
 
+# NODE DRT v2: its own plugin, installed NEXT TO Node DRT 1.x (never over it).
+# Own bundle, binary and identifiers, so Resolve lists both and old grades keep
+# opening with the 1.x plugin.
+V2=build/NodeDRT2.ofx.bundle
+rm -rf "$V2"
+cp -R build/NodeDRT.ofx.bundle "$V2"
+rm -rf "$V2/Contents/_CodeSignature"
+mv "$V2/Contents/MacOS/NodeDRT.ofx" "$V2/Contents/MacOS/NodeDRT2.ofx"
+sed -i '' -e 's#>NodeDRT<#>NodeDRT2<#g' -e 's#>NodeDRT.ofx<#>NodeDRT2.ofx<#g' \
+          -e 's#com.nodeone.ofx.drt<#com.nodeone.ofx.drt2<#g' "$V2/Contents/Info.plist"
+
 step "4/4  Signing (ad-hoc)"
-codesign --force --deep --sign - build/NodeDRT.ofx.bundle >> "$LOG" 2>&1 \
+codesign --force --deep --sign - "$V2" >> "$LOG" 2>&1 \
   || { echo "codesign failed"; exit 1; }
 
 echo
-echo "Built:  build/NodeDRT.ofx.bundle    (GPLv3)"
+echo "Built:  $V2    (Node DRT v2, GPLv3)"
 
 if [ "${1:-}" = "install" ]; then
   DEST="/Library/OFX/Plugins"
   echo "Installing to $DEST (administrator password required)…"
+  # only Node DRT v2 is installed or replaced; Node DRT 1.x is left untouched
   sudo mkdir -p "$DEST" && \
-  sudo rm -rf "$DEST/NodeDRT.ofx.bundle" && \
-  sudo cp -R build/NodeDRT.ofx.bundle "$DEST/" && \
-  sudo chmod -R a+rX "$DEST/NodeDRT.ofx.bundle" && \
-  sudo xattr -dr com.apple.quarantine "$DEST/NodeDRT.ofx.bundle" 2>/dev/null
-  echo "Installed. Restart DaVinci Resolve: the effect is under OpenFX > Node_One."
+  sudo rm -rf "$DEST/NodeDRT2.ofx.bundle" && \
+  sudo cp -R "$V2" "$DEST/" && \
+  sudo chmod -R a+rX "$DEST/NodeDRT2.ofx.bundle" && \
+  sudo xattr -dr com.apple.quarantine "$DEST/NodeDRT2.ofx.bundle" 2>/dev/null
+  echo "Installed Node DRT v2 next to Node DRT 1.x. Restart DaVinci Resolve: OpenFX > Node_One > Node DRT v2."
 fi
 echo "BUILD OK $TAG" >> "$LOG"
