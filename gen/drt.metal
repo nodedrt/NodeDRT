@@ -204,10 +204,11 @@ struct DctlParams {
     float skin_piv;
     float skin_soft;
     float skin_mhue;
-    float skin_mrec;
+    float skin_msl;
+    float skin_msx;
+    float skin_mdk;
     float skin_medge;
     float skin_mhc;
-    int skin_mask_bypass;
     int skin_zones;
     int skin_col_bypass;
     int skin_light_bypass;
@@ -478,10 +479,20 @@ struct DctlParams {
 #else
 #define NODEONE_PV_skin_mhue (P_.skin_mhue)
 #endif
-#ifdef NODEONE_SPEC_skin_mrec
-#define NODEONE_PV_skin_mrec (NODEONE_SPEC_skin_mrec)
+#ifdef NODEONE_SPEC_skin_msl
+#define NODEONE_PV_skin_msl (NODEONE_SPEC_skin_msl)
 #else
-#define NODEONE_PV_skin_mrec (P_.skin_mrec)
+#define NODEONE_PV_skin_msl (P_.skin_msl)
+#endif
+#ifdef NODEONE_SPEC_skin_msx
+#define NODEONE_PV_skin_msx (NODEONE_SPEC_skin_msx)
+#else
+#define NODEONE_PV_skin_msx (P_.skin_msx)
+#endif
+#ifdef NODEONE_SPEC_skin_mdk
+#define NODEONE_PV_skin_mdk (NODEONE_SPEC_skin_mdk)
+#else
+#define NODEONE_PV_skin_mdk (P_.skin_mdk)
 #endif
 #ifdef NODEONE_SPEC_skin_medge
 #define NODEONE_PV_skin_medge (NODEONE_SPEC_skin_medge)
@@ -492,11 +503,6 @@ struct DctlParams {
 #define NODEONE_PV_skin_mhc (NODEONE_SPEC_skin_mhc)
 #else
 #define NODEONE_PV_skin_mhc (P_.skin_mhc)
-#endif
-#ifdef NODEONE_SPEC_skin_mask_bypass
-#define NODEONE_PV_skin_mask_bypass (NODEONE_SPEC_skin_mask_bypass)
-#else
-#define NODEONE_PV_skin_mask_bypass (P_.skin_mask_bypass)
 #endif
 #ifdef NODEONE_SPEC_skin_zones
 #define NODEONE_PV_skin_zones (NODEONE_SPEC_skin_zones)
@@ -569,6 +575,8 @@ struct DctlParams {
 #define NODEONE_PV_tone_intensity (P_.tone_intensity)
 #endif
 #line 1 "NODE_DRT.dctl"
+
+
 
 
 
@@ -2822,14 +2830,21 @@ __DEVICE__ float2 skin_feat(float3 c709) {
 
 
 
+
 #define HS_REC_HI 0.2f   
-__DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float rc) {
+__DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float sl, float sx) {
   
   
   
   const float phi = fe.x, cr = fe.y;
-  const float ky = 1.0f + 1.5f*hr, km = 1.0f + 0.8f*hr;
-  const float lo = 1.0f - 0.75f*rc, hi = 1.0f + HS_REC_HI*rc;
+  
+  
+  
+  
+  const float ky = hr >= 0.0f ? 1.0f + 1.5f*hr : 1.0f + 0.6f*hr;
+  const float km = hr >= 0.0f ? 1.0f + 0.8f*hr : 1.0f + 0.5f*hr;
+  const float lo = sl >= 0.0f ? 1.0f - 0.75f*sl : 1.0f - 0.6f*sl;
+  const float hi = sx >= 0.0f ? 1.0f + HS_REC_HI*sx : 1.0f + 0.4f*sx;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
   const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
@@ -2851,10 +2866,16 @@ __DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float rc) {
 
 
 
-__DEVICE__ float skin_win_l(float2 fe, float soft, float hr, float rc) {
+__DEVICE__ float skin_win_l(float2 fe, float soft, float hr, float sl, float sx) {
   const float phi = fe.x, cr = fe.y;
-  const float ky = 1.0f + 1.5f*hr, km = 1.0f + 0.8f*hr;
-  const float lo = 1.0f - 0.75f*rc, hi = 1.0f + 0.8f*rc;
+  
+  
+  
+  
+  const float ky = hr >= 0.0f ? 1.0f + 1.5f*hr : 1.0f + 0.6f*hr;
+  const float km = hr >= 0.0f ? 1.0f + 0.8f*hr : 1.0f + 0.5f*hr;
+  const float lo = sl >= 0.0f ? 1.0f - 0.75f*sl : 1.0f - 0.6f*sl;
+  const float hi = sx >= 0.0f ? 1.0f + 0.8f*sx : 1.0f + 0.4f*sx;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
   const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
@@ -3071,7 +3092,7 @@ __DEVICE__ float3 skin_proxy_p3(float3 code, int tf, dctl_float3x3 pre, float rs
 
 
 __DEVICE__ float3 skin_tap(float3 code, int tf, dctl_float3x3 pre, float rs_sa, float3 rs_w, float gain,
-                           float soft, float hr, float rc, float hc, int need_s, int need_l) {
+                           float soft, float hr, float sl, float sx, float dk, float hc, int need_s, int need_l) {
   const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
   const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
@@ -3081,12 +3102,12 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, dctl_float3x3 pre, float rs_sa, 
   if (m > 1.0e-6f) {
     
     
-    const float gate = smootherstep(-11.0f - 2.0f*rc, -6.5f - 2.0f*rc, _log2f(m));
+    const float gate = smootherstep(-11.0f - 2.0f*dk, -6.5f - 2.0f*dk, _log2f(m));
     const float3 cn = c709*(0.5f/m);
     float2 fe = skin_feat(cn);
     fe.x -= 0.3491f*hc;   
-    if (need_s) ts = skin_win_s(fe, soft, hr, rc)*gate;
-    if (need_l) tl = skin_win_l(fe, soft, hr, rc)*gate;
+    if (need_s) ts = skin_win_s(fe, soft, hr, sl, sx)*gate;
+    if (need_l) tl = skin_win_l(fe, soft, hr, sl, sx)*gate;
   }
   return make_float3(ly, ts, tl);
 }
@@ -3099,7 +3120,7 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, dctl_float3x3 pre, float rs_sa, 
 
 #define SKIN_TAP_AT(xx, yy) nodeone_skin_feat(tR, (xx), (yy), pass < NODEONE_SKIN_FEAT ? pass : NODEONE_SKIN_FEAT - 1)
 #else
-#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, rc, hc, need_s, need_l)
+#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, sl, sx, dk, hc, need_s, need_l)
 #endif
 
 
@@ -3123,7 +3144,7 @@ __DEVICE__ float skm_protect(float wc, float wk) {
 __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ tB,
                                     int X, int Y, int H, int tf, dctl_float3x3 pre,
                                     float rs_sa, float3 rs_w, float gain, float soft,
-                                    float hr, float rc, float hc, float ed,
+                                    float hr, float sl, float sx, float dk, float hc, float ed,
                                     int need_s, int need_l, int pass) {
   
   
@@ -3220,7 +3241,7 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
   return make_float2(as + (ps - as)*ks, al + (pl - al)*kl);
 }
 
-__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = NODEONE_PV_in_gamut; int in_oetf = NODEONE_PV_in_oetf; float tn_Lp = NODEONE_PV_tn_Lp; float tn_gb = NODEONE_PV_tn_gb; float pt_hdr = NODEONE_PV_pt_hdr; int out_clamp = NODEONE_PV_out_clamp; int crv_enable = NODEONE_PV_crv_enable; float crv_size = NODEONE_PV_crv_size; int fc_overlay = NODEONE_PV_fc_overlay; int skin_check = NODEONE_PV_skin_check; int legend = NODEONE_PV_legend; int look_preset = NODEONE_PV_look_preset; int look_bypass = NODEONE_PV_look_bypass; int print_tone_sel = NODEONE_PV_print_tone_sel; int tone_bypass = NODEONE_PV_tone_bypass; int wb_preset = NODEONE_PV_wb_preset; float wb_kelvin = NODEONE_PV_wb_kelvin; float wb_temp = NODEONE_PV_wb_temp; float wb_tint = NODEONE_PV_wb_tint; int wb_bypass = NODEONE_PV_wb_bypass; int cw_bypass = NODEONE_PV_cw_bypass; int _cwp = NODEONE_PV__cwp; float _cwp_rng = NODEONE_PV__cwp_rng; float col_weight = NODEONE_PV_col_weight; float col_dens = NODEONE_PV_col_dens; int col_bypass = NODEONE_PV_col_bypass; float col_chroma = NODEONE_PV_col_chroma; float col_ptw = NODEONE_PV_col_ptw; float col_onset = NODEONE_PV_col_onset; int trim_con_bypass = NODEONE_PV_trim_con_bypass; int trim_hl_bypass = NODEONE_PV_trim_hl_bypass; int trim_mid_bypass = NODEONE_PV_trim_mid_bypass; float trim_con = NODEONE_PV_trim_con; float trim_piv = NODEONE_PV_trim_piv; float trim_ovl = NODEONE_PV_trim_ovl; float trim_blift = NODEONE_PV_trim_blift; float trim_wroll = NODEONE_PV_trim_wroll; float trim_blift_pv = NODEONE_PV_trim_blift_pv; float trim_wroll_pv = NODEONE_PV_trim_wroll_pv; float trim_sh = NODEONE_PV_trim_sh; float trim_hp = NODEONE_PV_trim_hp; float trim_hd = NODEONE_PV_trim_hd; float trim_br = NODEONE_PV_trim_br; float trim_hs = NODEONE_PV_trim_hs; float trim_mp = NODEONE_PV_trim_mp; float trim_mp_pv = NODEONE_PV_trim_mp_pv; float trim_skin = NODEONE_PV_trim_skin; float trim_skin_sat = NODEONE_PV_trim_skin_sat; float skin_piv = NODEONE_PV_skin_piv; float skin_soft = NODEONE_PV_skin_soft; float skin_mhue = NODEONE_PV_skin_mhue; float skin_mrec = NODEONE_PV_skin_mrec; float skin_medge = NODEONE_PV_skin_medge; float skin_mhc = NODEONE_PV_skin_mhc; int skin_mask_bypass = NODEONE_PV_skin_mask_bypass; int skin_zones = NODEONE_PV_skin_zones; int skin_col_bypass = NODEONE_PV_skin_col_bypass; int skin_light_bypass = NODEONE_PV_skin_light_bypass; float skin_hi = NODEONE_PV_skin_hi; float skin_mid = NODEONE_PV_skin_mid; float skin_sh = NODEONE_PV_skin_sh; int tone_curve_bypass = NODEONE_PV_tone_curve_bypass; int tonescale_preset = NODEONE_PV_tonescale_preset; float ts_intensity = NODEONE_PV_ts_intensity; int credits = NODEONE_PV_credits; int trial_mark = NODEONE_PV_trial_mark; int display_encoding_preset = NODEONE_PV_display_encoding_preset; float look_intensity = NODEONE_PV_look_intensity; float tone_intensity = NODEONE_PV_tone_intensity; (void)0;
+__DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB) {int in_gamut = NODEONE_PV_in_gamut; int in_oetf = NODEONE_PV_in_oetf; float tn_Lp = NODEONE_PV_tn_Lp; float tn_gb = NODEONE_PV_tn_gb; float pt_hdr = NODEONE_PV_pt_hdr; int out_clamp = NODEONE_PV_out_clamp; int crv_enable = NODEONE_PV_crv_enable; float crv_size = NODEONE_PV_crv_size; int fc_overlay = NODEONE_PV_fc_overlay; int skin_check = NODEONE_PV_skin_check; int legend = NODEONE_PV_legend; int look_preset = NODEONE_PV_look_preset; int look_bypass = NODEONE_PV_look_bypass; int print_tone_sel = NODEONE_PV_print_tone_sel; int tone_bypass = NODEONE_PV_tone_bypass; int wb_preset = NODEONE_PV_wb_preset; float wb_kelvin = NODEONE_PV_wb_kelvin; float wb_temp = NODEONE_PV_wb_temp; float wb_tint = NODEONE_PV_wb_tint; int wb_bypass = NODEONE_PV_wb_bypass; int cw_bypass = NODEONE_PV_cw_bypass; int _cwp = NODEONE_PV__cwp; float _cwp_rng = NODEONE_PV__cwp_rng; float col_weight = NODEONE_PV_col_weight; float col_dens = NODEONE_PV_col_dens; int col_bypass = NODEONE_PV_col_bypass; float col_chroma = NODEONE_PV_col_chroma; float col_ptw = NODEONE_PV_col_ptw; float col_onset = NODEONE_PV_col_onset; int trim_con_bypass = NODEONE_PV_trim_con_bypass; int trim_hl_bypass = NODEONE_PV_trim_hl_bypass; int trim_mid_bypass = NODEONE_PV_trim_mid_bypass; float trim_con = NODEONE_PV_trim_con; float trim_piv = NODEONE_PV_trim_piv; float trim_ovl = NODEONE_PV_trim_ovl; float trim_blift = NODEONE_PV_trim_blift; float trim_wroll = NODEONE_PV_trim_wroll; float trim_blift_pv = NODEONE_PV_trim_blift_pv; float trim_wroll_pv = NODEONE_PV_trim_wroll_pv; float trim_sh = NODEONE_PV_trim_sh; float trim_hp = NODEONE_PV_trim_hp; float trim_hd = NODEONE_PV_trim_hd; float trim_br = NODEONE_PV_trim_br; float trim_hs = NODEONE_PV_trim_hs; float trim_mp = NODEONE_PV_trim_mp; float trim_mp_pv = NODEONE_PV_trim_mp_pv; float trim_skin = NODEONE_PV_trim_skin; float trim_skin_sat = NODEONE_PV_trim_skin_sat; float skin_piv = NODEONE_PV_skin_piv; float skin_soft = NODEONE_PV_skin_soft; float skin_mhue = NODEONE_PV_skin_mhue; float skin_msl = NODEONE_PV_skin_msl; float skin_msx = NODEONE_PV_skin_msx; float skin_mdk = NODEONE_PV_skin_mdk; float skin_medge = NODEONE_PV_skin_medge; float skin_mhc = NODEONE_PV_skin_mhc; int skin_zones = NODEONE_PV_skin_zones; int skin_col_bypass = NODEONE_PV_skin_col_bypass; int skin_light_bypass = NODEONE_PV_skin_light_bypass; float skin_hi = NODEONE_PV_skin_hi; float skin_mid = NODEONE_PV_skin_mid; float skin_sh = NODEONE_PV_skin_sh; int tone_curve_bypass = NODEONE_PV_tone_curve_bypass; int tonescale_preset = NODEONE_PV_tonescale_preset; float ts_intensity = NODEONE_PV_ts_intensity; int credits = NODEONE_PV_credits; int trial_mark = NODEONE_PV_trial_mark; int display_encoding_preset = NODEONE_PV_display_encoding_preset; float look_intensity = NODEONE_PV_look_intensity; float tone_intensity = NODEONE_PV_tone_intensity; (void)0;
   
   
   
@@ -3827,11 +3848,13 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
   
   
   
-  const float sk_soft_e  = skin_mask_bypass ? 0.5f : skin_soft;
-  const float sk_mhue_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mhue, 0.0f, 1.0f);
-  const float sk_mrec_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mrec, 0.0f, 1.0f);
-  const float sk_medge_e = skin_mask_bypass ? 0.0f : _clampf(skin_medge, 0.0f, 1.0f);
-  const float sk_mhc_e   = skin_mask_bypass ? 0.0f : _clampf(skin_mhc, -1.0f, 1.0f);
+  const float sk_soft_e  = _clampf(skin_soft, 0.0f, 1.0f);
+  const float sk_mhue_e  = _clampf(skin_mhue, -1.0f, 1.0f);
+  const float sk_msl_e   = _clampf(skin_msl, -1.0f, 1.0f);
+  const float sk_msx_e   = _clampf(skin_msx, -1.0f, 1.0f);
+  const float sk_mdk_e   = _clampf(skin_mdk, -1.0f, 1.0f);
+  const float sk_medge_e = _clampf(skin_medge, 0.0f, 1.0f);
+  const float sk_mhc_e   = _clampf(skin_mhc, -1.0f, 1.0f);
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
   if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
@@ -3849,11 +3872,11 @@ __DEVICE__ float3 dctl_transform(__PARAMSREF__ DctlParams& P_, int p_Width, int 
     
     if (lk_pass == NODEONE_SKIN_PREPASS)
       return skin_tap(make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
-                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_mrec_e, sk_mhc_e, sk_need_s, sk_need_l);
+                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_msl_e, sk_msx_e, sk_mdk_e, sk_mhc_e, sk_need_s, sk_need_l);
 #endif
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
                                          rs_sa, rs_w, look_exp, sk_soft_e,
-                                         sk_mhue_e, sk_mrec_e, sk_mhc_e, sk_medge_e,
+                                         sk_mhue_e, sk_msl_e, sk_msx_e, sk_mdk_e, sk_mhc_e, sk_medge_e,
                                          sk_need_s, sk_need_l, lk_pass);
     sk_w_scene = skm.x;
     sk_wl_scene = skm.y;

@@ -230,14 +230,19 @@ PLUGINS = [
             ]},
             # SKIN : les noms OFX trim_skin / trim_skin_sat sont gardes.
             {'name': 'grp_skin', 'label': 'Skin', 'open': False, 'params': [
+                # MASQUE (v2) : comme un qualifieur - Show Mask d'abord, puis teinte,
+                # saturation, ombres, douceur, flou. Chaque reglage fait une chose et
+                # se voit sur Show Mask. Bipolaires, 0 = le masque mesure.
                 SUB('grp_skin_mask', 'Mask', [
-                    P('skin_soft', 'Mask Softness'),
-                    P('skin_mhue', 'Mask Hue Range'),
-                    P('skin_mhc', 'Mask Hue Center'),
-                    P('skin_mrec', 'Mask Recovery'),
-                    P('skin_medge', 'Mask Edge Softness'),
                     P('skin_zones', 'Show Mask'),
-                    P('skin_mask_bypass', 'Bypass Mask'),
+                    P('skin_mhc', 'Hue Center'),
+                    P('skin_mhue', 'Hue Width'),
+                    P('skin_msl', 'Low Saturation'),
+                    P('skin_msx', 'High Saturation'),
+                    P('skin_mdk', 'Shadows Reach'),
+                    P('skin_soft', 'Softness'),
+                    P('skin_medge', 'Edge Blur'),
+                    P('skin_mask_reset', 'Reset Mask', synth='push', hint='Returns the mask controls (and Show Mask) to the mask measured on real faces in one click, as a single undo step. Color and Light are not touched.'),
                 ]),
                 SUB('grp_skin_col', 'Color', [
                     P('trim_skin', 'Skin Line'),

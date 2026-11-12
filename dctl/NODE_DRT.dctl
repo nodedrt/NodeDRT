@@ -296,16 +296,18 @@ DEFINE_UI_PARAMS(skin_piv, 🧑 Skin_Zone_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, -3.0,
 DEFINE_UI_TOOLTIP(skin_piv, "Places the three light zones on the face you are grading, in stops. At zero they assume a face exposed the standard way - the body of the skin from about -0.75 to +1.25 stops around 18 percent grey. A face shot darker, or darker skin, sits lower: move the pivot left until the lit cheek answers to Midtones and the shadow side to Shadows; move it right for a face exposed hot or for very fair skin. It moves all three zones together and changes nothing on its own.")
 DEFINE_UI_PARAMS(skin_soft, 🧑 Mask_Softness, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(skin_soft, "How softly the Light correction blends - everywhere it can show an edge. Between the zones: how gradually Shadows hands over to Midtones and Midtones to Highlights, from a narrow half-stop at 0 to a wide four and a half stops at 1 (one and a half at 0.50, the default). At the edge of the skin: how gradually the mask ends - left makes it tight and clean against a background close to skin, right feathers it strongly while the core of the face stays at full strength, so the correction melts into lips, freckles, beards and mixed light. Show Mask shows the soft edge of the skin. The light can never step backwards, whatever the setting.")
-DEFINE_UI_PARAMS(skin_mhue, 🧑 Mask_Hue_Range, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(skin_mhue, "Widens the skin mask in HUE, on both sides: towards yellow-orange (tungsten, sunset, a warm grade on set) and towards pink-magenta (LED, lips, flushed cheeks, cold daylight). For skin that the mask misses because the light shifted its colour. 0 = the mask measured on real faces. Watch Show Mask while you push it: everything painted is what the skin controls will touch.")
-DEFINE_UI_PARAMS(skin_mrec, 🧑 Mask_Recovery, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(skin_mrec, "Recovers skin the mask lets go of because it is ALTERED - pale or washed out (overexposed, flat light, makeup, very fair skin), very saturated (sunburn, red light, a strong practical), or deep in shadow. It opens the mask to lower and higher chroma and lets it reach two stops further into the dark. Hue is untouched: that is Mask Hue Range. 0 = the mask measured on real faces.")
+DEFINE_UI_PARAMS(skin_mhue, 🧑 Mask_Hue_Width, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(skin_mhue, "How wide the mask is around the skin hue. Right: wider, towards yellow-orange (tungsten, sunset) and pink-magenta (LED, lips, flushed cheeks). Left: narrower, only the core skin tone - for a background whose colour is close to skin. 0 = the mask measured on real faces. Watch Show Mask while you move it.")
+DEFINE_UI_PARAMS(skin_msl, 🧑 Mask_Low_Saturation, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(skin_msl, "The pale end of the mask. Right: takes in paler, more washed-out skin (overexposed, flat light, makeup, very fair skin). Left: leaves out softly coloured surfaces that sit close to skin - beige walls, sand, wood, a greyish background. 0 = the mask measured on real faces.")
+DEFINE_UI_PARAMS(skin_msx, 🧑 Mask_High_Saturation, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(skin_msx, "The rich end of the mask. Right: takes in more saturated skin (sunburn, red light, a strong practical, a warm grade). Left: leaves out strong oranges and reds close to skin - a red dress, fruit, brick. 0 = the mask measured on real faces.")
+DEFINE_UI_PARAMS(skin_mdk, 🧑 Mask_Shadows, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(skin_mdk, "How far into the dark the mask reaches. Right: up to two stops deeper, for skin in shadow. Left: up to two stops less deep, to keep the noise of a dark background out of the mask. 0 = the default.")
 DEFINE_UI_PARAMS(skin_medge, 🧑 Mask_Edge_Softness, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(skin_medge, "Softens the EDGES of the skin mask in the picture, like the blur of a pro qualifier: the mask is averaged over a wider area (up to five times the radius) and follows the image contours less strictly, so the correction fades out over a wider band around the face instead of stopping on its outline. Mask Softness, above, is the softness between the light zones and of the colour key; this one is the softness in space. 0 = the measured mask.")
+DEFINE_UI_TOOLTIP(skin_medge, "Softens the EDGES of the skin mask in the picture, like the blur of a pro qualifier: the mask is averaged over a wider area (up to five times the radius) and follows the image contours less strictly, so the correction fades out over a wider band around the face instead of stopping on its outline. Softness, above, is the softness of the colour key and between the light zones; this one is the softness in space. 0 = the measured mask.")
 DEFINE_UI_PARAMS(skin_mhc, 🧑 Mask_Hue_Center, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
-DEFINE_UI_TOOLTIP(skin_mhc, "Moves the whole skin mask around the hue circle, up to 20 degrees each way, without widening it: right towards yellow-olive, left towards pink-red. For skin whose colour the light or the camera has pushed off to one side - the mask follows it instead of catching half the face. Mask Hue Range widens; this slides. Skin Line still aims at the true skin tone line. 0 = the mask measured on real faces.")
-DEFINE_UI_PARAMS(skin_mask_bypass, ↩ Bypass_Skin_Mask, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_TOOLTIP(skin_mask_bypass, "Returns the skin mask to the one measured on real faces in one click, without touching the slider values: Mask Softness back to its default, Mask Hue Range, Mask Hue Center, Mask Recovery and Mask Edge Softness to zero. The skin corrections stay on - only the mask they use changes - so you can compare the widened mask with the measured one. Show Mask shows whichever mask is in use.")
+DEFINE_UI_TOOLTIP(skin_mhc, "Slides the whole skin mask around the hue circle, up to 20 degrees each way, without widening it: right towards yellow-olive, left towards pink-red. For skin that the light or the camera has pushed to one side - the mask follows it instead of catching half the face. Hue Width widens or narrows; this slides. Skin Line still aims at the true skin tone line. 0 = the mask measured on real faces.")
 DEFINE_UI_PARAMS(skin_zones, 🧑 Show_Zones, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_TOOLTIP(skin_zones, "Shows the skin selection and nothing else: the picture turns grey and every pixel the skin controls act on is painted CYAN - a colour no skin has - as strongly as it is selected, soft edges included. It paints the mask of the controls in use: the Light mask as soon as Light acts (or before anything acts), otherwise the Skin Saturation / Skin Line mask. Use it with the Mask sliders, then turn it OFF before you render.")
 DEFINE_UI_PARAMS(skin_col_bypass, ↩ Bypass_Skin_Colour, DCTLUI_CHECK_BOX, 0)
@@ -2247,18 +2249,25 @@ __DEVICE__ float2 skin_feat(float3 c709) {
 // MASQUE ELARGI (version 1.2) - trois reglages, tous a 0 par defaut : a 0
 // chaque facteur vaut exactement 1 et chaque decalage 0, donc le masque est
 // identique au bit pres.
-//   hr  Mask Hue Range : bords de teinte eloignes, jaune x2.5, magenta x1.8
-//   rc  Mask Recovery  : chroma basse x0.25 (peau pale), haute x1.8 (rouge)
+//   hr  Mask Hue Width : -1..1, bords de teinte x0.4..x2.5 (jaune), x0.5..x1.8 (magenta)
+//   sl  Mask Low Saturation : porte basse de chroma x1.6 (gauche) .. x0.25 (droite)
+//   sx  Mask High Saturation : porte haute x0.6 (gauche) .. x1.8 / x1.2 (droite)
 //       pour la Lumiere, x1.2 pour Skin Saturation ; porte du noir 1 stop plus bas
 // Les plateaux s'elargissent avec les bords : la pente garde sa douceur.
 #define HS_REC_HI 0.2f   // Skin Saturation : la porte haute ne s'ouvre que de 20 % - au-dela, Skin Saturation +1 sur des couleurs deja tres saturees faisait reculer certaines rampes
-__DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float rc) {
+__DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float sl, float sx) {
   // v2 : Mask Softness agit aussi ici (avant : seulement sur le masque de
   // Light), avec la meme loi : sous 0.50 chaque bord se resserre autour de son
   // point a 50 pour cent, au-dessus les bords exterieurs s'eloignent.
   const float phi = fe.x, cr = fe.y;
-  const float ky = 1.0f + 1.5f*hr, km = 1.0f + 0.8f*hr;
-  const float lo = 1.0f - 0.75f*rc, hi = 1.0f + HS_REC_HI*rc;
+  // v2 : reglages du masque BIPOLAIRES, comme un qualifieur : Hue Width
+  // elargit (droite) ou resserre (gauche) les deux cotes de teinte ; Low
+  // Saturation abaisse ou releve la porte basse de chroma ; High Saturation
+  // releve ou abaisse la porte haute.
+  const float ky = hr >= 0.0f ? 1.0f + 1.5f*hr : 1.0f + 0.6f*hr;
+  const float km = hr >= 0.0f ? 1.0f + 0.8f*hr : 1.0f + 0.5f*hr;
+  const float lo = sl >= 0.0f ? 1.0f - 0.75f*sl : 1.0f - 0.6f*sl;
+  const float hi = sx >= 0.0f ? 1.0f + HS_REC_HI*sx : 1.0f + 0.4f*sx;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
   const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
@@ -2280,10 +2289,16 @@ __DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float rc) {
 // bord garde son point a 50 pour cent et se resserre (0.35 a 1 fois sa
 // largeur) ; de 0.50 a 1 les bords interieurs restent, les bords exterieurs
 // s'eloignent jusqu'a 5 fois leur largeur.
-__DEVICE__ float skin_win_l(float2 fe, float soft, float hr, float rc) {
+__DEVICE__ float skin_win_l(float2 fe, float soft, float hr, float sl, float sx) {
   const float phi = fe.x, cr = fe.y;
-  const float ky = 1.0f + 1.5f*hr, km = 1.0f + 0.8f*hr;
-  const float lo = 1.0f - 0.75f*rc, hi = 1.0f + 0.8f*rc;
+  // v2 : reglages du masque BIPOLAIRES, comme un qualifieur : Hue Width
+  // elargit (droite) ou resserre (gauche) les deux cotes de teinte ; Low
+  // Saturation abaisse ou releve la porte basse de chroma ; High Saturation
+  // releve ou abaisse la porte haute.
+  const float ky = hr >= 0.0f ? 1.0f + 1.5f*hr : 1.0f + 0.6f*hr;
+  const float km = hr >= 0.0f ? 1.0f + 0.8f*hr : 1.0f + 0.5f*hr;
+  const float lo = sl >= 0.0f ? 1.0f - 0.75f*sl : 1.0f - 0.6f*sl;
+  const float hi = sx >= 0.0f ? 1.0f + 0.8f*sx : 1.0f + 0.4f*sx;
   const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
   const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
   const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
@@ -2500,7 +2515,7 @@ __DEVICE__ float3 skin_proxy_p3(float3 code, int tf, float3x3 pre, float rs_sa, 
 // NODEONE_SKIN_PREPASS / NODEONE_SKIN_FEAT plus bas. Dans Resolve et sur CPU,
 // rien ne change : il est calcule sur place.
 __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float3 rs_w, float gain,
-                           float soft, float hr, float rc, float hc, int need_s, int need_l) {
+                           float soft, float hr, float sl, float sx, float dk, float hc, int need_s, int need_l) {
   const float3 yw = make_float3(0.2289746f, 0.6917385f, 0.0792869f);
   const float3 p3 = skin_proxy_p3(code, tf, pre, rs_sa, rs_w)*gain;
   const float ly = _log2f(_fmaxf(yw.x*p3.x + yw.y*p3.y + yw.z*p3.z, 1.0e-8f));
@@ -2508,14 +2523,14 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float
   const float3 c709 = vdot(matrix_p3_to_rec709_d65, p3);
   const float m = fmaxf3(c709);
   if (m > 1.0e-6f) {
-    // Mask Recovery descend la porte du noir de 2 stops : la peau dans l'ombre.
-    // v2 : porte du noir un stop plus haut (le bruit d'un noir S-Log3 passait)
-    const float gate = smootherstep(-11.0f - 2.0f*rc, -6.5f - 2.0f*rc, _log2f(m));
+    // v2 : porte du noir un stop plus haut (le bruit d'un noir S-Log3 passait) ;
+    // Mask Shadows la deplace de 2 stops dans un sens ou dans l'autre.
+    const float gate = smootherstep(-11.0f - 2.0f*dk, -6.5f - 2.0f*dk, _log2f(m));
     const float3 cn = c709*(0.5f/m);
     float2 fe = skin_feat(cn);
     fe.x -= 0.3491f*hc;   // Mask Hue Center : la fenetre glisse de 20 degres au plus
-    if (need_s) ts = skin_win_s(fe, soft, hr, rc)*gate;
-    if (need_l) tl = skin_win_l(fe, soft, hr, rc)*gate;
+    if (need_s) ts = skin_win_s(fe, soft, hr, sl, sx)*gate;
+    if (need_l) tl = skin_win_l(fe, soft, hr, sl, sx)*gate;
   }
   return make_float3(ly, ts, tl);
 }
@@ -2528,7 +2543,7 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float
 // rendu fait (il lit Look Intensity et Bypass Look avant de choisir).
 #define SKIN_TAP_AT(xx, yy) nodeone_skin_feat(tR, (xx), (yy), pass < NODEONE_SKIN_FEAT ? pass : NODEONE_SKIN_FEAT - 1)
 #else
-#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, rc, hc, need_s, need_l)
+#define SKIN_TAP_AT(xx, yy) skin_tap(make_float3(_tex2D(tR, (xx), (yy)), _tex2D(tG, (xx), (yy)), _tex2D(tB, (xx), (yy))), tf, pre, rs_sa, rs_w, gain, soft, hr, sl, sx, dk, hc, need_s, need_l)
 #endif
 
 // .x = poids Skin Saturation / Skin Line, .y = poids Skin Light (Mask Softness)
@@ -2552,7 +2567,7 @@ __DEVICE__ float skm_protect(float wc, float wk) {
 __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ tB,
                                     int X, int Y, int H, int tf, float3x3 pre,
                                     float rs_sa, float3 rs_w, float gain, float soft,
-                                    float hr, float rc, float hc, float ed,
+                                    float hr, float sl, float sx, float dk, float hc, float ed,
                                     int need_s, int need_l, int pass) {
   // Mask Edge Softness : rayon jusqu'a x3, guide de luminance jusqu'a x3 plus
   // tolerant (0.75 -> 2.25 stops) - le masque deborde doucement des contours.
@@ -3257,11 +3272,13 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // Bypass Skin Mask : le masque revient a celui mesure sur les visages -
   // Mask Softness a son defaut 0.5, les trois reglages d'elargissement a 0 -
   // sans toucher aux valeurs des sliders.
-  const float sk_soft_e  = skin_mask_bypass ? 0.5f : skin_soft;
-  const float sk_mhue_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mhue, 0.0f, 1.0f);
-  const float sk_mrec_e  = skin_mask_bypass ? 0.0f : _clampf(skin_mrec, 0.0f, 1.0f);
-  const float sk_medge_e = skin_mask_bypass ? 0.0f : _clampf(skin_medge, 0.0f, 1.0f);
-  const float sk_mhc_e   = skin_mask_bypass ? 0.0f : _clampf(skin_mhc, -1.0f, 1.0f);
+  const float sk_soft_e  = _clampf(skin_soft, 0.0f, 1.0f);
+  const float sk_mhue_e  = _clampf(skin_mhue, -1.0f, 1.0f);
+  const float sk_msl_e   = _clampf(skin_msl, -1.0f, 1.0f);
+  const float sk_msx_e   = _clampf(skin_msx, -1.0f, 1.0f);
+  const float sk_mdk_e   = _clampf(skin_mdk, -1.0f, 1.0f);
+  const float sk_medge_e = _clampf(skin_medge, 0.0f, 1.0f);
+  const float sk_mhc_e   = _clampf(skin_mhc, -1.0f, 1.0f);
   float sk_w_scene = 0.0f, sk_wl_scene = 0.0f;
   if (((trim_skin_sat != 0.0f || trim_skin > 0.0f) && !skin_col_bypass) ||
       ((skin_hi != 0.0f || skin_mid != 0.0f || skin_sh != 0.0f) && !skin_light_bypass) || skin_zones == 1) {
@@ -3279,11 +3296,11 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // ainsi dans Resolve ni sur CPU.
     if (lk_pass == NODEONE_SKIN_PREPASS)
       return skin_tap(make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
-                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_mrec_e, sk_mhc_e, sk_need_s, sk_need_l);
+                      in_oetf, sk_pre, rs_sa, rs_w, look_exp, sk_soft_e, sk_mhue_e, sk_msl_e, sk_msx_e, sk_mdk_e, sk_mhc_e, sk_need_s, sk_need_l);
 #endif
     const float2 skm = skin_mask_spatial(p_TexR, p_TexG, p_TexB, p_X, p_Y, p_Height, in_oetf, sk_pre,
                                          rs_sa, rs_w, look_exp, sk_soft_e,
-                                         sk_mhue_e, sk_mrec_e, sk_mhc_e, sk_medge_e,
+                                         sk_mhue_e, sk_msl_e, sk_msx_e, sk_mdk_e, sk_mhc_e, sk_medge_e,
                                          sk_need_s, sk_need_l, lk_pass);
     sk_w_scene = skm.x;
     sk_wl_scene = skm.y;

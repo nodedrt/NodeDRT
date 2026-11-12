@@ -51,6 +51,12 @@ v2 third pass
   dark); magenta side tighter; Mask Softness now also shapes the Skin
   Saturation / Skin Line mask; Mask Edge Softness up to 6x the radius.
 
+v2 fourth pass - Skin mask as a qualifier
+  Show Mask, Hue Center, Hue Width (both ways), Low Saturation, High
+  Saturation, Shadows Reach (all both ways, 0 = the measured mask), Softness,
+  Edge Blur, Reset Mask. Mask Recovery split into its three parts; Bypass Mask
+  removed.
+
 
 NODE_DRT 1.3 — what changed, and where it comes from
 ====================================================
