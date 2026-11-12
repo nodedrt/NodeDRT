@@ -20,7 +20,8 @@ struct DensitySettings {
     float zone[3] = {0.0f, 0.0f, 0.0f};                 // shadows, midtones, highlights
     float hue[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};  // R Y G C B M
     float range[6] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-    float boost = 0.0f, focus = 40.0f, zpiv = 0.0f, zsoft = 0.5f, maskSoft = 0.5f;
+    float boost = 0.0f, focus = 40.0f, zpiv = 0.0f, zsoft = 0.5f;
+    float zonesSmooth = 0.0f, colorsSmooth = 0.0f;   // Mask Smoothness of each sub-section
     int gamut = 15, oetf = 1;  // the DCTL's input settings
     bool active() const
     {

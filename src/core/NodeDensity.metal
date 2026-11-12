@@ -74,7 +74,7 @@ kernel void dp_boxv(constant DensArgs& A [[buffer(0)]], const device float* in [
 // Three floats per point, so the box passes of step 2 blur it (step 4) with
 // A.W / A.H set to the grid size by the host.
 kernel void dp_grid(constant DensArgs& A [[buffer(0)]], const device float* K [[buffer(1)]],
-                    device float* G [[buffer(2)]], uint2 gid [[thread_position_in_grid]])
+                    device float* G [[buffer(2)]], device float* Gz [[buffer(3)]], uint2 gid [[thread_position_in_grid]])
 {
     const int Wl = (A.W - 1) / 2 + 2, Hl = (A.H - 1) / 2 + 2;
     const int lx = (int)gid.x, ly = (int)gid.y;
@@ -84,13 +84,16 @@ kernel void dp_grid(constant DensArgs& A [[buffer(0)]], const device float* K [[
     const DpField f = dp_field(A, k[0], k[1], k[2]);
     device float* g = G + (ly * Wl + lx) * 3;
     g[0] = f.f0; g[1] = f.f1; g[2] = f.f2;
+    device float* gz = Gz + (ly * Wl + lx) * 3;
+    gz[0] = f.fz; gz[1] = f.f1; gz[2] = 0.0f;
 }
 
 // 5. per pixel: the blurred field read back (bilinear), times this pixel's own
 // saturation weight, then film density on the real pixel.
 kernel void dp_apply(constant DensArgs& A [[buffer(0)]], const device float* src [[buffer(1)]],
                      device float* dst [[buffer(2)]], const device float* K [[buffer(3)]],
-                     const device float* G [[buffer(4)]], uint2 gid [[thread_position_in_grid]])
+                     const device float* G [[buffer(4)]], const device float* Gz [[buffer(5)]],
+                     uint2 gid [[thread_position_in_grid]])
 {
     const int x = (int)gid.x, y = (int)gid.y;
     if (x >= A.W || y >= A.H) return;
@@ -104,10 +107,16 @@ kernel void dp_apply(constant DensArgs& A [[buffer(0)]], const device float* src
     const float f0 = dp_gridLerp(g00[0], g01[0], g10[0], g11[0], wx, wy);
     const float f1 = dp_gridLerp(g00[1], g01[1], g10[1], g11[1], wx, wy);
     const float f2 = dp_gridLerp(g00[2], g01[2], g10[2], g11[2], wx, wy);
+    const device float* z00 = Gz + (ly * Wl + lx) * 3;
+    const device float* z01 = z00 + 3;
+    const device float* z10 = z00 + Wl * 3;
+    const device float* z11 = z10 + 3;
+    const float fz = dp_gridLerp(z00[0], z01[0], z10[0], z11[0], wx, wy);
+    const float fz1 = dp_gridLerp(z00[1], z01[1], z10[1], z11[1], wx, wy);
     const device float* p = src + y * A.srcRow + x * 4;
     device float* d = dst + y * A.dstRow + x * 4;
     const device float* k = K + (y * A.W + x) * 3;
-    const float v = dp_finish(A, k[0], k[1], k[2], f0, f1, f2);
+    const float v = dp_finish(A, k[0], k[1], k[2], f0, f1, f2, fz, fz1);
     DpRGB c; c.r = p[0]; c.g = p[1]; c.b = p[2];
     const DpRGB o = dp_apply_value(A, c, v);
     d[0] = o.r; d[1] = o.g; d[2] = o.b; d[3] = p[3];

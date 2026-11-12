@@ -63,7 +63,7 @@ int main()
             "look_preset=1 trim_skin_sat=0.5 skin_hi=0.5 skin_mhc=0.6",
             "look_preset=1 skin_zones=1 skin_mhc=-0.5 skin_medge=0.6",
             "look_preset=7 display_encoding_preset=3 tn_Lp=1000",
-            "look_preset=1 trim_blift=1 trim_wroll=1", "look_preset=4 trim_blift=0.5 trim_wroll=0.7 display_encoding_preset=3 tn_Lp=1000",
+            "look_preset=1 trim_blift=1 trim_wroll=1 trim_blift_pv=1 trim_wroll_pv=-1.5 trim_sh=0.5", "look_preset=4 trim_blift=0.5 trim_wroll=0.7 display_encoding_preset=3 tn_Lp=1000",
             "look_preset=1 skin_zones=1 trim_skin_sat=0.4", "look_preset=1 skin_mid=0.6 skin_medge=1 crv_enable=1 trim_blift=1",
         };
         double worst = 0;

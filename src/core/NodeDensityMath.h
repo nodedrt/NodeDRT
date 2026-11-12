@@ -65,7 +65,8 @@ struct DensArgs {
     int maskFocus;       // -1 every active slider, 0..5 a colour, 6..8 a zone, 9 zone map, 10 every active colour
     int blurR;           // box radius of the soft mask (3 box passes ~ gaussian), 0 = none
     int fieldR;          // box radius of the selection-field blur (3 box passes ~ gaussian), 0 = none
-    int pad1, pad2;
+    int fieldRz;         // the same for the zone field (Zones Mask Smoothness)
+    int pad2;
     float mIn[9];        // input gamut -> DaVinci Wide Gamut (row major)
     float mOut[9];       // its inverse
     float zone[3];       // shadows, midtones, highlights density (-100..100)
@@ -200,7 +201,7 @@ DP_FN float dp_shape(float boostUI, float amt, float ev, float skin)
 // Zone views (6..9) are tonal: f0 = the zone weight (or the tone in stops for
 // the map), f1 = 1.
 //   amount = sum_zones z_j a_j + sum_hues h_k b_k (in %); zones on DI luma.
-struct DpField { float f0, f1, f2; };
+struct DpField { float f0, f1, f2, fz; };
 DP_FN float dp_satW(float focus, float l0, float l1, float l2)
 {
     const float mx = DP_MAX(l0, DP_MAX(l1, l2)), mn = DP_MIN(l0, DP_MIN(l1, l2));
@@ -214,21 +215,22 @@ DP_FN DpField dp_field(constant DensArgs& P, float q0, float q1, float q2)
 DP_FN DpField dp_field(const DensArgs& P, float q0, float q1, float q2)
 #endif
 {
-    DpField out; out.f0 = 0.0f; out.f1 = 0.0f; out.f2 = 0.0f;
+    DpField out; out.f0 = 0.0f; out.f1 = 0.0f; out.f2 = 0.0f; out.fz = 0.0f;
     const float l0 = DP_MAX(dp_di2lin(q0), 0.0f), l1 = DP_MAX(dp_di2lin(q1), 0.0f), l2 = DP_MAX(dp_di2lin(q2), 0.0f);
     const float Ld = 0.2126f * q0 + 0.7152f * q1 + 0.0722f * q2, st = (Ld - DP_PIV) / 0.07329248f;
     float zs = 0.0f, zm = 0.0f, zh = 0.0f;
     dp_zones(P.zpiv, P.zsoft, st, zs, zm, zh);
     if (P.show && P.maskFocus >= 6 && P.maskFocus <= 9) {
         const int f = P.maskFocus;
-        out.f0 = f == 6 ? zs : (f == 7 ? zm : (f == 8 ? zh : st));
+        out.fz = f == 6 ? zs : (f == 7 ? zm : (f == 8 ? zh : st));
         out.f1 = 1.0f; out.f2 = 1.0f;
         return out;
     }
     const float sw = dp_satW(P.focus, l0, l1, l2);
     out.f1 = sw;
     if (sw <= 1e-6f) return out;                       // neutral: nothing to add
-    float amt = P.lam * (zs * P.zone[0] + zm * P.zone[1] + zh * P.zone[2]);
+    const float zamt = P.lam * (zs * P.zone[0] + zm * P.zone[1] + zh * P.zone[2]);
+    float amt = 0.0f;
     float sel = DP_MAX(P.zone[0] != 0.0f ? zs : 0.0f, DP_MAX(P.zone[1] != 0.0f ? zm : 0.0f, P.zone[2] != 0.0f ? zh : 0.0f));
     const DpLab lab = dp_oklab(l0, l1, l2);
     const float C = DP_SQRT(lab.A * lab.A + lab.B * lab.B), h = C > 1e-6f ? dp_atan2deg(lab.B, lab.A) : 0.0f;
@@ -275,7 +277,8 @@ DP_FN DpField dp_field(const DensArgs& P, float q0, float q1, float q2)
     // change), carried in the field so the per-pixel pass needs no OKLab
     const float dh = DP_FABS(dp_wrap180(h - 50.0f));
     const float skin = (1.0f - dp_sstep(dh, 8.0f, 22.0f)) * dp_sstep(C, 0.02f, 0.05f) * (1.0f - dp_sstep(C, 0.12f, 0.18f));
-    out.f0 = amt * sw;
+    out.f0 = amt * sw;                 // colours (Colors Mask Smoothness)
+    out.fz = zamt * sw;                // zones (Zones Mask Smoothness)
     out.f2 = (1.0f - 0.55f * skin) * sw;
     return out;
 }
@@ -284,21 +287,23 @@ DP_FN DpField dp_field(const DensArgs& P, float q0, float q1, float q2)
 // mask weight (the tone in stops for the zone map). q: the softened key at the
 // pixel; f0b / f1b / f2b: the blurred field at the pixel.
 #ifdef __METAL_VERSION__
-DP_FN float dp_finish(constant DensArgs& P, float q0, float q1, float q2, float f0b, float f1b, float f2b)
+DP_FN float dp_finish(constant DensArgs& P, float q0, float q1, float q2, float f0b, float f1b, float f2b, float fzb, float fz1b)
 #else
-DP_FN float dp_finish(const DensArgs& P, float q0, float q1, float q2, float f0b, float f1b, float f2b)
+DP_FN float dp_finish(const DensArgs& P, float q0, float q1, float q2, float f0b, float f1b, float f2b, float fzb, float fz1b)
 #endif
 {
-    if (P.show && P.maskFocus >= 6 && P.maskFocus <= 9) return f0b;
+    if (P.show && P.maskFocus >= 6 && P.maskFocus <= 9) return fzb;
     q0 = dp_clamp01(q0); q1 = dp_clamp01(q1); q2 = dp_clamp01(q2);
     const float l0 = DP_MAX(dp_di2lin(q0), 0.0f), l1 = DP_MAX(dp_di2lin(q1), 0.0f), l2 = DP_MAX(dp_di2lin(q2), 0.0f);
     const float sw = dp_satW(P.focus, l0, l1, l2);
     const float n = f1b > 1e-7f ? f0b / f1b : 0.0f;
     if (P.show) return dp_clamp01(n) * sw;
-    if (n == 0.0f || sw <= 1e-6f) return 0.0f;
+    const float nz = fz1b > 1e-7f ? fzb / fz1b : 0.0f;
+    const float a = n + nz;
+    if (a == 0.0f || sw <= 1e-6f) return 0.0f;
     const float skf = f1b > 1e-7f ? f2b / f1b : 1.0f;
     const float Y = 0.2126f * l0 + 0.7152f * l1 + 0.0722f * l2;
-    return dp_shape(P.boost, n * sw, DP_LOG2(DP_MAX(Y, 1e-10f) / 0.18f), 0.0f) * skf;
+    return dp_shape(P.boost, a * sw, DP_LOG2(DP_MAX(Y, 1e-10f) / 0.18f), 0.0f) * skf;
 }
 
 // Film density: like adding / removing dye, in OKLab. Lightness follows the

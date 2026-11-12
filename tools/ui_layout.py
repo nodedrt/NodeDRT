@@ -141,8 +141,6 @@ PLUGINS = [
             # calculee par le plugin sur l'image log d'entree, avant Texture et
             # avant le rendu. Tout a 0 : le plugin rend exactement comme avant.
             {'name': 'grp_density', 'label': 'Density', 'open': False, 'params': [
-                TP('dp_mask_soft', 'Mask Softness', 'float', 0.5, 0.0, 1.0, 0.01,
-                   hint='Softness of the colour and zone selections in the picture, like the blur of a qualifier: the selection is blurred over 1.5 to 15.5 pixels (of a 1080 frame) before it is applied, so an object is never cut into pieces and no edge shows a step. A neutral next to a coloured object never moves: each pixel still uses its own colour. 0 = tightest, 0.5 = default, 1 = very soft.'),
                 TP('dp_boost', 'Global Strength', 'float', 0.0, 0.0, 100.0, 0.1,
                    hint='Overall strength of all Density sliders: 0 = x1, 100 = x2, with a soft ceiling of 1.75 stops so a colour never goes to black.'),
                 TP('dp_mask_focus', 'Mask Focus', 'float', -1.0, -1.0, 10.0, 1.0),
@@ -159,6 +157,8 @@ PLUGINS = [
                        hint='Moves the three zones in stops: negative = the highlights zone starts lower (more of the image is highlights), positive = higher.'),
                     TP('dp_zsoft', 'Zones Softness', 'float', 0.5, 0.0, 1.0, 0.01,
                        hint='Overlap between the zones: 0 = separate zones (0.75 stop transitions), 0.5 = default, 1 = very blended (4.5 stops). Use Show Zones to see them.'),
+                    TP('dp_zones_smooth', 'Mask Smoothness', 'float', 0.0, 0.0, 1.0, 0.01,
+                       hint='Softness of the zone selection in the picture, like the blur of a qualifier: blurred over 10 px at 0 (the default, already smooth) up to 40 px at 1, of a 1080 frame. An object is never cut into pieces, no edge shows a step, and a neutral next to a coloured object never moves.'),
                     TP('dp_show_zones', 'Show Zones', 'bool', 0,
                        hint='Smart view of the zones. Touch a zone slider: only that zone is shown, the rest of the picture turns grey. '
                             'Touch Show Zones itself, Zones Pivot or Zones Softness: the map of the three zones, Shadows blue, Midtones green, '
@@ -194,6 +194,8 @@ PLUGINS = [
                        hint='Width of the colour zone. 1 = precise (full effect within 6 deg of hue, fades out at 20 deg). Lower = even narrower, higher = wider, up to the neighbouring colours at 4.'),
                     TP('dp_focus', 'Saturation Focus', 'float', 40.0, 0.0, 100.0, 0.1,
                        hint='0 = also acts on softly coloured areas, 100 = only on strongly saturated colours. Neutrals never move.'),
+                    TP('dp_colors_smooth', 'Mask Smoothness', 'float', 0.0, 0.0, 1.0, 0.01,
+                       hint='Softness of the colour selection in the picture, like the blur of a qualifier: blurred over 10 px at 0 (the default, already smooth) up to 40 px at 1, of a 1080 frame. An object is never cut into pieces, no edge shows a step, and a neutral next to a coloured object never moves.'),
                     TP('dp_show', 'Show Colors', 'bool', 0,
                        hint='Smart view of the colours. Touch a colour or its Range: only that colour is shown, the rest of the picture turns grey. '
                             'Touch Show Colors itself or Saturation Focus: every active colour. Turning it on turns Show Zones off. View only.'),
@@ -207,15 +209,18 @@ PLUGINS = [
                     P('trim_con', 'Log Contrast'), P('trim_piv', 'Pivot'),
                     P('trim_ovl', 'Overlay'),
                     P('trim_blift', 'Black Lift'),
+                    P('trim_blift_pv', 'Black Lift Pivot'),
                     P('trim_wroll', 'White Roll-Off'),
+                    P('trim_wroll_pv', 'White Roll-Off Pivot'),
+                    P('trim_sh', 'Shadows'),
                     P('trim_con_bypass', 'Bypass Contrast'),
                 ]),
-                SUB('grp_trims_hl', 'Shadows & Highlights', [
-                    P('trim_sh', 'Shadows'), P('trim_hp', 'Highlight Purity'),
+                SUB('grp_trims_hl', 'Highlights', [
+                    P('trim_hp', 'Highlight Purity'),
                     P('trim_hd', 'Highlight Density'),
                     P('trim_hs', 'Highlight Saturation'),
                     P('trim_br', 'Brilliance'),
-                    P('trim_hl_bypass', 'Bypass Shadows & Highlights'),
+                    P('trim_hl_bypass', 'Bypass Highlights'),
                 ]),
                 SUB('grp_trims_mid', 'Midtones', [
                     P('trim_mp', 'Mid Purity'), P('trim_mp_pv', 'Mid Purity Pivot'),
@@ -225,6 +230,15 @@ PLUGINS = [
             ]},
             # SKIN : les noms OFX trim_skin / trim_skin_sat sont gardes.
             {'name': 'grp_skin', 'label': 'Skin', 'open': False, 'params': [
+                SUB('grp_skin_mask', 'Mask', [
+                    P('skin_soft', 'Mask Softness'),
+                    P('skin_mhue', 'Mask Hue Range'),
+                    P('skin_mhc', 'Mask Hue Center'),
+                    P('skin_mrec', 'Mask Recovery'),
+                    P('skin_medge', 'Mask Edge Softness'),
+                    P('skin_zones', 'Show Mask'),
+                    P('skin_mask_bypass', 'Bypass Mask'),
+                ]),
                 SUB('grp_skin_col', 'Color', [
                     P('trim_skin', 'Skin Line'),
                     P('trim_skin_sat', 'Skin Saturation'),
@@ -236,16 +250,6 @@ PLUGINS = [
                     P('skin_sh', 'Shadows'),
                     P('skin_piv', 'Zone Pivot'),
                     P('skin_light_bypass', 'Bypass Light'),
-                ]),
-                # Masque elargi (1.2) : aussi pour Skin Line / Skin Saturation.
-                SUB('grp_skin_mask', 'Mask', [
-                    P('skin_soft', 'Mask Softness'),
-                    P('skin_mhue', 'Mask Hue Range'),
-                    P('skin_mhc', 'Mask Hue Center'),
-                    P('skin_mrec', 'Mask Recovery'),
-                    P('skin_medge', 'Mask Edge Softness'),
-                    P('skin_zones', 'Show Mask'),
-                    P('skin_mask_bypass', 'Bypass Mask'),
                 ]),
                 P('skin_reset', 'Reset Skin', synth='push', hint='Returns every control in this group, sub-sections included, to its default in one click, as a single undo step. Nothing outside the group is touched.'),
             ]},

@@ -53,10 +53,10 @@ int main()
             DensitySettings s;
             s.on = true;
             s.zone[0] = 40; s.zone[2] = -30; s.hue[0] = 60; s.hue[3] = -50; s.hue[4] = 80; s.range[4] = 2.0f;
-            if (mode == 1) { s.boost = 60; s.maskSoft = 1.0f; }
+            if (mode == 1) { s.boost = 60; s.colorsSmooth = 1.0f; s.zonesSmooth = 1.0f; }
             if (mode == 2) { s.show = true; s.maskFocus = 4; }
             if (mode == 3) { s.gamut = 5; s.oetf = 3; }   // Rec.709 / ACEScct input: converted there and back
-            if (mode == 4) { s.maskSoft = 0.0f; }
+            if (mode == 4) { s.colorsSmooth = 0.0f; s.zonesSmooth = 0.5f; }
             std::vector<uint32_t> b = block;
             setP(def, b, "in_gamut", s.gamut);
             setP(def, b, "in_oetf", s.oetf);

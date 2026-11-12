@@ -158,18 +158,21 @@ void densityPlan(const DensitySettings& s, int W, int H, DensityPlan& plan)
     for (int i = 0; i < 6; ++i) { a.hue[i] = s.hue[i]; a.range[i] = s.range[i]; }
     a.boost = s.boost; a.focus = s.focus; a.zpiv = s.zpiv; a.zsoft = s.zsoft;
     a.lam = safeScaleCached(s);
-    // Mask Softness: RELIEF's gaussian radius, in pixels of a 1080-line frame
-    // scaled to this one, as 3 box passes of the matching width.
-    const float ms = std::min(std::max(s.maskSoft, 0.0f), 1.0f);
-    const float sigma = (0.5f + 6.0f * ms * std::sqrt(ms)) * (float)H / 1080.0f;
+    // The key (the picture the selection is measured on) is lightly softened
+    // (2.6 px of a 1080 frame), always: no pixel noise in the selection.
+    const float sigma = 2.6f * (float)H / 1080.0f;
     a.blurR = (sigma < 0.3f || W < 2 || H < 2) ? 0
                                                : std::max(1, (int)std::floor(std::sqrt(12.0f * sigma * sigma / 3.0f + 1.0f) / 2.0f));
-    // v2: the selection FIELD is blurred too, wider: 1.5 px at 0, 8.5 px at
-    // 0.5 (default), 15.5 px at 1, in pixels of a 1080-line frame - on the
-    // half-resolution grid, hence the / 2.
-    const float sigF = 0.5f * (1.5f + 14.0f * ms) * (float)H / 1080.0f;
-    a.fieldR = (sigF < 0.3f || W < 2 || H < 2) ? 0
-                                               : std::max(1, (int)std::floor(std::sqrt(12.0f * sigF * sigF / 3.0f + 1.0f) / 2.0f));
+    // v2: Mask Smoothness of each sub-section: the selection field blurred over
+    // 10 px (slider at 0, the default) to 40 px (at 1), of a 1080 frame - on
+    // the half-resolution grid, hence the / 2.
+    auto fieldRadius = [&](float sm) {
+        sm = std::min(std::max(sm, 0.0f), 1.0f);
+        const float sg = 0.5f * (10.0f + 30.0f * sm) * (float)H / 1080.0f;
+        return (sg < 0.3f || W < 2 || H < 2) ? 0 : std::max(1, (int)std::floor(std::sqrt(12.0f * sg * sg / 3.0f + 1.0f) / 2.0f));
+    };
+    a.fieldR = fieldRadius(s.colorsSmooth);
+    a.fieldRz = fieldRadius(s.zonesSmooth);
 }
 
 void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, float* dst, ptrdiff_t dstRow)
@@ -219,9 +222,11 @@ void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, flo
         }
     };
     box3(K, W, H, A.blurR);
-    // the selection field on every 2nd pixel of every 2nd row (RELIEF's grid) ...
+    // the selection field on every 2nd pixel of every 2nd row (RELIEF's grid):
+    // G for the colours, Gz for the zones, each blurred by its own Mask
+    // Smoothness ...
     const int Wl = (W - 1) / 2 + 2, Hl = (H - 1) / 2 + 2;
-    std::vector<float> G((size_t)Wl * Hl * 3);
+    std::vector<float> G((size_t)Wl * Hl * 3), Gz((size_t)Wl * Hl * 3);
     dpParallelRows(Hl, [&](int ly) {
         const int y = std::min(ly * 2, H - 1);
         for (int lx = 0; lx < Wl; ++lx) {
@@ -230,10 +235,12 @@ void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, flo
             const DpField f = dp_field(A, k[0], k[1], k[2]);
             float* g = &G[((size_t)ly * Wl + lx) * 3];
             g[0] = f.f0; g[1] = f.f1; g[2] = f.f2;
+            float* gz = &Gz[((size_t)ly * Wl + lx) * 3];
+            gz[0] = f.fz; gz[1] = f.f1; gz[2] = 0.0f;
         }
     });
-    // ... blurred (Mask Softness) ...
     box3(G, Wl, Hl, A.fieldR);
+    box3(Gz, Wl, Hl, A.fieldRz);
     // ... read back per pixel, times the pixel's own saturation weight.
     dpParallelRows(H, [&](int y) {
         const int ly = y / 2;
@@ -243,15 +250,12 @@ void densityCPU(const DensityPlan& plan, const float* src, ptrdiff_t srcRow, flo
             float* d = dst + (ptrdiff_t)y * dstRow + (ptrdiff_t)x * 4;
             const int lx = x / 2;
             const float wx = (float)(x - lx * 2) / 2.0f;
-            const float* g00 = &G[((size_t)ly * Wl + lx) * 3];
-            const float* g01 = g00 + 3;
-            const float* g10 = g00 + (size_t)Wl * 3;
-            const float* g11 = g10 + 3;
-            const float f0 = dp_gridLerp(g00[0], g01[0], g10[0], g11[0], wx, wy);
-            const float f1 = dp_gridLerp(g00[1], g01[1], g10[1], g11[1], wx, wy);
-            const float f2 = dp_gridLerp(g00[2], g01[2], g10[2], g11[2], wx, wy);
+            const size_t i00 = ((size_t)ly * Wl + lx) * 3, i01 = i00 + 3, i10 = i00 + (size_t)Wl * 3, i11 = i10 + 3;
+            float f[5];
+            for (int c = 0; c < 3; ++c) f[c] = dp_gridLerp(G[i00 + c], G[i01 + c], G[i10 + c], G[i11 + c], wx, wy);
+            for (int c = 0; c < 2; ++c) f[3 + c] = dp_gridLerp(Gz[i00 + c], Gz[i01 + c], Gz[i10 + c], Gz[i11 + c], wx, wy);
             const float* k = &K[((size_t)y * W + x) * 3];
-            const float v = dp_finish(A, k[0], k[1], k[2], f0, f1, f2);
+            const float v = dp_finish(A, k[0], k[1], k[2], f[0], f[1], f[2], f[3], f[4]);
             DpRGB c; c.r = p[0]; c.g = p[1]; c.b = p[2];
             const DpRGB o = dp_apply_value(A, c, v);
             d[0] = o.r; d[1] = o.g; d[2] = o.b; d[3] = p[3];

@@ -259,9 +259,9 @@ DEFINE_UI_TOOLTIP(col_ptw, "How completely colour gives way as a pixel approache
 DEFINE_UI_PARAMS(col_onset, 🕯 White_Onset, DCTLUI_SLIDER_FLOAT, 0.0, -0.5, 0.5, 0.001)
 DEFINE_UI_TOOLTIP(col_onset, "Shifts WHERE the path to white begins, without changing how much of it there is. 0.00 leaves the look's own onset. Negative starts it earlier, for a softer and more forgiving highlight; positive starts it later, holding colour closer to the top - which is what keeps neon tubes and LED practicals from going pastel a couple of stops over. The shift is a RATIO now, not a sum, and that fixed a dead half: with the looks' own onset sitting between 0.17 and 0.44, the old additive form hit its floor by -0.15, so on Default everything below that was the same picture - measured at 0.866 for both -0.50 and -0.25, digit for digit. In ratio there is no wall: the factor runs from x1.74 to x0.57 and the highest of the eight looks still lands well inside. Measured on a sky at +3 stops, saturation now runs 0.693 / 0.634 / 0.560 / 0.482 / 0.406 across the travel - five distinct curves.")
 DEFINE_UI_PARAMS(trim_con_bypass, ↩ Bypass_Contrast, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_TOOLTIP(trim_con_bypass, "Switches Log Contrast, Pivot and Overlay off in one click, without touching their values - to compare with and without.")
+DEFINE_UI_TOOLTIP(trim_con_bypass, "Switches Log Contrast, Pivot, Overlay, Black Lift, White Roll-Off (and their pivots) and Shadows off in one click, without touching their values - to compare with and without.")
 DEFINE_UI_PARAMS(trim_hl_bypass, ↩ Bypass_Shadows_Highlights, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_TOOLTIP(trim_hl_bypass, "Switches Shadows, Highlight Purity, Highlight Density, Highlight Saturation and Brilliance off in one click, without touching their values - to compare with and without.")
+DEFINE_UI_TOOLTIP(trim_hl_bypass, "Switches Highlight Purity, Highlight Density, Highlight Saturation and Brilliance off in one click, without touching their values - to compare with and without.")
 DEFINE_UI_PARAMS(trim_mid_bypass, ↩ Bypass_Midtones, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_TOOLTIP(trim_mid_bypass, "Switches Mid Purity off in one click, without touching its values - to compare with and without.")
 
@@ -273,6 +273,10 @@ DEFINE_UI_PARAMS(trim_blift, 🌑 Black_Lift, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0
 DEFINE_UI_TOOLTIP(trim_blift, "Lifts the bottom of the curve, like the flare of a print: the black rises, the deep shadows open, and the lift fades out smoothly before grey (middle grey moves by under 2 percent at the top of the travel; white does not move). The light it adds is NEUTRAL, so the noise of the black is lifted as grey, never as colour. 1 = the black at about 15 percent of middle grey. Drawn on the Curve View. The curve can never step backwards.")
 DEFINE_UI_PARAMS(trim_wroll, 🔆 White_Roll_Off, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
 DEFINE_UI_TOOLTIP(trim_wroll, "Lowers the top of the curve with a soft shoulder: from grey up, the highlights are brought down progressively - nothing below grey moves, the brightest white comes down the most - so white sits lower and the highlights roll into it instead of hitting the top of the display. 1 = white at 70 percent. Hue and saturation are kept (a gain on the level). Drawn on the Curve View. The curve keeps rising everywhere.")
+DEFINE_UI_PARAMS(trim_blift_pv, ⚖ Black_Lift_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
+DEFINE_UI_TOOLTIP(trim_blift_pv, "How high Black Lift reaches. 0 = only the deep blacks and the toe open up, grey does not move; 1 = the lift carries on smoothly up to the midtones (a softer, flatter print), grey rises a little. The curve keeps rising everywhere.")
+DEFINE_UI_PARAMS(trim_wroll_pv, ⚖ White_Roll_Off_Pivot, DCTLUI_SLIDER_FLOAT, 0.0, -2.0, 1.5, 0.001)
+DEFINE_UI_TOOLTIP(trim_wroll_pv, "Where the White Roll-Off shoulder starts, in stops from middle grey. 0 = from grey up; negative = it starts lower and brings the upper midtones down too; positive = it starts higher and only bends the top of the highlights. The shoulder always keeps at least 1.5 stops to reach white, so it stays soft and the curve keeps rising.")
 DEFINE_UI_PARAMS(trim_sh, 🌑 Shadows, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
 DEFINE_UI_PARAMS(trim_hp, 🔆 Highlight Purity, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.001)
 DEFINE_UI_PARAMS(trim_hd, 🌚 Highlight_Density, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
@@ -1194,14 +1198,19 @@ __DEVICE__ float den_gate(float d, float r) {
      de l'ajout >= -2a/h = -0.91 : la courbe monte partout. Au gris l'ajout est
      sous 2 pour cent du gris a fond (a = 0.15 gris). Ajoute NEUTRE (les trois canaux), pas
      multiplie par les ratios RGB : le bruit du noir monte en gris. */
-__DEVICE__ float trim_wroll_gain(float y, float y0, float y1, float d) {
+// Pivots (v2) : White Roll-Off - depart de l'epaule decale de pv stops du gris,
+// borne a 1.5 stop sous le pic (pente de sortie >= 1 - 0.3 - 0.3*1.875/(1.5 ln2)
+// = 0.16 > 0). Black Lift - portee h = 2.2a + pv.1.5.gris : h ne descend jamais
+// sous 2.2a, la monotonie tient.
+__DEVICE__ float trim_wroll_gain(float y, float y0, float y1, float d, float pv) {
   if (d <= 0.0f || y <= 0.0f) return 1.0f;
-  const float s = smootherstep(_log2f(y0), _log2f(y1), _log2f(y));
+  const float l1 = _log2f(y1), l0 = _fminf(_log2f(y0) + pv, l1 - 1.5f);
+  const float s = smootherstep(l0, l1, _log2f(y));
   return 1.0f - d*s;
 }
-__DEVICE__ float trim_blift_add(float y, float y0, float b) {
+__DEVICE__ float trim_blift_add(float y, float y0, float b, float pv) {
   if (b <= 0.0f) return 0.0f;
-  const float a = 0.15f*b*y0, h = 2.2f*a;
+  const float a = 0.15f*b*y0, h = 2.2f*a + _clampf(pv, 0.0f, 1.0f)*1.5f*y0;
   const float q = h/(_fmaxf(y, 0.0f) + h);
   return a*q*q;
 }
@@ -2243,13 +2252,22 @@ __DEVICE__ float2 skin_feat(float3 c709) {
 //       pour la Lumiere, x1.2 pour Skin Saturation ; porte du noir 1 stop plus bas
 // Les plateaux s'elargissent avec les bords : la pente garde sa douceur.
 #define HS_REC_HI 0.2f   // Skin Saturation : la porte haute ne s'ouvre que de 20 % - au-dela, Skin Saturation +1 sur des couleurs deja tres saturees faisait reculer certaines rampes
-__DEVICE__ float skin_win_s(float2 f, float hr, float rc) {
-  const float phi = f.x, cr = f.y;
+__DEVICE__ float skin_win_s(float2 fe, float soft, float hr, float rc) {
+  // v2 : Mask Softness agit aussi ici (avant : seulement sur le masque de
+  // Light), avec la meme loi : sous 0.50 chaque bord se resserre autour de son
+  // point a 50 pour cent, au-dessus les bords exterieurs s'eloignent.
+  const float phi = fe.x, cr = fe.y;
   const float ky = 1.0f + 1.5f*hr, km = 1.0f + 0.8f*hr;
   const float lo = 1.0f - 0.75f*rc, hi = 1.0f + HS_REC_HI*rc;
-  float w = smootherstep(0.03f*lo, 0.065f*lo, cr)*(1.0f - smootherstep(0.24f*hi, 0.34f*hi, cr));
-  w *= phi >= 0.0f ? 1.0f - smootherstep(0.1745f*ky, 0.5236f*ky, phi)
-                   : 1.0f - smootherstep(0.6109f*km, 1.1345f*km, -phi);
+  const float f = _exp2f(_fminf(soft - 0.5f, 0.0f)*3.0f);
+  const float h = _clampf((soft - 0.5f)*2.0f, 0.0f, 1.0f);
+  const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
+  const float c2 = 0.29f - 0.05f*f, c3 = 0.29f + 0.05f*f + 0.30f*h;
+  const float y0 = _fmaxf(0.3491f - 0.1745f*f, 0.03f), y1 = 0.3491f + 0.1745f*f + 0.60f*h;
+  const float m0 = _fmaxf(0.8727f - 0.2618f*f, 0.08f), m1 = 0.8727f + 0.2618f*f + 1.20f*h;
+  float w = smootherstep(c0*lo, c1*lo, cr)*(1.0f - smootherstep(c2*hi, c3*hi, cr));
+  w *= phi >= 0.0f ? 1.0f - smootherstep(y0*ky, y1*ky, phi)
+                   : 1.0f - smootherstep(m0*km, m1*km, -phi);
   return w;
 }
 
@@ -2271,7 +2289,7 @@ __DEVICE__ float skin_win_l(float2 fe, float soft, float hr, float rc) {
   const float c0 = _fmaxf(0.0475f - 0.0175f*f - 0.013f*h, 0.002f), c1 = 0.0475f + 0.0175f*f;
   const float c2 = 0.29f - 0.05f*f, c3 = 0.29f + 0.05f*f + 0.40f*h;
   const float y0 = _fmaxf(0.3054f - 0.2182f*f, 0.03f), y1 = 0.3054f + 0.2182f*f + 0.80f*h;
-  const float m0 = _fmaxf(1.2654f - 0.3927f*f, 0.08f), m1 = 1.2654f + 0.3927f*f + 1.60f*h;
+  const float m0 = _fmaxf(1.10f - 0.3927f*f, 0.08f), m1 = 1.10f + 0.3927f*f + 1.60f*h;   // v2 : cote magenta resserre (murs, bois rosés)
   float w = smootherstep(c0*lo, c1*lo, cr)*(1.0f - smootherstep(c2*hi, c3*hi, cr));
   w *= phi >= 0.0f ? 1.0f - smootherstep(y0*ky, y1*ky, phi)
                    : 1.0f - smootherstep(m0*km, m1*km, -phi);
@@ -2491,11 +2509,12 @@ __DEVICE__ float3 skin_tap(float3 code, int tf, float3x3 pre, float rs_sa, float
   const float m = fmaxf3(c709);
   if (m > 1.0e-6f) {
     // Mask Recovery descend la porte du noir de 2 stops : la peau dans l'ombre.
-    const float gate = smootherstep(-12.0f - 2.0f*rc, -7.5f - 2.0f*rc, _log2f(m));
+    // v2 : porte du noir un stop plus haut (le bruit d'un noir S-Log3 passait)
+    const float gate = smootherstep(-11.0f - 2.0f*rc, -6.5f - 2.0f*rc, _log2f(m));
     const float3 cn = c709*(0.5f/m);
     float2 fe = skin_feat(cn);
     fe.x -= 0.3491f*hc;   // Mask Hue Center : la fenetre glisse de 20 degres au plus
-    if (need_s) ts = skin_win_s(fe, hr, rc)*gate;
+    if (need_s) ts = skin_win_s(fe, soft, hr, rc)*gate;
     if (need_l) tl = skin_win_l(fe, soft, hr, rc)*gate;
   }
   return make_float3(ly, ts, tl);
@@ -2537,11 +2556,13 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
                                     int need_s, int need_l, int pass) {
   // Mask Edge Softness : rayon jusqu'a x3, guide de luminance jusqu'a x3 plus
   // tolerant (0.75 -> 2.25 stops) - le masque deborde doucement des contours.
-  // v2 : rayon jusqu'a x5 (etait x3) et guide de luminance jusqu'a x4 plus
+  // v2 : rayon jusqu'a x6 (etait x3) et guide de luminance jusqu'a x4 plus
   // tolerant : un vrai fondu large autour du visage.
-  const float R = _fmaxf(1.0f, (float)H/360.0f)*(1.0f + 4.0f*ed);
+  const float R = _fmaxf(1.0f, (float)H/360.0f)*(1.0f + 5.0f*ed);
   const float gsig = 0.75f*(1.0f + 3.0f*ed);
   float ws = 0.0f, wl = 0.0f, gss = 0.0f, gsl = 0.0f, lyc = 0.0f, wcs = 0.0f, wcl = 0.0f;
+  float ws0 = 0.0f, wl0 = 0.0f, gs0 = 0.0f, gsd = gsig;
+  float csx = 0.0f, csy = 0.0f, clx = 0.0f, cly = 0.0f;   // centroides des poids (bord ou bruit)
   for (int k = 0; k < SKM_TAPS; ++k) {
     // Directions des echantillons : table de constantes (cos, sin des
     // multiples de 45 degres, puis decales de 22.5), au lieu de 32 sinus et
@@ -2565,12 +2586,17 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
     const int xx = X + (int)_floorf(ox + 0.5f);
     const int yy = Y + (int)_floorf(oy + 0.5f);
     const float3 tp = SKIN_TAP_AT(xx, yy);
-    if (k == 0) { lyc = tp.x; wcs = tp.y; wcl = tp.z; }
+    // v2 : dans le noir (bruit), le guide de luminance est jusqu'a 3 fois plus
+    // tolerant : le bruit fait varier la luminance d'un pixel a l'autre et le
+    // guide isolait chaque point - le masque y devenait du bruit.
+    if (k == 0) { lyc = tp.x; wcs = tp.y; wcl = tp.z; gsd = gsig*(3.0f - 2.0f*smootherstep(-8.0f, -4.0f, lyc)); }
     const float dl = tp.x - lyc;
-    const float g = gsp*_expf(-0.5f*dl*dl/(gsig*gsig));
+    const float g = gsp*_expf(-0.5f*dl*dl/(gsd*gsd));
     const float gps = g*skm_protect(wcs, tp.y), gpl = g*skm_protect(wcl, tp.z);
     ws += gps*tp.y; gss += gps;
     wl += gpl*tp.z; gsl += gpl;
+    ws0 += g*tp.y; wl0 += g*tp.z; gs0 += g;
+    csx += g*tp.y*ox; csy += g*tp.y*oy; clx += g*tp.z*ox; cly += g*tp.z*oy;
   }
   // Mask Edge Softness : avec un rayon agrandi, deux anneaux seuls laissent des
   // trous entre eux et un contour net ressortait en double (echo). Deux
@@ -2597,13 +2623,30 @@ __DEVICE__ float2 skin_mask_spatial(__TEXTURE__ tR, __TEXTURE__ tG, __TEXTURE__ 
       const int yy = Y + (int)_floorf(rr*cy + 0.5f);
       const float3 tp = SKIN_TAP_AT(xx, yy);
       const float dl = tp.x - lyc;
-      const float g = gsp*_expf(-0.5f*dl*dl/(gsig*gsig));
+      const float g = gsp*_expf(-0.5f*dl*dl/(gsd*gsd));
       const float gps = g*skm_protect(wcs, tp.y), gpl = g*skm_protect(wcl, tp.z);
       ws += gps*tp.y; gss += gps;
       wl += gpl*tp.z; gsl += gpl;
+      ws0 += g*tp.y; wl0 += g*tp.z; gs0 += g;
+      csx += g*tp.y*rr*cx; csy += g*tp.y*rr*cy; clx += g*tp.z*rr*cx; cly += g*tp.z*rr*cy;
     }
   }
-  return make_float2(ws/gss, wl/gsl);
+  // v2 : BORD ou BRUIT. La protection du bord garde son poids a un pixel de
+  // peau entoure de non-peau - c'est ce qui tient le contour d'un visage -
+  // mais elle gardait aussi les points de bruit qui avaient la couleur de la
+  // peau (le noir bruite d'un S-Log3 se remplissait de points). Un vrai bord a
+  // ses voisins de peau D'UN COTE : le centroide des poids est loin du centre.
+  // Dans du bruit ils sont eparpilles : le centroide reste au centre. La
+  // protection ne s'applique donc qu'en proportion de ce decentrement (et du
+  // soutien : assez de voisins de peau) ; ailleurs le masque est la simple
+  // moyenne, qui lisse le bruit. Tout est continu : aucun seuil dur.
+  const float as = ws0/gs0, al = wl0/gs0;
+  const float ps = ws/gss, pl = wl/gsl;
+  const float es = _sqrtf(csx*csx + csy*csy)/_fmaxf(ws0*R, 1.0e-6f);
+  const float el = _sqrtf(clx*clx + cly*cly)/_fmaxf(wl0*R, 1.0e-6f);
+  const float ks = smootherstep(0.25f, 0.5f, as/_fmaxf(wcs, 1.0e-4f))*smootherstep(0.12f, 0.30f, es);
+  const float kl = smootherstep(0.25f, 0.5f, al/_fmaxf(wcl, 1.0e-4f))*smootherstep(0.12f, 0.30f, el);
+  return make_float2(as + (ps - as)*ks, al + (pl - al)*kl);
 }
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
@@ -3863,7 +3906,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         de teinte, ce qu une roue Lift ne sait pas tenir.
     Place apres le virage, pour que celui-ci garde sa position sur la courbe.
   -------------------------------------------*/
-  if (trim_sh != 0.0f && !trim_hl_bypass) {
+  if (trim_sh != 0.0f && !trim_con_bypass) {
     sh_fl = compress_toe_quadratic(sh_fl*ts_m2_e, tn_toe_e, 0);
     const float sh_p = 0.3f*ts_y0_e;
     const float sh_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0_e - sh_fl, 1e-6f)/sh_p, 3.0f));
@@ -3906,7 +3949,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     if (tone_id > 0 && tone_amt > 0.0f)
       crv_rt *= print_tone(crv_ach/ts_y1, tone_id, tone_amt, 0.0f);
 
-    if (trim_sh != 0.0f && !trim_hl_bypass) {
+    if (trim_sh != 0.0f && !trim_con_bypass) {
       const float shc_p = 0.3f*ts_y0_e;
       const float shc_wg = 1.0f/(1.0f + spowf(_fmaxf(ts_y0_e - sh_fl, 1e-6f)/shc_p, 3.0f));
       float shc_x = crv_ach - sh_fl;
@@ -3919,9 +3962,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     if (!trim_con_bypass && (trim_wroll > 0.0f || trim_blift > 0.0f)) {
       const float cy0 = 0.111f*(1.0f + tn_gb*_log2f(ts_y1))*ts_dsc, cy1 = ts_y1*ts_dsc;
       float cl = crv_ach*ts_dsc;
-      const float cg = trim_wroll > 0.0f ? trim_wroll_gain(cl, cy0, cy1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f)) : 1.0f;
+      const float cg = trim_wroll > 0.0f ? trim_wroll_gain(cl, cy0, cy1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f), trim_wroll_pv) : 1.0f;
       cl *= cg;
-      const float ca = trim_blift_add(cl, cy0, _clampf(trim_blift, 0.0f, 1.0f));
+      const float ca = trim_blift_add(cl, cy0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
       crv_rgb = make_float3(crv_rgb.x*cg + ca, crv_rgb.y*cg + ca, crv_rgb.z*cg + ca);
     }
     // Le meme clamp que l'image. Sans lui, un contraste negatif fait plonger
@@ -3988,12 +4031,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
   // Trims : White Roll-Off (gain sur le niveau) puis Black Lift (ajout neutre).
   const int tb_on = !trim_con_bypass && (trim_wroll > 0.0f || trim_blift > 0.0f);
   const float tb_y0 = 0.111f*(1.0f + tn_gb*_log2f(ts_y1))*ts_dsc, tb_y1 = ts_y1*ts_dsc;   // gris d'affichage de reference, quel que soit le look
-  if (tb_on && trim_wroll > 0.0f) tsn *= trim_wroll_gain(tsn, tb_y0, tb_y1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f));
+  if (tb_on && trim_wroll > 0.0f) tsn *= trim_wroll_gain(tsn, tb_y0, tb_y1, 0.3f*_clampf(trim_wroll, 0.0f, 1.0f), trim_wroll_pv);
 
   // Return from RGB ratios
   rgb *= tsn;
   if (tb_on && trim_blift > 0.0f) {
-    const float tb_a = trim_blift_add(tsn, tb_y0, _clampf(trim_blift, 0.0f, 1.0f));
+    const float tb_a = trim_blift_add(tsn, tb_y0, _clampf(trim_blift, 0.0f, 1.0f), trim_blift_pv);
     rgb = make_float3(rgb.x + tb_a, rgb.y + tb_a, rgb.z + tb_a);
   }
 

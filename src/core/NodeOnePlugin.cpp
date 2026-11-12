@@ -208,8 +208,8 @@ private:
                 if (k == "sh") f = 6;
                 else if (k == "mid") f = 7;
                 else if (k == "hi") f = 8;
-                else if (k == "zpiv" || k == "zsoft" || k == "show_zones") f = 9;
-                else if (k == "show" || k == "focus") f = 10;
+                else if (k == "zpiv" || k == "zsoft" || k == "show_zones" || k == "zones_smooth") f = 9;
+                else if (k == "show" || k == "focus" || k == "colors_smooth") f = 10;
                 if (f != -2) static_cast<OFX::DoubleParam*>(fp)->setValue((double)f);
             }
             if (name == "dp_show" || name == "dp_show_zones") {
@@ -307,7 +307,8 @@ private:
         s.focus = (float)dbl("dp_focus", t, 40.0);
         s.zpiv = (float)dbl("dp_zpiv", t, 0.0);
         s.zsoft = (float)dbl("dp_zsoft", t, 0.5);
-        s.maskSoft = (float)dbl("dp_mask_soft", t, 0.5);
+        s.zonesSmooth = (float)dbl("dp_zones_smooth", t, 0.0);
+        s.colorsSmooth = (float)dbl("dp_colors_smooth", t, 0.0);
         s.gamut = blockInt(block, "in_gamut", 15);
         s.oetf = blockInt(block, "in_oetf", 1);
         return s;

@@ -744,7 +744,8 @@ id<MTLBuffer> encodeDensity(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const De
     id<MTLBuffer> T = densBuffer(dev, s, 1, W * H * 3 * sizeof(float));     // ping-pong of K, and of G (smaller)
     id<MTLBuffer> out = densBuffer(dev, s, 2, W * H * 4 * sizeof(float));
     id<MTLBuffer> G = densBuffer(dev, s, 3, (NSUInteger)Wl * Hl * 3 * sizeof(float));
-    if (!K || !T || !out || !G) return nil;
+    id<MTLBuffer> Gz = densBuffer(dev, s, 4, (NSUInteger)Wl * Hl * 3 * sizeof(float));
+    if (!K || !T || !out || !G || !Gz) return nil;
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
     [enc setComputePipelineState:ps.p[DP_KEY]];
     [enc setBytes:&A length:sizeof(A) atIndex:0];
@@ -782,8 +783,10 @@ id<MTLBuffer> encodeDensity(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const De
     [enc setBytes:&A length:sizeof(A) atIndex:0];
     [enc setBuffer:K offset:0 atIndex:1];
     [enc setBuffer:G offset:0 atIndex:2];
+    [enc setBuffer:Gz offset:0 atIndex:3];
     dispatch2D(enc, ps.p[DP_GRID], Wl, Hl);
     box3(G, Wl, Hl, A.fieldR);
+    box3(Gz, Wl, Hl, A.fieldRz);
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     [enc setComputePipelineState:ps.p[DP_APPLY]];
     [enc setBytes:&A length:sizeof(A) atIndex:0];
@@ -791,6 +794,7 @@ id<MTLBuffer> encodeDensity(id<MTLCommandBuffer> cb, id<MTLDevice> dev, const De
     [enc setBuffer:out offset:0 atIndex:2];
     [enc setBuffer:K offset:0 atIndex:3];
     [enc setBuffer:G offset:0 atIndex:4];
+    [enc setBuffer:Gz offset:0 atIndex:5];
     dispatch2D(enc, ps.p[DP_APPLY], A.W, A.H);
     [enc endEncoding];
     return out;

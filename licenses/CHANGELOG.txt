@@ -41,6 +41,16 @@ v2 second pass
   Skin: Show Mask paints the skin selection alone in cyan over a grey picture;
   Mask Edge Softness up to 5x the radius; Invert Mask removed.
 
+v2 third pass
+  Density: a Mask Smoothness per sub-section (Zones, Colors), 10 px at 0 (the
+  default, left) to 40 px at 1.
+  Trims: Black Lift Pivot and White Roll-Off Pivot; Shadows moved to the bottom
+  of Contrast; the other sub-section is now Highlights.
+  Skin: Mask first; isolated noise no longer selected (black gate one stop
+  higher, edge protection only on real edges, guide more tolerant in the
+  dark); magenta side tighter; Mask Softness now also shapes the Skin
+  Saturation / Skin Line mask; Mask Edge Softness up to 6x the radius.
+
 
 NODE_DRT 1.3 — what changed, and where it comes from
 ====================================================
