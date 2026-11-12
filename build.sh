@@ -83,6 +83,7 @@ fi
 if [ -f resources/film/film_tables.bin ]; then
   mkdir -p build/NodeDRT.ofx.bundle/Contents/Resources/Film
   cp resources/film/film_tables.bin build/NodeDRT.ofx.bundle/Contents/Resources/Film/
+  chmod 644 build/NodeDRT.ofx.bundle/Contents/Resources/Film/film_tables.bin   # Resolve reads it as the user
 else
   echo "  note: resources/film/film_tables.bin missing - the looks fall back to the parametric versions"
 fi
@@ -100,6 +101,7 @@ if [ "${1:-}" = "install" ]; then
   sudo mkdir -p "$DEST" && \
   sudo rm -rf "$DEST/NodeDRT.ofx.bundle" && \
   sudo cp -R build/NodeDRT.ofx.bundle "$DEST/" && \
+  sudo chmod -R a+rX "$DEST/NodeDRT.ofx.bundle" && \
   sudo xattr -dr com.apple.quarantine "$DEST/NodeDRT.ofx.bundle" 2>/dev/null
   echo "Installed. Restart DaVinci Resolve: the effect is under OpenFX > Node_One."
 fi
