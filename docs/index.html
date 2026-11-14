@@ -61,6 +61,20 @@
   footer:before{content:"";position:absolute;left:0;right:0;top:-1px;height:1px;background:var(--grad);opacity:.6}footer{position:relative}
   .credit{color:var(--dim);font-size:13px;max-width:760px;margin-top:20px}
   .credit a{color:var(--fg)}
+  dialog.contact{margin:auto;border:0;padding:0;background:transparent;color:var(--fg);max-width:calc(100vw - 32px)}
+  dialog.contact::backdrop{background:rgba(5,5,8,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .cbox{position:relative;background:var(--card);border:1px solid var(--line);border-top:2px solid transparent;border-image:none;padding:34px 34px 30px;width:440px;max-width:100%;text-align:left}
+  .cbox:before{content:"";position:absolute;left:-1px;right:-1px;top:-2px;height:2px;background:var(--grad)}
+  .cbox .k{color:var(--dim);font-size:11px;letter-spacing:.3em;text-transform:uppercase}
+  .cbox .mail{display:block;font-size:clamp(15px,4.2vw,20px);font-weight:600;margin:14px 0 26px;word-break:break-all;user-select:all}
+  .cbox .row{display:flex;gap:10px;flex-wrap:wrap}
+  .cbox button,.cbox .btn{font:600 12px "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.25em;text-transform:uppercase;padding:13px 20px;cursor:pointer;text-decoration:none;color:var(--fg);transition:.2s}
+  .cbox .copy{border:1px solid transparent;background:linear-gradient(var(--card),var(--card)) padding-box,var(--grad) border-box}
+  .cbox .copy:hover,.cbox .copy.ok{background:var(--grad) border-box;color:#0a0a0d}
+  .cbox .btn{border:1px solid var(--line);background:none;color:var(--dim)}
+  .cbox .btn:hover{color:var(--fg);border-color:var(--dim)}
+  .cbox .x{position:absolute;top:10px;right:12px;background:none;border:0;color:var(--dim);font-size:22px;letter-spacing:0;padding:6px 10px}
+  .cbox .x:hover{color:var(--fg)}
 </style>
 </head>
 <body>
@@ -101,14 +115,36 @@
         <div style="--c:var(--p)"><p class="k">System</p><p class="v">macOS 11+ · Apple Silicon + Intel<br>Metal GPU</p></div>
         <div style="--c:var(--v)"><p class="k">Host</p><p class="v">DaVinci Resolve Studio 18+<br>(the free Resolve does not load OFX)</p></div>
       </div>
-      <p class="credit">Built on <a href="https://github.com/jedypod/open-display-transform">OpenDRT by Jed Smith</a>: the core rendering is his work; Node DRT is a modified version, not affiliated with him. Open source (GPLv3): the source code is published on GitHub. Film stock names are trademarks of their owners, used descriptively.</p>
+      <p class="credit">Built on <a href="https://github.com/jedypod/open-display-transform">OpenDRT by Jed Smith</a>: the core rendering is his work; Node DRT is a modified version, not affiliated with him. The GPLv3 source is on GitHub. Film stock names are trademarks of their owners, used descriptively.</p>
     </section>
   </main>
 
   <footer>
     <span>Node DRT · Samuel Drouin</span>
-    <span><a href="https://node-drt.lemonsqueezy.com">Store</a> · <a href="mailto:nodedrt@gmail.com">Contact</a></span>
+    <span><a href="https://node-drt.lemonsqueezy.com">Store</a> · <a href="mailto:nodedrt@gmail.com" id="contact-link">Contact</a></span>
   </footer>
 </div>
+<dialog class="contact" id="contact" aria-labelledby="contact-title">
+  <div class="cbox">
+    <button class="x" type="button" aria-label="Close" data-close>×</button>
+    <p class="k" id="contact-title">Contact</p>
+    <span class="mail" id="contact-mail">nodedrt@gmail.com</span>
+    <div class="row">
+      <button class="copy" type="button" id="contact-copy">Copy</button>
+      <a class="btn" href="mailto:nodedrt@gmail.com">Open mail app</a>
+    </div>
+  </div>
+</dialog>
+<script>
+(function(){
+  var d=document.getElementById('contact'),l=document.getElementById('contact-link'),c=document.getElementById('contact-copy'),m='nodedrt@gmail.com';
+  if(!d||typeof d.showModal!=='function')return;
+  l.addEventListener('click',function(e){e.preventDefault();c.textContent='Copy';c.classList.remove('ok');d.showModal();c.focus()});
+  d.addEventListener('click',function(e){if(e.target===d||e.target.hasAttribute('data-close'))d.close()});
+  function done(){c.textContent='Copied ✓';c.classList.add('ok')}
+  function fallback(){var t=document.createElement('textarea');t.value=m;t.setAttribute('readonly','');t.style.position='fixed';t.style.opacity='0';d.appendChild(t);t.select();try{document.execCommand('copy');done()}catch(e){}d.removeChild(t)}
+  c.addEventListener('click',function(){if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(m).then(done,fallback)}else fallback()});
+})();
+</script>
 </body>
 </html>
